@@ -2,12 +2,49 @@
  * Every colour here is a VS Code theme variable. Nothing is hardcoded, which is
  * what makes Panorama match light, dark, high-contrast and custom themes with
  * no theme-detection code at all.
+ *
+ * For the same reason nothing conveys state through `opacity` except `:disabled`
+ * — a high-contrast theme deliberately removes the contrast that a faded
+ * element relies on, so a 60%-opacity "unselected" chip stops reading as
+ * unselected exactly for the users who need it most.
  */
 
 :root {
-  --panorama-gap: 12px;
+  /* Spacing scale. Use these rather than fresh pixel values. */
+  --panorama-space-1: 4px;
+  --panorama-space-2: 6px;
+  --panorama-space-3: 8px;
+  --panorama-space-4: 12px;
+  --panorama-space-5: 16px;
+
+  /* Type scale, relative to the editor font size the user chose. */
+  --panorama-text-xs: 0.8em;
+  --panorama-text-sm: 0.85em;
+  --panorama-text-md: 0.92em;
+  --panorama-text-lg: 1.15em;
+
+  --panorama-gap: var(--panorama-space-4);
   --panorama-radius: 4px;
+  --panorama-cell-pad: 10px;
+  --panorama-drawer-width: 380px;
+
+  /* Overwritten from main.tsx so the virtualizer and the stylesheet cannot
+     disagree about row geometry. The values here are the fallback. */
   --panorama-row-height: 34px;
+  --panorama-group-height: 40px;
+
+  /*
+   * The severity map, defined once and mirrored by `treeProvider.iconFor()`.
+   * Red is reserved for "vulnerable" so it means one thing; a major update is
+   * orange. Deprecation shares yellow with a minor update, which is safe
+   * because deprecation is always shown with its own glyph and label rather
+   * than by colour alone.
+   */
+  --panorama-severity-vuln: var(--vscode-charts-red);
+  --panorama-severity-deprecated: var(--vscode-charts-yellow);
+  --panorama-severity-major: var(--vscode-charts-orange);
+  --panorama-severity-minor: var(--vscode-charts-yellow);
+  --panorama-severity-patch: var(--vscode-charts-blue);
 }
 
 * {
@@ -51,12 +88,26 @@ body {
   flex-direction: column;
 }
 
+/* Announced to screen readers, invisible on screen. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---------- Toolbar ---------- */
 
 .toolbar {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--panorama-space-3);
   padding: var(--panorama-gap);
   border-bottom: 1px solid var(--vscode-panel-border);
   background-color: var(--vscode-editor-background);
@@ -65,7 +116,7 @@ body {
 .toolbar__row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--panorama-space-3);
   flex-wrap: wrap;
 }
 
@@ -74,10 +125,17 @@ body {
   min-width: 180px;
 }
 
+/* A labelled cluster of related filter chips. */
+.toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: var(--panorama-space-2);
+}
+
 .toolbar__summary {
   display: flex;
   gap: 14px;
-  font-size: 0.9em;
+  font-size: var(--panorama-text-md);
   color: var(--vscode-descriptionForeground);
   align-items: center;
 }
@@ -97,7 +155,7 @@ select {
   background-color: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: var(--panorama-radius);
-  padding: 5px 8px;
+  padding: 5px var(--panorama-space-3);
   width: 100%;
 }
 
@@ -107,7 +165,8 @@ input::placeholder {
 
 input:focus,
 select:focus,
-button:focus-visible {
+button:focus-visible,
+[tabindex]:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
 }
@@ -124,7 +183,7 @@ button {
   background-color: var(--vscode-button-background);
   border: 1px solid var(--vscode-button-border, transparent);
   border-radius: var(--panorama-radius);
-  padding: 5px 12px;
+  padding: 5px var(--panorama-space-4);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -133,6 +192,7 @@ button:hover:not(:disabled) {
   background-color: var(--vscode-button-hoverBackground);
 }
 
+/* The one place opacity is right: VS Code's own controls dim the same way. */
 button:disabled {
   opacity: 0.5;
   cursor: default;
@@ -151,7 +211,7 @@ button.ghost {
   background: transparent;
   color: var(--vscode-foreground);
   border-color: transparent;
-  padding: 3px 8px;
+  padding: 3px var(--panorama-space-3);
 }
 
 button.ghost:hover:not(:disabled) {
@@ -168,25 +228,46 @@ button.danger:hover:not(:disabled) {
   background-color: var(--vscode-inputValidation-errorBackground);
 }
 
+/* A destructive action inside a dense row: quiet, but never mistakable for the
+   neutral actions beside it. */
+button.danger.ghost {
+  border-color: transparent;
+  color: var(--vscode-errorForeground);
+  padding: 3px var(--panorama-space-3);
+}
+
 /* ---------- Filter chips ---------- */
 
 .chip {
-  border: 1px solid var(--vscode-contrastBorder, transparent);
-  background-color: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
+  border: 1px solid var(--vscode-panel-border);
+  background-color: transparent;
+  color: var(--vscode-descriptionForeground);
   border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 0.85em;
+  padding: 3px var(--panorama-space-3);
+  font-size: var(--panorama-text-sm);
   cursor: pointer;
-  opacity: 0.6;
+}
+
+.chip:hover:not(:disabled) {
+  background-color: var(--vscode-toolbar-hoverBackground);
+  color: var(--vscode-foreground);
 }
 
 .chip[aria-pressed="true"] {
-  opacity: 1;
-  outline: 1px solid var(--vscode-focusBorder);
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border-color: var(--vscode-contrastBorder, var(--vscode-badge-background));
 }
 
 /* ---------- Table ---------- */
+
+/* The ARIA grid wraps both the header row and the scrolling row group. */
+.table__grid {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 
 .table {
   flex: 1;
@@ -194,23 +275,33 @@ button.danger:hover:not(:disabled) {
   min-height: 0;
 }
 
+.table:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
 .table__header {
   display: flex;
-  position: sticky;
-  top: 0;
-  z-index: 2;
   background-color: var(--vscode-editor-background);
   border-bottom: 1px solid var(--vscode-panel-border);
-  font-size: 0.85em;
+  font-size: var(--panorama-text-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--vscode-descriptionForeground);
 }
 
-.table__header button {
-  all: unset;
-  cursor: pointer;
-  padding: 8px 10px;
+.table__header button,
+.table__header .table__header-label {
+  background: none;
+  border: none;
+  border-radius: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: inherit;
+  padding: 0;
+  margin: 0;
   display: block;
   width: 100%;
   overflow: hidden;
@@ -218,24 +309,38 @@ button.danger:hover:not(:disabled) {
   white-space: nowrap;
 }
 
+.table__header button {
+  cursor: pointer;
+}
+
 .table__header button:hover {
   color: var(--vscode-foreground);
+  background: none;
 }
 
 .table__group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px 6px;
+  height: var(--panorama-group-height);
   font-weight: 600;
   background-color: var(--vscode-editor-background);
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
+.table__group-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--panorama-cell-pad);
+  height: 100%;
+  padding: 0 var(--panorama-gap);
+}
+
 .table__group-meta {
   font-weight: normal;
   color: var(--vscode-descriptionForeground);
-  font-size: 0.9em;
+  font-size: var(--panorama-text-md);
+}
+
+.table__group-spacer {
+  flex: 1;
 }
 
 .row {
@@ -250,16 +355,30 @@ button.danger:hover:not(:disabled) {
   background-color: var(--vscode-list-hoverBackground);
 }
 
+.row:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
 .row[aria-selected="true"] {
   background-color: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
 }
 
 .cell {
-  padding: 0 10px;
+  padding: 0 var(--panorama-cell-pad);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * Horizontal padding stays on the cell and vertical padding on the button, so
+ * every header label starts on exactly the same x as the column beneath it —
+ * sortable or not.
+ */
+.table__header .cell {
+  padding: var(--panorama-space-3) var(--panorama-cell-pad);
 }
 
 .cell--name {
@@ -267,7 +386,7 @@ button.danger:hover:not(:disabled) {
   min-width: 140px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--panorama-space-2);
 }
 
 .cell--scope {
@@ -292,30 +411,44 @@ button.danger:hover:not(:disabled) {
 }
 
 .cell--license {
-  flex: 0 0 110px;
+  flex: 0 0 100px;
   color: var(--vscode-descriptionForeground);
 }
 
+/*
+ * The Status column exists so the sort key of the same name has something to
+ * point at, and so severity has a text equivalent rather than resting on the
+ * colour of the Latest cell alone.
+ */
+.cell--status {
+  flex: 0 0 96px;
+}
+
 .cell--actions {
-  flex: 0 0 190px;
+  flex: 0 0 180px;
   display: flex;
-  gap: 6px;
+  gap: var(--panorama-space-2);
   justify-content: flex-end;
+}
+
+/* The header cell above the buttons carries a label but needs no visible one. */
+.table__header .cell--actions {
+  justify-content: flex-start;
 }
 
 /* ---------- Status colouring ---------- */
 
 .update--major {
-  color: var(--vscode-charts-red);
+  color: var(--panorama-severity-major);
   font-weight: 600;
 }
 
 .update--minor {
-  color: var(--vscode-charts-yellow);
+  color: var(--panorama-severity-minor);
 }
 
 .update--patch {
-  color: var(--vscode-charts-blue);
+  color: var(--panorama-severity-patch);
 }
 
 .update--none {
@@ -326,7 +459,7 @@ button.danger:hover:not(:disabled) {
   display: inline-block;
   padding: 1px 7px;
   border-radius: 999px;
-  font-size: 0.78em;
+  font-size: var(--panorama-text-xs);
   background-color: var(--vscode-badge-background);
   color: var(--vscode-badge-foreground);
 }
@@ -358,19 +491,20 @@ button.danger:hover:not(:disabled) {
 
 /*
  * Muted rows stay legible rather than being hidden: the point is to remember
- * what you chose to skip, not to make it disappear.
+ * what you chose to skip, not to make it disappear. Recede by colour, not by
+ * opacity, so high-contrast themes keep it readable.
  */
 .row--muted .cell--name > span:not(.badge),
 .row--muted .cell--latest {
-  opacity: 0.55;
+  color: var(--vscode-descriptionForeground);
 }
 
-.icon-warn {
-  color: var(--vscode-charts-yellow);
+.severity--deprecated {
+  color: var(--panorama-severity-deprecated);
 }
 
-.icon-vuln {
-  color: var(--vscode-charts-red);
+.severity--vuln {
+  color: var(--panorama-severity-vuln);
 }
 
 .muted {
@@ -380,7 +514,7 @@ button.danger:hover:not(:disabled) {
 /* ---------- Drawer ---------- */
 
 .drawer {
-  width: 380px;
+  width: var(--panorama-drawer-width);
   flex-shrink: 0;
   border-left: 1px solid var(--vscode-panel-border);
   overflow-y: auto;
@@ -391,27 +525,60 @@ button.danger:hover:not(:disabled) {
   );
 }
 
+.drawer:focus {
+  outline: none;
+}
+
 .drawer__title {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: var(--panorama-space-3);
+  margin-bottom: var(--panorama-space-1);
 }
 
 .drawer__title h2 {
   margin: 0;
-  font-size: 1.15em;
+  font-size: var(--panorama-text-lg);
   word-break: break-all;
 }
 
+.drawer__title h2:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.drawer__subtitle {
+  margin-bottom: var(--panorama-gap);
+}
+
+.drawer__desc {
+  margin-top: 0;
+}
+
+.drawer__action {
+  margin-top: var(--panorama-cell-pad);
+}
+
+.drawer__why-source {
+  margin-bottom: var(--panorama-space-3);
+  font-size: var(--panorama-text-md);
+}
+
+.drawer__links {
+  display: flex;
+  gap: var(--panorama-gap);
+  margin-top: var(--panorama-cell-pad);
+  flex-wrap: wrap;
+}
+
 .drawer section {
-  margin-top: 16px;
+  margin-top: var(--panorama-space-5);
 }
 
 .drawer h3 {
-  margin: 0 0 6px;
-  font-size: 0.85em;
+  margin: 0 0 var(--panorama-space-2);
+  font-size: var(--panorama-text-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--vscode-descriptionForeground);
@@ -421,8 +588,8 @@ button.danger:hover:not(:disabled) {
   margin: 0;
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-  font-size: 0.92em;
+  gap: var(--panorama-space-1) var(--panorama-gap);
+  font-size: var(--panorama-text-md);
 }
 
 .drawer dt {
@@ -449,18 +616,30 @@ a:hover,
 .link:hover {
   color: var(--vscode-textLink-activeForeground);
   text-decoration: underline;
+  background: none;
 }
 
+/* ---------- Banners & callouts ---------- */
+
 .callout {
-  padding: 8px 10px;
+  padding: var(--panorama-space-3) var(--panorama-cell-pad);
   border-radius: var(--panorama-radius);
   border-left: 3px solid;
-  font-size: 0.92em;
-  margin-bottom: 8px;
+  font-size: var(--panorama-text-md);
+  margin-bottom: var(--panorama-space-3);
+}
+
+.callout__line {
+  margin-top: var(--panorama-space-1);
+}
+
+.callout__aliases {
+  margin-top: var(--panorama-space-1);
+  font-size: var(--panorama-text-md);
 }
 
 .callout--warn {
-  border-color: var(--vscode-charts-yellow);
+  border-color: var(--panorama-severity-deprecated);
   background-color: var(--vscode-inputValidation-warningBackground);
   color: var(
     --vscode-inputValidation-warningForeground,
@@ -469,7 +648,7 @@ a:hover,
 }
 
 .callout--error {
-  border-color: var(--vscode-charts-red);
+  border-color: var(--panorama-severity-vuln);
   background-color: var(--vscode-inputValidation-errorBackground);
   color: var(
     --vscode-inputValidation-errorForeground,
@@ -478,22 +657,38 @@ a:hover,
 }
 
 .callout--info {
-  border-color: var(--vscode-charts-blue);
+  border-color: var(--panorama-severity-patch);
   background-color: var(--vscode-textBlockQuote-background);
+}
+
+/* App-level banners: a callout plus a dismiss control. */
+.banners {
+  padding: var(--panorama-gap) var(--panorama-gap) 0;
+}
+
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--panorama-space-3);
+}
+
+.banner__text {
+  flex: 1;
+  min-width: 0;
 }
 
 /* ---------- Why tree ---------- */
 
 .tree {
   font-family: var(--vscode-editor-font-family);
-  font-size: 0.9em;
+  font-size: var(--panorama-text-md);
   line-height: 1.6;
 }
 
 .tree ul {
   list-style: none;
   margin: 0;
-  padding-left: 16px;
+  padding-left: var(--panorama-space-5);
   border-left: 1px solid var(--vscode-tree-indentGuidesStroke);
 }
 
@@ -513,8 +708,8 @@ a:hover,
 .search-result {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: var(--panorama-cell-pad);
+  padding: var(--panorama-space-3) var(--panorama-gap);
   border-bottom: 1px solid var(--vscode-editorGroup-border, transparent);
 }
 
@@ -531,20 +726,25 @@ a:hover,
   font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--panorama-space-3);
 }
 
 .search-result__desc {
   color: var(--vscode-descriptionForeground);
-  font-size: 0.9em;
+  font-size: var(--panorama-text-md);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.search-result__elsewhere {
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--panorama-text-sm);
+}
+
 .search-result__actions {
   display: flex;
-  gap: 6px;
+  gap: var(--panorama-space-2);
   align-items: center;
 }
 
@@ -559,7 +759,11 @@ a:hover,
 .empty h2 {
   color: var(--vscode-foreground);
   font-size: 1.1em;
-  margin-bottom: 6px;
+  margin-bottom: var(--panorama-space-2);
+}
+
+.empty__action {
+  margin-top: var(--panorama-gap);
 }
 
 .progress {

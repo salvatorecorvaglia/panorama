@@ -86,6 +86,12 @@
         "title": "Clear All Muted Packages",
         "category": "Panorama",
         "icon": "$(bell)"
+      },
+      {
+        "command": "panorama.revealDependency",
+        "title": "Reveal Package in Panel",
+        "category": "Panorama",
+        "icon": "$(package)"
       }
     ],
     "viewsContainers": {
@@ -102,10 +108,17 @@
         {
           "id": "panorama.explorer",
           "name": "Dependencies",
+          "contextualTitle": "Panorama",
           "icon": "resources/panorama.svg"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "panorama.explorer",
+        "contents": "No dependency manifests found in this workspace.\n\nPanorama looks for package.json, pyproject.toml, requirements.txt, Cargo.toml, go.mod, composer.json, pom.xml, build.gradle and build.gradle.kts.\n[Scan again](command:panorama.refresh)"
+      }
+    ],
     "menus": {
       "view/title": [
         {
@@ -127,6 +140,16 @@
           "command": "panorama.refresh",
           "when": "view == panorama.explorer",
           "group": "navigation@4"
+        },
+        {
+          "command": "panorama.updateAll",
+          "when": "view == panorama.explorer",
+          "group": "1_modify@1"
+        },
+        {
+          "command": "panorama.clearMuted",
+          "when": "view == panorama.explorer",
+          "group": "1_modify@2"
         }
       ],
       "view/item/context": [
@@ -139,6 +162,12 @@
           "command": "panorama.toggleMute",
           "when": "view == panorama.explorer && viewItem == dependency",
           "group": "inline@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "panorama.revealDependency",
+          "when": "false"
         }
       ]
     },

@@ -2,8 +2,11 @@
  * Registry search and install.
  *
  * The key interaction detail: when a result is already declared in one of the
- * open manifests, the primary action flips from Install to Uninstall, so the
+ * open manifests, the primary action flips from Install to Remove, so the
  * button always does the thing that makes sense for the current state.
+ *
+ * Searching works with no manifests open — only installing needs somewhere to
+ * install into, so the target selector is what goes empty, not the panel.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -13,6 +16,7 @@ import type {
   ProjectGroup,
   SearchResult,
 } from '../core/types.js';
+import { SCOPE_LABELS } from '../core/vocabulary.js';
 import { ECOSYSTEM_LABELS, formatDownloads } from './format.js';
 
 interface Props {
@@ -32,9 +36,13 @@ interface Props {
     ecosystem: Ecosystem,
     manifestPath: string,
   ) => void;
+  onClose: () => void;
 }
 
 const DEBOUNCE_MS = 300;
+
+/** `peer` is omitted: no package manager installs into it from a CLI. */
+const INSTALLABLE_SCOPES: DepScope[] = ['prod', 'dev', 'build', 'optional'];
 
 export function SearchInstall({
   groups,
@@ -44,6 +52,7 @@ export function SearchInstall({
   onSearch,
   onInstall,
   onUninstall,
+  onClose,
 }: Props) {
   const [query, setQuery] = useState('');
   const [ecosystem, setEcosystem] = useState<Ecosystem | 'all'>('all');
@@ -84,7 +93,7 @@ export function SearchInstall({
   );
 
   return (
-    <div className="search-panel">
+    <div className="search-panel" id="panorama-search-panel">
       <div className="toolbar">
         <div className="toolbar__row">
           <div className="toolbar__search">
@@ -116,8 +125,12 @@ export function SearchInstall({
           <select
             value={targetManifest}
             aria-label="Install into"
+            disabled={groups.length === 0}
             onChange={(event) => setTargetManifest(event.target.value)}
           >
+            {groups.length === 0 && (
+              <option value="">No project to install into</option>
+            )}
             {groups.map((group) => (
               <option key={group.manifestPath} value={group.manifestPath}>
                 {group.label}
@@ -125,16 +138,28 @@ export function SearchInstall({
             ))}
           </select>
 
+          {/* The same four words the table, the chips and the tree use. */}
           <select
             value={scope}
             aria-label="Dependency scope"
             onChange={(event) => setScope(event.target.value as DepScope)}
           >
-            <option value="prod">main</option>
-            <option value="dev">dev</option>
-            <option value="build">build</option>
-            <option value="optional">optional</option>
+            {INSTALLABLE_SCOPES.map((id) => (
+              <option key={id} value={id}>
+                {SCOPE_LABELS[id].short}
+              </option>
+            ))}
           </select>
+
+          {/* The toolbar's toggle is not on screen in the empty workspace
+              state, so the panel carries its own way out. */}
+          <button
+            className="ghost"
+            onClick={onClose}
+            aria-label="Close package search"
+          >
+            ✕
+          </button>
         </div>
 
         {query.trim().length > 0 && query.trim().length < 2 && (
@@ -142,9 +167,19 @@ export function SearchInstall({
         )}
       </div>
 
+      <div className="visually-hidden" role="status">
+        {searching
+          ? 'Searching registries'
+          : results.length > 0
+            ? `${results.length} package(s) found`
+            : ''}
+      </div>
+
       {error && (
-        <div className="callout callout--error" style={{ margin: 12 }}>
-          {error}
+        <div className="banners">
+          <div className="callout callout--error" role="alert">
+            {error}
+          </div>
         </div>
       )}
 
@@ -191,7 +226,7 @@ export function SearchInstall({
                   {ECOSYSTEM_LABELS[result.ecosystem]}
                 </span>
                 {result.deprecated && (
-                  <span className="icon-warn">▲ deprecated</span>
+                  <span className="severity--deprecated">▲ deprecated</span>
                 )}
                 {result.downloads !== undefined && (
                   <span className="muted">
@@ -203,7 +238,7 @@ export function SearchInstall({
                 <div className="search-result__desc">{result.description}</div>
               )}
               {installedElsewhere && installedElsewhere.length > 0 && (
-                <div className="muted" style={{ fontSize: '0.85em' }}>
+                <div className="search-result__elsewhere">
                   Already in{' '}
                   {installedElsewhere
                     .map((entry) => entry.projectLabel)
@@ -216,22 +251,25 @@ export function SearchInstall({
               {installedHere ? (
                 <>
                   <span className="muted">{installedHere.declared}</span>
+                  {/* Same word the table uses for the same action. */}
                   <button
                     className="danger"
                     onClick={() =>
                       onUninstall(result.name, result.ecosystem, targetManifest)
                     }
                   >
-                    Uninstall
+                    Remove
                   </button>
                 </>
               ) : (
                 <button
                   disabled={!compatible || !targetManifest}
                   title={
-                    compatible
-                      ? undefined
-                      : `${result.name} is a ${ECOSYSTEM_LABELS[result.ecosystem]} package and cannot go into ${selectedGroup?.label}`
+                    !targetManifest
+                      ? 'Open a project with a dependency manifest to install into'
+                      : compatible
+                        ? undefined
+                        : `${result.name} is a ${ECOSYSTEM_LABELS[result.ecosystem]} package and cannot go into ${selectedGroup?.label}`
                   }
                   onClick={() =>
                     onInstall(

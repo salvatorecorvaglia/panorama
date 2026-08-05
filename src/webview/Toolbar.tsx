@@ -1,7 +1,7 @@
 /** Search box, scope/status filters, and the project summary line. */
 
 import type { DepScope, ScanSummary } from '../core/types.js';
-import { SCOPE_LABELS } from './format.js';
+import { ALL_SCOPES, SCOPE_LABELS } from '../core/vocabulary.js';
 
 export interface Filters {
   text: string;
@@ -23,8 +23,6 @@ interface Props {
   onToggleInstall: () => void;
   installOpen: boolean;
 }
-
-const ALL_SCOPES: DepScope[] = ['prod', 'dev', 'build', 'peer', 'optional'];
 
 export function Toolbar({
   filters,
@@ -48,7 +46,7 @@ export function Toolbar({
   };
 
   return (
-    <div className="toolbar">
+    <div className="toolbar" role="toolbar" aria-label="Panorama actions">
       <div className="toolbar__row">
         <div className="toolbar__search">
           <input
@@ -62,88 +60,120 @@ export function Toolbar({
           />
         </div>
 
-        <button onClick={onToggleInstall} aria-pressed={installOpen}>
+        <button
+          onClick={onToggleInstall}
+          aria-expanded={installOpen}
+          aria-controls="panorama-search-panel"
+        >
           {installOpen ? 'Close search' : '+ Add package'}
         </button>
-        <button className="secondary" onClick={onCheckUpdates} disabled={busy}>
+        {/* These two look alike, so each one says what it actually does. */}
+        <button
+          className="secondary"
+          onClick={onCheckUpdates}
+          disabled={busy}
+          title="Query the registries now for newer versions, even if automatic checks are off"
+        >
           Check updates
         </button>
-        <button className="secondary" onClick={onRefresh} disabled={busy}>
+        <button
+          className="secondary"
+          onClick={onRefresh}
+          disabled={busy}
+          title="Re-read the manifests and lockfiles from disk"
+        >
           Refresh
         </button>
       </div>
 
       <div className="toolbar__row">
-        {ALL_SCOPES.map((scope) => (
-          <button
-            key={scope}
-            className="chip"
-            aria-pressed={filters.scopes.has(scope)}
-            onClick={() => toggleScope(scope)}
-          >
-            {SCOPE_LABELS[scope]}
-          </button>
-        ))}
+        <div
+          className="toolbar__group"
+          role="group"
+          aria-label="Filter by scope"
+        >
+          {ALL_SCOPES.map((scope) => (
+            <button
+              key={scope}
+              className="chip"
+              aria-pressed={filters.scopes.has(scope)}
+              onClick={() => toggleScope(scope)}
+            >
+              {SCOPE_LABELS[scope].short}
+            </button>
+          ))}
+        </div>
 
-        <span style={{ width: 12 }} />
-
-        <button
-          className="chip"
-          aria-pressed={filters.onlyOutdated}
-          onClick={() =>
-            onFiltersChange({ ...filters, onlyOutdated: !filters.onlyOutdated })
-          }
+        <div
+          className="toolbar__group"
+          role="group"
+          aria-label="Filter by status"
         >
-          outdated
-        </button>
-        <button
-          className="chip"
-          aria-pressed={filters.onlyVulnerable}
-          onClick={() =>
-            onFiltersChange({
-              ...filters,
-              onlyVulnerable: !filters.onlyVulnerable,
-            })
-          }
-        >
-          vulnerable
-        </button>
-        <button
-          className="chip"
-          aria-pressed={filters.onlyDeprecated}
-          onClick={() =>
-            onFiltersChange({
-              ...filters,
-              onlyDeprecated: !filters.onlyDeprecated,
-            })
-          }
-        >
-          deprecated
-        </button>
-        {summary.muted > 0 && (
           <button
             className="chip"
-            aria-pressed={filters.hideMuted}
-            title={`Hide the ${summary.muted} package(s) whose updates you have muted`}
+            aria-pressed={filters.onlyOutdated}
             onClick={() =>
-              onFiltersChange({ ...filters, hideMuted: !filters.hideMuted })
+              onFiltersChange({
+                ...filters,
+                onlyOutdated: !filters.onlyOutdated,
+              })
             }
           >
-            hide muted
+            outdated
           </button>
-        )}
+          <button
+            className="chip"
+            aria-pressed={filters.onlyVulnerable}
+            onClick={() =>
+              onFiltersChange({
+                ...filters,
+                onlyVulnerable: !filters.onlyVulnerable,
+              })
+            }
+          >
+            vulnerable
+          </button>
+          <button
+            className="chip"
+            aria-pressed={filters.onlyDeprecated}
+            onClick={() =>
+              onFiltersChange({
+                ...filters,
+                onlyDeprecated: !filters.onlyDeprecated,
+              })
+            }
+          >
+            deprecated
+          </button>
+          {summary.muted > 0 && (
+            <button
+              className="chip"
+              aria-pressed={filters.hideMuted}
+              title={`Hide the ${summary.muted} package(s) whose updates you have muted`}
+              onClick={() =>
+                onFiltersChange({ ...filters, hideMuted: !filters.hideMuted })
+              }
+            >
+              hide muted
+            </button>
+          )}
+        </div>
 
         <div className="toolbar__spacer" />
 
-        <div className="toolbar__summary">
+        <div className="toolbar__summary" role="status">
           {busy && busyLabel && <span>{busyLabel}</span>}
           <span>{summary.totalDependencies} packages</span>
           {summary.outdated > 0 && <span>{summary.outdated} outdated</span>}
           {summary.vulnerable > 0 && (
-            <span className="icon-vuln">{summary.vulnerable} vulnerable</span>
+            <span className="severity--vuln">
+              {summary.vulnerable} vulnerable
+            </span>
           )}
           {summary.deprecated > 0 && (
-            <span className="icon-warn">{summary.deprecated} deprecated</span>
+            <span className="severity--deprecated">
+              {summary.deprecated} deprecated
+            </span>
           )}
           {summary.muted > 0 && (
             <span title="Excluded from the outdated count">

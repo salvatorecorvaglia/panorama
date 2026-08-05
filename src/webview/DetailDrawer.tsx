@@ -3,19 +3,28 @@
  * dependency tree that answers "why is this here?".
  */
 
-import { useEffect } from 'react';
+import type { KeyboardEvent } from 'react';
+import { useEffect, useRef } from 'react';
 import type { Dependency, DepNode } from '../core/types.js';
-import { currentVersion, ECOSYSTEM_LABELS, formatBytes } from './format.js';
+import { currentVersion } from '../core/vocabulary.js';
+import { ECOSYSTEM_LABELS, formatBytes } from './format.js';
 import { post } from './vscodeApi.js';
 
 interface Props {
   dep: Dependency;
   why: { roots: DepNode[]; source: 'lockfile' | 'registry' } | undefined;
+  /** Which section the command that opened this drawer wants to land on. */
+  reveal: 'details' | 'why';
   onClose: () => void;
   onUpdate: (dep: Dependency) => void;
 }
 
-export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
+export function DetailDrawer({ dep, why, reveal, onClose, onUpdate }: Props) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const whyRef = useRef<HTMLElement>(null);
+  /** The element that had focus when the drawer opened, to restore on close. */
+  const returnFocusRef = useRef<Element | null>(null);
+
   // Metadata and the dependency tree are fetched lazily — pulling them for
   // every row up front would mean thousands of needless registry calls.
   useEffect(() => {
@@ -23,18 +32,61 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
     post({ type: 'requestWhy', depKey: dep.key });
   }, [dep.key]);
 
+  useEffect(() => {
+    returnFocusRef.current = document.activeElement;
+    return () => {
+      const target = returnFocusRef.current;
+      if (target instanceof HTMLElement && document.contains(target)) {
+        target.focus();
+      }
+    };
+  }, []);
+
+  /*
+   * "Why Is This Installed?" opens this drawer specifically to answer that
+   * question, but the Why tree is the last section — without this the user
+   * lands at the top and has to go looking for what they asked for.
+   *
+   * `dep.key` is in the dependency list so that asking "why" about a second
+   * package reveals the section again rather than leaving the drawer wherever
+   * the previous package left it.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  useEffect(() => {
+    if (reveal === 'why') {
+      whyRef.current?.scrollIntoView({ block: 'start' });
+    } else {
+      headingRef.current?.focus();
+    }
+  }, [reveal, dep.key]);
+
   const openLink = (url: string) => post({ type: 'openExternal', url });
+  const { homepage, repository, changelogUrl } = dep.meta ?? {};
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      onClose();
+    }
+  };
 
   return (
-    <aside className="drawer" aria-label={`Details for ${dep.name}`}>
+    <aside
+      className="drawer"
+      aria-label={`Details for ${dep.name}`}
+      onKeyDown={handleKeyDown}
+    >
       <div className="drawer__title">
-        <h2>{dep.name}</h2>
+        {/* Focusable so opening the drawer moves the caret somewhere sensible. */}
+        <h2 ref={headingRef} tabIndex={-1}>
+          {dep.name}
+        </h2>
         <button className="ghost" onClick={onClose} aria-label="Close details">
           ✕
         </button>
       </div>
 
-      <div className="muted" style={{ marginBottom: 12 }}>
+      <div className="muted drawer__subtitle">
         {ECOSYSTEM_LABELS[dep.ecosystem]} · {dep.projectLabel}
       </div>
 
@@ -52,7 +104,7 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
       )}
 
       {dep.meta?.description && (
-        <p style={{ marginTop: 0 }}>{dep.meta.description}</p>
+        <p className="drawer__desc">{dep.meta.description}</p>
       )}
 
       <section>
@@ -85,7 +137,7 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
         {dep.latest &&
           dep.updateKind !== 'none' &&
           dep.updateKind !== 'unknown' && (
-            <button style={{ marginTop: 10 }} onClick={() => onUpdate(dep)}>
+            <button className="drawer__action" onClick={() => onUpdate(dep)}>
               Update to {dep.latest}
               {dep.updateKind === 'major' ? ' (major)' : ''}
             </button>
@@ -107,49 +159,35 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
           )}
         </dl>
 
-        {(() => {
-          const homepage = dep.meta?.homepage;
-          const repository = dep.meta?.repository;
-          const changelogUrl = dep.meta?.changelogUrl;
-          return (
-            <div
-              style={{
-                display: 'flex',
-                gap: 12,
-                marginTop: 10,
-                flexWrap: 'wrap',
-              }}
-            >
-              {homepage && (
-                <button className="link" onClick={() => openLink(homepage)}>
-                  Homepage
-                </button>
-              )}
-              {repository && (
-                <button className="link" onClick={() => openLink(repository)}>
-                  Repository
-                </button>
-              )}
-              {changelogUrl && (
-                <button className="link" onClick={() => openLink(changelogUrl)}>
-                  Changelog
-                </button>
-              )}
-              <button
-                className="link"
-                onClick={() =>
-                  post({
-                    type: 'openManifest',
-                    manifestPath: dep.manifestPath,
-                    packageName: dep.name,
-                  })
-                }
-              >
-                Open manifest
-              </button>
-            </div>
-          );
-        })()}
+        <div className="drawer__links">
+          {homepage && (
+            <button className="link" onClick={() => openLink(homepage)}>
+              Homepage
+            </button>
+          )}
+          {repository && (
+            <button className="link" onClick={() => openLink(repository)}>
+              Repository
+            </button>
+          )}
+          {changelogUrl && (
+            <button className="link" onClick={() => openLink(changelogUrl)}>
+              Changelog
+            </button>
+          )}
+          <button
+            className="link"
+            onClick={() =>
+              post({
+                type: 'openManifest',
+                manifestPath: dep.manifestPath,
+                packageName: dep.name,
+              })
+            }
+          >
+            Open manifest
+          </button>
+        </div>
       </section>
 
       {dep.vulnerabilities.length > 0 && (
@@ -163,17 +201,14 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
                   {vuln.id}
                 </button>
               </div>
-              <div style={{ marginTop: 4 }}>{vuln.summary}</div>
+              <div className="callout__line">{vuln.summary}</div>
               {vuln.fixedVersion && (
-                <div style={{ marginTop: 4 }}>
+                <div className="callout__line">
                   Fixed in <code>{vuln.fixedVersion}</code>
                 </div>
               )}
               {vuln.aliases.length > 0 && (
-                <div
-                  className="muted"
-                  style={{ marginTop: 4, fontSize: '0.9em' }}
-                >
+                <div className="muted callout__aliases">
                   {vuln.aliases.join(', ')}
                 </div>
               )}
@@ -182,7 +217,7 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
         </section>
       )}
 
-      <section>
+      <section ref={whyRef}>
         <h3>Why is this installed?</h3>
         {why === undefined ? (
           <div className="muted">Resolving…</div>
@@ -193,10 +228,7 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
           </div>
         ) : (
           <>
-            <div
-              className="muted"
-              style={{ marginBottom: 8, fontSize: '0.9em' }}
-            >
+            <div className="muted drawer__why-source">
               {why.source === 'lockfile'
                 ? 'From this project’s lockfile.'
                 : 'Resolved from the registry — no local lockfile was found.'}

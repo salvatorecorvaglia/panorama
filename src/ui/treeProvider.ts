@@ -3,18 +3,26 @@
  * grouped by scope when a project has more than one.
  *
  * The tree is the always-visible companion to the panel — it answers "is
- * anything out of date?" at a glance without giving up editor space.
+ * anything out of date?" at a glance without giving up editor space. Labels,
+ * ordering and severity colours all come from `core/vocabulary.ts` and the
+ * severity map below, so the tree and the panel can never drift into
+ * describing the same package two different ways.
  */
 
 import * as vscode from 'vscode';
 import type { ScanResult } from '../core/scanner.js';
 import type { Dependency, ProjectGroup } from '../core/types.js';
+import {
+  currentVersion,
+  hasUpdate,
+  SCOPE_LABELS,
+  sortByStatus,
+} from '../core/vocabulary.js';
 
-type Node =
+export type Node =
   | { kind: 'project'; group: ProjectGroup }
   | { kind: 'scope'; group: ProjectGroup; scope: string }
-  | { kind: 'dependency'; dep: Dependency }
-  | { kind: 'empty'; message: string };
+  | { kind: 'dependency'; dep: Dependency };
 
 export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
   private readonly emitter = new vscode.EventEmitter<Node | undefined>();
@@ -39,16 +47,8 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
 
   getTreeItem(node: Node): vscode.TreeItem {
     switch (node.kind) {
-      case 'empty': {
-        const item = new vscode.TreeItem(node.message);
-        item.contextValue = 'empty';
-        return item;
-      }
-
       case 'project': {
-        const outdated = node.group.dependencies.filter(
-          (dep) => dep.updateKind !== 'none' && dep.updateKind !== 'unknown',
-        ).length;
+        const outdated = node.group.dependencies.filter(hasUpdate).length;
 
         const item = new vscode.TreeItem(
           node.group.label,
@@ -66,7 +66,8 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
 
       case 'scope': {
         const item = new vscode.TreeItem(
-          SCOPE_LABELS[node.scope] ?? node.scope,
+          SCOPE_LABELS[node.scope as keyof typeof SCOPE_LABELS]?.long ??
+            node.scope,
           vscode.TreeItemCollapsibleState.Collapsed,
         );
         item.iconPath = new vscode.ThemeIcon('symbol-namespace');
@@ -85,9 +86,12 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
         item.iconPath = iconFor(dep);
         item.contextValue = 'dependency';
         item.tooltip = buildTooltip(dep);
+        // Passing the node is what lets the panel open *on this package*
+        // rather than merely opening.
         item.command = {
-          command: 'panorama.open',
+          command: 'panorama.revealDependency',
           title: 'Open in Panorama',
+          arguments: [node],
         };
         return item;
       }
@@ -96,11 +100,6 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
 
   getChildren(node?: Node): Node[] {
     if (!node) {
-      if (this.result.groups.length === 0) {
-        return [
-          { kind: 'empty', message: 'No manifests found in this workspace' },
-        ];
-      }
       return this.result.groups.map((group) => ({
         kind: 'project' as const,
         group,
@@ -114,7 +113,7 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
       // Skip the scope level entirely when there is only one — an extra click
       // for no information.
       if (scopes.length <= 1) {
-        return sortDependencies(node.group.dependencies).map((dep) => ({
+        return sortByStatus(node.group.dependencies).map((dep) => ({
           kind: 'dependency' as const,
           dep,
         }));
@@ -125,7 +124,7 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
     }
 
     if (node.kind === 'scope') {
-      return sortDependencies(
+      return sortByStatus(
         node.group.dependencies.filter((dep) => dep.scope === node.scope),
       ).map((dep) => ({ kind: 'dependency' as const, dep }));
     }
@@ -134,42 +133,17 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
   }
 }
 
-const SCOPE_ORDER = ['prod', 'dev', 'build', 'peer', 'optional'];
-
-const SCOPE_LABELS: Record<string, string> = {
-  prod: 'Production',
-  dev: 'Development',
-  build: 'Build',
-  peer: 'Peer',
-  optional: 'Optional',
-};
-
-/** Problems first, then outdated, then alphabetical. */
-function sortDependencies(dependencies: Dependency[]): Dependency[] {
-  return [...dependencies].sort((a, b) => {
-    const rank = (dep: Dependency) => {
-      if (dep.vulnerabilities.length > 0) return 0;
-      if (dep.meta?.deprecated) return 1;
-      if (dep.updateKind === 'major') return 2;
-      if (dep.updateKind === 'minor' || dep.updateKind === 'patch') return 3;
-      return 4;
-    };
-    return rank(a) - rank(b) || a.name.localeCompare(b.name);
-  });
-}
+const SCOPE_ORDER = Object.keys(SCOPE_LABELS);
 
 function describeVersion(dep: Dependency): string {
-  const current = dep.installed ?? dep.declared;
-  if (
-    dep.updateKind === 'none' ||
-    dep.updateKind === 'unknown' ||
-    !dep.latest
-  ) {
-    return current;
-  }
-  return `${current} → ${dep.latest}`;
+  const current = currentVersion(dep);
+  return hasUpdate(dep) && dep.latest ? `${current} → ${dep.latest}` : current;
 }
 
+/**
+ * The tree half of the severity map declared in `theme.css`. Red means
+ * "vulnerable" and nothing else; a major update is orange in both surfaces.
+ */
 function iconFor(dep: Dependency): vscode.ThemeIcon {
   if (dep.vulnerabilities.length > 0) {
     return new vscode.ThemeIcon('shield', new vscode.ThemeColor('charts.red'));
@@ -187,6 +161,10 @@ function iconFor(dep: Dependency): vscode.ThemeIcon {
         new vscode.ThemeColor('charts.orange'),
       );
     case 'minor':
+      return new vscode.ThemeIcon(
+        'arrow-up',
+        new vscode.ThemeColor('charts.yellow'),
+      );
     case 'patch':
       return new vscode.ThemeIcon(
         'arrow-up',

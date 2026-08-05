@@ -5,7 +5,7 @@
  * which keeps the message handling in one readable place.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HostMessage } from '../core/protocol.js';
 import type {
   Dependency,
@@ -16,13 +16,12 @@ import type {
   ScanSummary,
   SearchResult,
 } from '../core/types.js';
+import { ALL_SCOPES, hasUpdate } from '../core/vocabulary.js';
 import { DepTable, type SortState } from './DepTable.js';
 import { DetailDrawer } from './DetailDrawer.js';
 import { SearchInstall } from './SearchInstall.js';
 import { type Filters, Toolbar } from './Toolbar.js';
 import { loadState, onHostMessage, post, saveState } from './vscodeApi.js';
-
-const ALL_SCOPES: DepScope[] = ['prod', 'dev', 'build', 'peer', 'optional'];
 
 interface PersistedState {
   sort: SortState;
@@ -38,6 +37,31 @@ const EMPTY_SUMMARY: ScanSummary = {
   stale: false,
 };
 
+const NOTICE_TIMEOUT_MS = 8000;
+
+function defaultFilters(scopes?: DepScope[]): Filters {
+  return {
+    text: '',
+    scopes: new Set(scopes ?? ALL_SCOPES),
+    onlyOutdated: false,
+    onlyVulnerable: false,
+    onlyDeprecated: false,
+    hideMuted: false,
+  };
+}
+
+/** Whether anything is currently narrowing the list — drives the empty state. */
+function isFiltering(filters: Filters): boolean {
+  return (
+    filters.text.trim().length > 0 ||
+    filters.scopes.size !== ALL_SCOPES.length ||
+    filters.onlyOutdated ||
+    filters.onlyVulnerable ||
+    filters.onlyDeprecated ||
+    filters.hideMuted
+  );
+}
+
 export function App() {
   const persisted = loadState<PersistedState>();
 
@@ -47,21 +71,21 @@ export function App() {
   const [busyLabel, setBusyLabel] = useState<string | undefined>();
   const [notice, setNotice] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
+  /** True once the host has sent at least one scan result. */
+  const [loaded, setLoaded] = useState(false);
 
   const [sort, setSort] = useState<SortState>(
     persisted?.sort ?? { key: 'status', direction: 'asc' },
   );
-  const [filters, setFilters] = useState<Filters>({
-    text: '',
-    scopes: new Set(persisted?.scopes ?? ALL_SCOPES),
-    onlyOutdated: false,
-    onlyVulnerable: false,
-    onlyDeprecated: false,
-    hideMuted: false,
-  });
+  const [filters, setFilters] = useState<Filters>(() =>
+    defaultFilters(persisted?.scopes),
+  );
 
   const [selectedKey, setSelectedKey] = useState<string | undefined>();
   const [scrollToKey, setScrollToKey] = useState<string | undefined>();
+  const [revealSection, setRevealSection] = useState<'details' | 'why'>(
+    'details',
+  );
   const [whyByKey, setWhyByKey] = useState<
     Record<string, { roots: DepNode[]; source: 'lockfile' | 'registry' }>
   >({});
@@ -72,6 +96,13 @@ export function App() {
   const [searching, setSearching] = useState(false);
   const [activeRequestId, setActiveRequestId] = useState<string | undefined>();
 
+  /**
+   * Bumped when lazily fetched metadata is merged into an existing row. See the
+   * `depDetails` case below for why that merge does not replace `groups`.
+   */
+  const [, setDetailsVersion] = useState(0);
+  const groupsRef = useRef<ProjectGroup[]>([]);
+
   // Persist the bits of UI state worth surviving a reload.
   useEffect(() => {
     saveState<PersistedState>({ sort, scopes: [...filters.scopes] });
@@ -81,9 +112,37 @@ export function App() {
     const dispose = onHostMessage((message: HostMessage) => {
       switch (message.type) {
         case 'state':
+          groupsRef.current = message.groups;
           setGroups(message.groups);
           setSummary(message.summary);
+          setLoaded(true);
           break;
+
+        case 'depDetails': {
+          /*
+           * Merged in place instead of rebuilding `groups`.
+           *
+           * A new `groups` array would recompute the sort, so a row that gains
+           * a size or a deprecation notice while the table is sorted by Size or
+           * Status would jump out from under the pointer of the user who just
+           * clicked it. Mutating the row and forcing a render keeps the order
+           * the user is looking at.
+           */
+          for (const group of groupsRef.current) {
+            const dep = group.dependencies.find(
+              (candidate) => candidate.key === message.depKey,
+            );
+            if (!dep) continue;
+            // Preserve any deprecation notice the version lookup already found.
+            dep.meta = {
+              ...message.meta,
+              deprecated: message.meta.deprecated ?? dep.meta?.deprecated,
+            };
+            setDetailsVersion((version) => version + 1);
+            break;
+          }
+          break;
+        }
 
         case 'scanning':
           setBusy(message.busy);
@@ -125,6 +184,7 @@ export function App() {
         case 'focusDependency':
           setSelectedKey(message.depKey);
           setScrollToKey(message.depKey);
+          setRevealSection(message.reveal);
           break;
       }
     });
@@ -133,15 +193,17 @@ export function App() {
     return dispose;
   }, []);
 
-  // Auto-dismiss transient banners so they do not pile up.
+  /*
+   * Notices are transient chatter and dismiss themselves; errors do not. An
+   * error that disappears on its own is one the user may never have read, and
+   * the two used to share a single timer, so a notice could cut an error's
+   * visible life to a second.
+   */
   useEffect(() => {
-    if (!notice && !error) return;
-    const timer = setTimeout(() => {
-      setNotice(undefined);
-      setError(undefined);
-    }, 8000);
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(undefined), NOTICE_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [notice, error]);
+  }, [notice]);
 
   const filteredGroups = useMemo(() => {
     const needle = filters.text.trim().toLowerCase();
@@ -152,16 +214,7 @@ export function App() {
         dependencies: group.dependencies.filter((dep) => {
           if (!filters.scopes.has(dep.scope)) return false;
           if (needle && !dep.name.toLowerCase().includes(needle)) return false;
-          if (
-            filters.onlyOutdated &&
-            !(
-              dep.updateKind === 'patch' ||
-              dep.updateKind === 'minor' ||
-              dep.updateKind === 'major'
-            )
-          ) {
-            return false;
-          }
+          if (filters.onlyOutdated && !hasUpdate(dep)) return false;
           if (filters.onlyVulnerable && dep.vulnerabilities.length === 0)
             return false;
           if (filters.onlyDeprecated && !dep.meta?.deprecated) return false;
@@ -231,18 +284,80 @@ export function App() {
     [groups],
   );
 
-  if (groups.length === 0 && !busy) {
+  const handleSelect = useCallback(
+    (dep: Dependency) => {
+      setRevealSection('details');
+      setSelectedKey(dep.key === selectedKey ? undefined : dep.key);
+    },
+    [selectedKey],
+  );
+
+  // A command asked to reveal a row; once the table has moved there, forget it,
+  // or the next unrelated re-render would drag the viewport back.
+  const handleScrollHandled = useCallback(() => setScrollToKey(undefined), []);
+
+  const searchPanel = installOpen ? (
+    <SearchInstall
+      groups={groups}
+      results={searchResults}
+      error={searchError}
+      searching={searching}
+      onSearch={handleSearch}
+      onInstall={(name, version, scope, manifestPath) =>
+        post({ type: 'install', name, version, scope, manifestPath })
+      }
+      onUninstall={handleUninstallByName}
+      onClose={() => setInstallOpen(false)}
+    />
+  ) : null;
+
+  // Rendered only when there is something to say — an always-present wrapper
+  // would leave a strip of padding above the table.
+  const banners = (error || notice) && (
+    <div className="banners">
+      {error && (
+        <div className="callout callout--error banner" role="alert">
+          <div className="banner__text">{error}</div>
+          <button
+            className="ghost"
+            aria-label="Dismiss error"
+            onClick={() => setError(undefined)}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      {notice && (
+        <div className="callout callout--info banner" role="status">
+          <div className="banner__text">{notice}</div>
+          <button
+            className="ghost"
+            aria-label="Dismiss notice"
+            onClick={() => setNotice(undefined)}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  // A workspace with no manifests at all. Registry search still works here —
+  // only installing needs a manifest — so the search panel stays reachable.
+  if (groups.length === 0 && loaded && !busy) {
     return (
       <div className="app">
+        {searchPanel}
+        {banners}
         <div className="empty">
           <h2>No dependency manifests found</h2>
           <p>
             Panorama looks for package.json, pyproject.toml, requirements.txt,
-            Cargo.toml, go.mod, composer.json, pom.xml and build.gradle anywhere
-            in this workspace.
+            Cargo.toml, go.mod, composer.json, pom.xml, build.gradle and
+            build.gradle.kts anywhere in this workspace.
           </p>
           <button
-            style={{ marginTop: 12 }}
+            className="empty__action"
             onClick={() => post({ type: 'refresh' })}
           >
             Scan again
@@ -266,30 +381,9 @@ export function App() {
         onCheckUpdates={() => post({ type: 'checkUpdates' })}
       />
 
-      {error && (
-        <div className="callout callout--error" style={{ margin: 12 }}>
-          {error}
-        </div>
-      )}
-      {notice && (
-        <div className="callout callout--info" style={{ margin: 12 }}>
-          {notice}
-        </div>
-      )}
+      {banners}
 
-      {installOpen && (
-        <SearchInstall
-          groups={groups}
-          results={searchResults}
-          error={searchError}
-          searching={searching}
-          onSearch={handleSearch}
-          onInstall={(name, version, scope, manifestPath) =>
-            post({ type: 'install', name, version, scope, manifestPath })
-          }
-          onUninstall={handleUninstallByName}
-        />
-      )}
+      {searchPanel}
 
       <div className="app__body">
         <div className="app__main">
@@ -298,9 +392,7 @@ export function App() {
             sort={sort}
             onSortChange={setSort}
             selectedKey={selectedKey}
-            onSelect={(dep) =>
-              setSelectedKey(dep.key === selectedKey ? undefined : dep.key)
-            }
+            onSelect={handleSelect}
             onUpdate={handleUpdate}
             onUninstall={handleUninstall}
             onUpdateAll={(manifestPath) =>
@@ -310,6 +402,10 @@ export function App() {
               post({ type: 'toggleMute', depKey: dep.key })
             }
             scrollToKey={scrollToKey}
+            onScrollHandled={handleScrollHandled}
+            loading={!loaded || (busy && groups.length === 0)}
+            filtering={isFiltering(filters)}
+            onClearFilters={() => setFilters(defaultFilters())}
           />
         </div>
 
@@ -317,6 +413,7 @@ export function App() {
           <DetailDrawer
             dep={selected}
             why={whyByKey[selected.key]}
+            reveal={revealSection}
             onClose={() => setSelectedKey(undefined)}
             onUpdate={handleUpdate}
           />

@@ -34,6 +34,14 @@ export interface PanoramaApi {
   muteList: MuteList;
 }
 
+/**
+ * Shown by every command that needs a package and cannot find one. Identical
+ * wording and identical consequences — none of them reveal an unrelated panel
+ * as a side effect of failing.
+ */
+const NO_SELECTION_MESSAGE =
+  'Select a package in the Panorama panel or sidebar first.';
+
 export function activate(context: vscode.ExtensionContext): PanoramaApi {
   const version =
     (context.extension.packageJSON as { version?: string }).version ?? '0.0.0';
@@ -174,6 +182,20 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       panel.revealSearch();
     }),
 
+    // Fired by clicking a package in the tree, so the panel opens focused on
+    // that package instead of merely opening.
+    vscode.commands.registerCommand(
+      'panorama.revealDependency',
+      (item?: unknown) => {
+        const dep = dependencyFromTreeItem(item);
+        if (!dep) {
+          panel.reveal();
+          return;
+        }
+        panel.revealDependency(dep.key, 'details');
+      },
+    ),
+
     vscode.commands.registerCommand(
       'panorama.toggleMute',
       async (item?: unknown) => {
@@ -181,9 +203,7 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
           dependencyFromTreeItem(item) ??
           findByKey(panel.currentResult, panel.lastSelectedKey);
         if (!dep) {
-          void vscode.window.showInformationMessage(
-            'Select a package in the Panorama panel or sidebar first.',
-          );
+          void vscode.window.showInformationMessage(NO_SELECTION_MESSAGE);
           return;
         }
         const nowMuted = await muteList.toggle(dep);
@@ -239,10 +259,7 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
         dependencyFromTreeItem(item) ??
         findByKey(panel.currentResult, panel.lastSelectedKey);
       if (!dep) {
-        void vscode.window.showInformationMessage(
-          'Select a package in the Panorama panel or sidebar first.',
-        );
-        panel.reveal();
+        void vscode.window.showInformationMessage(NO_SELECTION_MESSAGE);
         return;
       }
       panel.revealDependency(dep.key, 'why');

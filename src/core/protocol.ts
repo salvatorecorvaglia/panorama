@@ -9,6 +9,7 @@ import type {
   DepNode,
   DepScope,
   Ecosystem,
+  PackageMeta,
   ProjectGroup,
   ScanSummary,
   SearchResult,
@@ -45,6 +46,14 @@ export type WebviewMessage =
 /** Messages the extension host sends to the webview. */
 export type HostMessage =
   | { type: 'state'; groups: ProjectGroup[]; summary: ScanSummary }
+  /**
+   * Lazily fetched metadata for one package.
+   *
+   * Deliberately narrower than `state`: re-posting the whole list when the
+   * drawer fills in a size or a licence would resort the table under the
+   * pointer of the user who just clicked a row.
+   */
+  | { type: 'depDetails'; depKey: string; meta: PackageMeta }
   | { type: 'scanning'; busy: boolean; label?: string }
   | { type: 'searchResults'; requestId: string; results: SearchResult[] }
   | { type: 'searchError'; requestId: string; message: string }

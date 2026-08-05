@@ -17,6 +17,7 @@
     "./**/*.ts",
     "./**/*.tsx",
     "../core/protocol.ts",
-    "../core/types.ts"
+    "../core/types.ts",
+    "../core/vocabulary.ts"
   ]
 }

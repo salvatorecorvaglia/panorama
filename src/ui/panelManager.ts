@@ -20,6 +20,7 @@ import type {
   Ecosystem,
   ProjectGroup,
 } from '../core/types.js';
+import { hasUpdate } from '../core/vocabulary.js';
 import type { ProviderContext } from '../providers/provider.js';
 import { providerFor, providerForPath } from '../providers/registry.js';
 import { TerminalRunner } from './terminalRunner.js';
@@ -40,6 +41,17 @@ export class PanelManager implements vscode.Disposable {
   private readonly searches = new Map<string, AbortController>();
   private readonly terminal = new TerminalRunner();
   private busy = false;
+  /** False between creating a panel and the React app announcing itself. */
+  private webviewReady = false;
+  /**
+   * A reveal requested before the webview finished loading.
+   *
+   * Opening the panel and telling it what to show happen in the same tick, but
+   * a message posted to a webview that has not loaded yet is simply dropped —
+   * which is how "click a package in the tree" used to open the panel on
+   * nothing in particular.
+   */
+  private pendingReveal: HostMessage | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -84,6 +96,8 @@ export class PanelManager implements vscode.Disposable {
 
     this.panel.onDidDispose(() => {
       this.panel = undefined;
+      this.webviewReady = false;
+      this.pendingReveal = undefined;
       for (const controller of this.searches.values()) {
         controller.abort();
       }
@@ -114,7 +128,7 @@ export class PanelManager implements vscode.Disposable {
   /** Opens the panel with the registry search UI focused. */
   revealSearch(): void {
     this.reveal();
-    this.post({ type: 'focusSearch' });
+    this.postOrQueue({ type: 'focusSearch' });
   }
 
   /**
@@ -124,7 +138,7 @@ export class PanelManager implements vscode.Disposable {
    */
   revealDependency(depKey: string, section: 'details' | 'why'): void {
     this.reveal();
-    this.post({ type: 'focusDependency', depKey, reveal: section });
+    this.postOrQueue({ type: 'focusDependency', depKey, reveal: section });
   }
 
   /** The row most recently opened in the drawer, for command-palette actions. */
@@ -155,16 +169,34 @@ export class PanelManager implements vscode.Disposable {
     void this.panel?.webview.postMessage(message);
   }
 
+  /** Sends now if the webview can hear it, otherwise on its `ready`. */
+  private postOrQueue(message: HostMessage): void {
+    if (this.webviewReady) {
+      this.post(message);
+      return;
+    }
+    this.pendingReveal = message;
+  }
+
   private async handleMessage(message: WebviewMessage): Promise<void> {
     switch (message.type) {
-      case 'ready':
+      case 'ready': {
+        this.webviewReady = true;
         this.post({
           type: 'state',
           groups: this.latest.groups,
           summary: this.latest.summary,
         });
         this.post({ type: 'scanning', busy: this.busy });
+        // Anything asked for while the panel was still loading, replayed now
+        // that there is something listening — and after `state`, so the row it
+        // names already exists.
+        if (this.pendingReveal) {
+          this.post(this.pendingReveal);
+          this.pendingReveal = undefined;
+        }
         return;
+      }
 
       case 'refresh':
         await vscode.commands.executeCommand('panorama.refresh');
@@ -349,6 +381,20 @@ export class PanelManager implements vscode.Disposable {
     if (!found) return;
     const { dep } = found;
 
+    // Bulk updates already ask before crossing a major boundary; a single one
+    // is no less likely to break the build, so it asks too.
+    if (dep.updateKind === 'major') {
+      const choice = await vscode.window.showWarningMessage(
+        `Update ${dep.name} to ${toVersion}?`,
+        {
+          modal: true,
+          detail: `This is a major upgrade from ${dep.installed ?? dep.declared} and may contain breaking changes.`,
+        },
+        'Update',
+      );
+      if (choice !== 'Update') return;
+    }
+
     const provider = providerFor(dep.ecosystem);
     const toolchain = await provider.detectToolchain(
       dep.manifestPath,
@@ -386,9 +432,7 @@ export class PanelManager implements vscode.Disposable {
     );
     if (!group) return;
 
-    const outdated = group.dependencies.filter(
-      (dep) => dep.updateKind !== 'none' && dep.updateKind !== 'unknown',
-    );
+    const outdated = group.dependencies.filter(hasUpdate);
     if (outdated.length === 0) {
       this.post({
         type: 'notice',
@@ -480,11 +524,10 @@ export class PanelManager implements vscode.Disposable {
           ...meta,
           deprecated: meta.deprecated ?? found.dep.meta?.deprecated,
         };
-        this.post({
-          type: 'state',
-          groups: this.latest.groups,
-          summary: this.latest.summary,
-        });
+        // Deliberately not a full `state` push: replacing the whole list would
+        // re-sort it, and a row that gains a size while the table is sorted by
+        // Size would move out from under the user who just clicked it.
+        this.post({ type: 'depDetails', depKey, meta: found.dep.meta });
       }
     } catch (error) {
       this.post({ type: 'error', message: describeError(error) });
