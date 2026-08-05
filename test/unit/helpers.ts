@@ -1,0 +1,57 @@
+/**
+ * A ProviderContext backed by an in-memory filesystem.
+ *
+ * Providers never import `vscode`, which is exactly what lets these tests run
+ * as plain Node with no editor and no network.
+ */
+
+import type { ProviderContext } from '../../src/providers/provider.js';
+import { TtlCache, type Memento } from '../../src/core/cache.js';
+import type { HttpClient } from '../../src/core/http.js';
+
+class MapMemento implements Memento {
+  private readonly store = new Map<string, unknown>();
+
+  get<T>(key: string): T | undefined {
+    return this.store.get(key) as T | undefined;
+  }
+
+  update(key: string, value: unknown): Thenable<void> {
+    this.store.set(key, value);
+    return Promise.resolve();
+  }
+}
+
+export function makeContext(files: Record<string, string> = {}): ProviderContext {
+  const http = {
+    getJson: () => Promise.reject(new Error('network disabled in tests')),
+    postJson: () => Promise.reject(new Error('network disabled in tests')),
+    getText: () => Promise.reject(new Error('network disabled in tests')),
+    setContactEmail: () => undefined,
+  } as unknown as HttpClient;
+
+  return {
+    http,
+    cache: new TtlCache(new MapMemento()),
+    readFile: (absolutePath: string) => Promise.resolve(files[absolutePath] ?? null),
+    exists: (absolutePath: string) =>
+      Promise.resolve(
+        Object.keys(files).some(
+          (key) => key === absolutePath || key.startsWith(absolutePath + '/'),
+        ),
+      ),
+    registryOverride: () => undefined,
+    preferredToolchain: () => 'auto',
+  };
+}
+
+/** Finds a parsed dependency by name, failing loudly when it is missing. */
+export function findDep<T extends { name: string }>(dependencies: T[], name: string): T {
+  const found = dependencies.find((dep) => dep.name === name);
+  if (!found) {
+    throw new Error(
+      `Expected a dependency named "${name}", got: ${dependencies.map((d) => d.name).join(', ')}`,
+    );
+  }
+  return found;
+}

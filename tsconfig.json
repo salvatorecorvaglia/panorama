@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    // esbuild bundles the host into a single CommonJS file, so we typecheck
+    // with bundler resolution — that lets us consume ESM-only dependencies
+    // (smol-toml) that Node16 resolution would reject.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "outDir": "out",
+    "rootDir": ".",
+    "sourceMap": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "dist", "out", "src/webview/**", "test/fixtures/**"]
+}

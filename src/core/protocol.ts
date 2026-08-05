@@ -1,0 +1,65 @@
+/**
+ * The single source of truth for host <-> webview messaging.
+ *
+ * Both sides import these types, so a mismatch is a compile error rather than a
+ * runtime surprise. Like `types.ts`, this file must not import `vscode`.
+ */
+
+import type {
+  DepNode,
+  DepScope,
+  Ecosystem,
+  ProjectGroup,
+  ScanSummary,
+  SearchResult,
+} from './types.js';
+
+/** Messages the webview sends to the extension host. */
+export type WebviewMessage =
+  | { type: 'ready' }
+  | { type: 'refresh' }
+  | { type: 'checkUpdates' }
+  | { type: 'search'; query: string; ecosystem: Ecosystem | 'all'; requestId: string }
+  | { type: 'cancelSearch'; requestId: string }
+  | {
+      type: 'install';
+      name: string;
+      version: string | null;
+      scope: DepScope;
+      manifestPath: string;
+    }
+  | { type: 'update'; depKey: string; toVersion: string }
+  | { type: 'updateAll'; manifestPath: string }
+  | { type: 'uninstall'; depKey: string }
+  | { type: 'requestDetails'; depKey: string }
+  | { type: 'requestWhy'; depKey: string }
+  | { type: 'toggleMute'; depKey: string }
+  | { type: 'openExternal'; url: string }
+  | { type: 'openManifest'; manifestPath: string; packageName?: string };
+
+/** Messages the extension host sends to the webview. */
+export type HostMessage =
+  | { type: 'state'; groups: ProjectGroup[]; summary: ScanSummary }
+  | { type: 'scanning'; busy: boolean; label?: string }
+  | { type: 'searchResults'; requestId: string; results: SearchResult[] }
+  | { type: 'searchError'; requestId: string; message: string }
+  | { type: 'whyTree'; depKey: string; roots: DepNode[]; source: 'lockfile' | 'registry' }
+  | { type: 'error'; message: string }
+  | { type: 'notice'; message: string }
+  /** Opens the registry search UI — fired by the `panorama.searchInstall` command. */
+  | { type: 'focusSearch' }
+  /**
+   * Selects a package and opens its detail drawer on the "why" section — fired
+   * by `panorama.showWhy`, including from the tree view's context menu.
+   */
+  | { type: 'focusDependency'; depKey: string; reveal: 'details' | 'why' };
+
+/**
+ * The subset of the VS Code webview API we use. Declared here so the React app
+ * has a type for `acquireVsCodeApi()` without pulling in `@types/vscode`.
+ */
+export interface VsCodeApi {
+  postMessage(message: WebviewMessage): void;
+  getState<T>(): T | undefined;
+  setState<T>(state: T): void;
+}

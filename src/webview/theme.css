@@ -1,0 +1,583 @@
+/*
+ * Every colour here is a VS Code theme variable. Nothing is hardcoded, which is
+ * what makes Panorama match light, dark, high-contrast and custom themes with
+ * no theme-detection code at all.
+ */
+
+:root {
+  --panorama-gap: 12px;
+  --panorama-radius: 4px;
+  --panorama-row-height: 34px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background-color: var(--vscode-editor-background);
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Layout ---------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app__body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.app__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Toolbar ---------- */
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--panorama-gap);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background-color: var(--vscode-editor-background);
+}
+
+.toolbar__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolbar__search {
+  flex: 1;
+  min-width: 180px;
+}
+
+.toolbar__summary {
+  display: flex;
+  gap: 14px;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+  align-items: center;
+}
+
+.toolbar__spacer {
+  flex: 1;
+}
+
+/* ---------- Controls ---------- */
+
+input[type='text'],
+input[type='search'],
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--vscode-input-foreground);
+  background-color: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  border-radius: var(--panorama-radius);
+  padding: 5px 8px;
+  width: 100%;
+}
+
+input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+input:focus,
+select:focus,
+button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+select {
+  width: auto;
+  cursor: pointer;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--vscode-button-foreground);
+  background-color: var(--vscode-button-background);
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: var(--panorama-radius);
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:hover:not(:disabled) {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.secondary {
+  color: var(--vscode-button-secondaryForeground);
+  background-color: var(--vscode-button-secondaryBackground);
+}
+
+button.secondary:hover:not(:disabled) {
+  background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--vscode-foreground);
+  border-color: transparent;
+  padding: 3px 8px;
+}
+
+button.ghost:hover:not(:disabled) {
+  background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+button.danger {
+  background-color: transparent;
+  color: var(--vscode-errorForeground);
+  border-color: var(--vscode-errorForeground);
+}
+
+button.danger:hover:not(:disabled) {
+  background-color: var(--vscode-inputValidation-errorBackground);
+}
+
+/* ---------- Filter chips ---------- */
+
+.chip {
+  border: 1px solid var(--vscode-contrastBorder, transparent);
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.85em;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.chip[aria-pressed='true'] {
+  opacity: 1;
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+/* ---------- Table ---------- */
+
+.table {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.table__header {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.table__header button {
+  all: unset;
+  cursor: pointer;
+  padding: 8px 10px;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table__header button:hover {
+  color: var(--vscode-foreground);
+}
+
+.table__group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px 6px;
+  font-weight: 600;
+  background-color: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.table__group-meta {
+  font-weight: normal;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  height: var(--panorama-row-height);
+  border-bottom: 1px solid var(--vscode-editorGroup-border, transparent);
+  cursor: pointer;
+}
+
+.row:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.row[aria-selected='true'] {
+  background-color: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+.cell {
+  padding: 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell--name {
+  flex: 3;
+  min-width: 140px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cell--scope {
+  flex: 0 0 90px;
+}
+
+.cell--version {
+  flex: 0 0 110px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell--latest {
+  flex: 0 0 130px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell--size {
+  flex: 0 0 90px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--vscode-descriptionForeground);
+}
+
+.cell--license {
+  flex: 0 0 110px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.cell--actions {
+  flex: 0 0 190px;
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* ---------- Status colouring ---------- */
+
+.update--major {
+  color: var(--vscode-charts-red);
+  font-weight: 600;
+}
+
+.update--minor {
+  color: var(--vscode-charts-yellow);
+}
+
+.update--patch {
+  color: var(--vscode-charts-blue);
+}
+
+.update--none {
+  color: var(--vscode-descriptionForeground);
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.78em;
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.badge--dev {
+  background-color: var(--vscode-charts-purple);
+  color: var(--vscode-editor-background);
+}
+
+.badge--build {
+  background-color: var(--vscode-charts-orange);
+  color: var(--vscode-editor-background);
+}
+
+.badge--optional,
+.badge--peer,
+.badge--muted {
+  background-color: transparent;
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid var(--vscode-panel-border);
+}
+
+.badge--workspace {
+  background-color: transparent;
+  color: var(--vscode-textLink-foreground);
+  border: 1px solid var(--vscode-textLink-foreground);
+  font-weight: normal;
+}
+
+/*
+ * Muted rows stay legible rather than being hidden: the point is to remember
+ * what you chose to skip, not to make it disappear.
+ */
+.row--muted .cell--name > span:not(.badge),
+.row--muted .cell--latest {
+  opacity: 0.55;
+}
+
+.icon-warn {
+  color: var(--vscode-charts-yellow);
+}
+
+.icon-vuln {
+  color: var(--vscode-charts-red);
+}
+
+.muted {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ---------- Drawer ---------- */
+
+.drawer {
+  width: 380px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--vscode-panel-border);
+  overflow-y: auto;
+  padding: var(--panorama-gap);
+  background-color: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+
+.drawer__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.drawer__title h2 {
+  margin: 0;
+  font-size: 1.15em;
+  word-break: break-all;
+}
+
+.drawer section {
+  margin-top: 16px;
+}
+
+.drawer h3 {
+  margin: 0 0 6px;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.drawer dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 0.92em;
+}
+
+.drawer dt {
+  color: var(--vscode-descriptionForeground);
+}
+
+.drawer dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+a,
+.link {
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  text-decoration: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+}
+
+a:hover,
+.link:hover {
+  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
+}
+
+.callout {
+  padding: 8px 10px;
+  border-radius: var(--panorama-radius);
+  border-left: 3px solid;
+  font-size: 0.92em;
+  margin-bottom: 8px;
+}
+
+.callout--warn {
+  border-color: var(--vscode-charts-yellow);
+  background-color: var(--vscode-inputValidation-warningBackground);
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground));
+}
+
+.callout--error {
+  border-color: var(--vscode-charts-red);
+  background-color: var(--vscode-inputValidation-errorBackground);
+  color: var(--vscode-inputValidation-errorForeground, var(--vscode-foreground));
+}
+
+.callout--info {
+  border-color: var(--vscode-charts-blue);
+  background-color: var(--vscode-textBlockQuote-background);
+}
+
+/* ---------- Why tree ---------- */
+
+.tree {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.9em;
+  line-height: 1.6;
+}
+
+.tree ul {
+  list-style: none;
+  margin: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--vscode-tree-indentGuidesStroke);
+}
+
+.tree > ul {
+  padding-left: 0;
+  border-left: none;
+}
+
+/* ---------- Search & install ---------- */
+
+.search-panel {
+  border-bottom: 1px solid var(--vscode-panel-border);
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.search-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-editorGroup-border, transparent);
+}
+
+.search-result:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.search-result__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-result__name {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-result__desc {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ---------- Empty & loading states ---------- */
+
+.empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+}
+
+.empty h2 {
+  color: var(--vscode-foreground);
+  font-size: 1.1em;
+  margin-bottom: 6px;
+}
+
+.progress {
+  height: 2px;
+  background-color: var(--vscode-progressBar-background);
+  animation: indeterminate 1.4s ease-in-out infinite;
+  transform-origin: left;
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  50% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress {
+    animation: none;
+    opacity: 0.8;
+  }
+}
