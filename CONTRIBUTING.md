@@ -10,7 +10,7 @@ This document provides guidelines and instructions for setting up your local env
 
 Before you start, ensure you have the following installed on your system:
 
-- **Node.js**: `v18.0.0` or higher
+- **Node.js**: `v22.13.0` or higher
 - **pnpm**: `v11.17.0` or higher (managed via `packageManager` in `package.json`)
 - **VS Code**: `v1.90.0` or higher
 

@@ -11,6 +11,7 @@
     "url": "https://github.com/salvatorecorvaglia/panorama"
   },
   "engines": {
+    "node": ">=22.13.0",
     "vscode": "^1.90.0"
   },
   "categories": [
