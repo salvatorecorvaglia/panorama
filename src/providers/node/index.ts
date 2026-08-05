@@ -421,9 +421,9 @@ function scopeFlags(toolchain: ToolchainId, scope: DepScope): string[] {
   }
 }
 
-/** Scoped names must keep their slash unescaped for the registry to match. */
+/** Encode scoped package names for npm registry API while preserving the leading '@'. */
 function encodeName(name: string): string {
-  return name.startsWith('@') ? name.replace('/', '%2f') : name;
+  return encodeURIComponent(name).replace(/^%40/, '@');
 }
 
 /** Runs `worker` over `items` with a bounded number in flight. */

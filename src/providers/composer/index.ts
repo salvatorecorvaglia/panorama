@@ -34,7 +34,7 @@ const REPO = 'https://repo.packagist.org';
 
 /** Composer names are always `vendor/package`, lowercase. */
 const NAME_PATTERN =
-  /^[a-z0-9]([_.-]?[a-z0-9]+)*\/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$/;
+  /^[a-z0-9]+(?:[_.-][a-z0-9]+)*\/[a-z0-9]+(?:(?:[_.]|-{1,2})[a-z0-9]+)*$/;
 
 /**
  * Platform requirements are not packages — `php`, `ext-*` and `composer-*`

@@ -32,7 +32,7 @@ import { changelogUrlFor } from '../shared/repository.js';
 const PROXY = 'https://proxy.golang.org';
 
 /** A module path is a slash-separated set of domain-ish segments. */
-const MODULE_PATTERN = /^[a-zA-Z0-9][\w.~-]*(?:\.[\w.~-]+)*(?:\/[\w.~+-]+)*$/;
+const MODULE_PATTERN = /^[a-zA-Z0-9][\w.~-]*(?:\/[\w.~+-]+)*$/;
 
 export class GoProvider implements EcosystemProvider {
   readonly id = 'golang' as const;
