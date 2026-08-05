@@ -100,12 +100,14 @@ export class TerminalRunner implements vscode.Disposable {
     }
 
     return new Promise((resolve) => {
-      const listener = vscode.window.onDidChangeTerminalShellIntegration((event) => {
-        if (event.terminal !== terminal) return;
-        listener.dispose();
-        clearTimeout(timer);
-        resolve(event.shellIntegration);
-      });
+      const listener = vscode.window.onDidChangeTerminalShellIntegration(
+        (event) => {
+          if (event.terminal !== terminal) return;
+          listener.dispose();
+          clearTimeout(timer);
+          resolve(event.shellIntegration);
+        },
+      );
 
       const timer = setTimeout(() => {
         listener.dispose();

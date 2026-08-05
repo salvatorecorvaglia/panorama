@@ -10,23 +10,23 @@
  */
 
 import * as path from 'node:path';
+import { cacheKey, TTL } from '../../core/cache.js';
 import type {
-  DepScope,
   Dependency,
+  DepScope,
   PackageMeta,
   ParsedManifest,
   SearchResult,
   Toolchain,
 } from '../../core/types.js';
-import { cacheKey, TTL } from '../../core/cache.js';
+import { mapWithConcurrency } from '../node/index.js';
 import {
-  dependencyKey,
   type Command,
+  dependencyKey,
   type EcosystemProvider,
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { mapWithConcurrency } from '../node/index.js';
 import { changelogUrlFor } from '../shared/repository.js';
 
 const PROXY = 'https://proxy.golang.org';
@@ -45,20 +45,30 @@ export class GoProvider implements EcosystemProvider {
     return name.length <= 512 && MODULE_PATTERN.test(name);
   }
 
-  async parse(absolutePath: string, text: string, _ctx: ProviderContext): Promise<ParsedManifest> {
+  async parse(
+    absolutePath: string,
+    text: string,
+    _ctx: ProviderContext,
+  ): Promise<ParsedManifest> {
     const moduleName = /^module\s+(\S+)/m.exec(text)?.[1];
-    const projectLabel = moduleName ?? path.basename(path.dirname(absolutePath));
+    const projectLabel =
+      moduleName ?? path.basename(path.dirname(absolutePath));
     const dependencies: Dependency[] = [];
     const seen = new Set<string>();
 
     // `require` appears both as a block and as single lines. Handle both, and
     // treat the `// indirect` marker as our "not a direct dependency" signal.
-    const requireBlocks = [...text.matchAll(/require\s*\(([\s\S]*?)\)/g)].map((m) => m[1]);
-    const singleLines = [...text.matchAll(/^require\s+(\S+)\s+(\S+)(.*)$/gm)].map(
-      (m) => `${m[1]} ${m[2]}${m[3]}`,
+    const requireBlocks = [...text.matchAll(/require\s*\(([\s\S]*?)\)/g)].map(
+      (m) => m[1],
     );
+    const singleLines = [
+      ...text.matchAll(/^require\s+(\S+)\s+(\S+)(.*)$/gm),
+    ].map((m) => `${m[1]} ${m[2]}${m[3]}`);
 
-    const lines = [...requireBlocks.flatMap((block) => block.split(/\r?\n/)), ...singleLines];
+    const lines = [
+      ...requireBlocks.flatMap((block) => block.split(/\r?\n/)),
+      ...singleLines,
+    ];
 
     for (const rawLine of lines) {
       const line = rawLine.trim();
@@ -89,10 +99,18 @@ export class GoProvider implements EcosystemProvider {
       });
     }
 
-    return { ecosystem: 'golang', path: absolutePath, name: projectLabel, dependencies };
+    return {
+      ecosystem: 'golang',
+      path: absolutePath,
+      name: projectLabel,
+      dependencies,
+    };
   }
 
-  async detectToolchain(manifestPath: string, _ctx: ProviderContext): Promise<Toolchain> {
+  async detectToolchain(
+    manifestPath: string,
+    _ctx: ProviderContext,
+  ): Promise<Toolchain> {
     return { id: 'go', ecosystem: 'golang', cwd: path.dirname(manifestPath) };
   }
 
@@ -117,12 +135,19 @@ export class GoProvider implements EcosystemProvider {
         // omits versions the proxy has not cached, so we merge both.
         const [latest, list] = await Promise.all([
           ctx.http
-            .getJson<{ Version: string }>(`${PROXY}/${escaped}/@latest`, { signal })
+            .getJson<{ Version: string }>(`${PROXY}/${escaped}/@latest`, {
+              signal,
+            })
             .catch(() => undefined),
-          ctx.http.getText(`${PROXY}/${escaped}/@v/list`, { signal }).catch(() => ''),
+          ctx.http
+            .getText(`${PROXY}/${escaped}/@v/list`, { signal })
+            .catch(() => ''),
         ]);
 
-        const versions = list.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        const versions = list
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
         if (latest?.Version && !versions.includes(latest.Version)) {
           versions.push(latest.Version);
         }
@@ -166,7 +191,11 @@ export class GoProvider implements EcosystemProvider {
    * Go has no search API. If the query looks like a module path we verify it
    * against the proxy; otherwise the UI offers a pkg.go.dev link instead.
    */
-  async search(query: string, ctx: ProviderContext, signal?: AbortSignal): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    ctx: ProviderContext,
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]> {
     const trimmed = query.trim();
     if (!this.isValidPackageName(trimmed) || !trimmed.includes('/')) {
       return [];
@@ -198,10 +227,18 @@ export class GoProvider implements EcosystemProvider {
   ): Command | null {
     if (!this.isValidPackageName(name)) return null;
     const spec = version ? `${name}@${version}` : `${name}@latest`;
-    return { argv: ['go', 'get', spec], cwd: toolchain.cwd, description: `Get ${spec}` };
+    return {
+      argv: ['go', 'get', spec],
+      cwd: toolchain.cwd,
+      description: `Get ${spec}`,
+    };
   }
 
-  updateCommand(toolchain: Toolchain, dep: Dependency, toVersion: string): Command | null {
+  updateCommand(
+    toolchain: Toolchain,
+    dep: Dependency,
+    toVersion: string,
+  ): Command | null {
     return this.installCommand(toolchain, dep.name, toVersion, dep.scope);
   }
 
@@ -237,7 +274,10 @@ export function escapeModulePath(modulePath: string): string {
 function repositoryFromModulePath(modulePath: string): string | undefined {
   const segments = modulePath.split('/');
   const host = segments[0];
-  if (['github.com', 'gitlab.com', 'bitbucket.org'].includes(host) && segments.length >= 3) {
+  if (
+    ['github.com', 'gitlab.com', 'bitbucket.org'].includes(host) &&
+    segments.length >= 3
+  ) {
     return `https://${segments.slice(0, 3).join('/')}`;
   }
   return undefined;

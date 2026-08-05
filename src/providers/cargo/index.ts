@@ -8,23 +8,26 @@
 
 import * as path from 'node:path';
 import { parse as parseToml } from 'smol-toml';
+import { cacheKey, TTL } from '../../core/cache.js';
 import type {
-  DepScope,
   Dependency,
+  DepScope,
   PackageMeta,
   ParsedManifest,
   SearchResult,
   Toolchain,
 } from '../../core/types.js';
-import { cacheKey, TTL } from '../../core/cache.js';
 import {
-  dependencyKey,
   type Command,
+  dependencyKey,
   type EcosystemProvider,
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { changelogUrlFor, normalizeRepositoryUrl } from '../shared/repository.js';
+import {
+  changelogUrlFor,
+  normalizeRepositoryUrl,
+} from '../shared/repository.js';
 
 const REGISTRY = 'https://crates.io';
 const NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
@@ -40,7 +43,12 @@ interface CrateResponse {
     max_stable_version?: string;
     newest_version?: string;
   };
-  versions?: Array<{ num: string; yanked: boolean; crate_size?: number; license?: string }>;
+  versions?: Array<{
+    num: string;
+    yanked: boolean;
+    crate_size?: number;
+    license?: string;
+  }>;
 }
 
 export class CargoProvider implements EcosystemProvider {
@@ -54,7 +62,11 @@ export class CargoProvider implements EcosystemProvider {
     return name.length <= 64 && NAME_PATTERN.test(name);
   }
 
-  async parse(absolutePath: string, text: string, _ctx: ProviderContext): Promise<ParsedManifest> {
+  async parse(
+    absolutePath: string,
+    text: string,
+    _ctx: ProviderContext,
+  ): Promise<ParsedManifest> {
     let doc: Record<string, unknown>;
     try {
       doc = parseToml(text) as Record<string, unknown>;
@@ -110,14 +122,20 @@ export class CargoProvider implements EcosystemProvider {
     };
   }
 
-  async readLockfile(manifestDir: string, ctx: ProviderContext): Promise<Map<string, string>> {
+  async readLockfile(
+    manifestDir: string,
+    ctx: ProviderContext,
+  ): Promise<Map<string, string>> {
     const resolved = new Map<string, string>();
     const text = await ctx.readFile(path.join(manifestDir, 'Cargo.lock'));
     if (!text) return resolved;
     try {
-      const doc = parseToml(text) as { package?: Array<{ name?: string; version?: string }> };
+      const doc = parseToml(text) as {
+        package?: Array<{ name?: string; version?: string }>;
+      };
       for (const entry of doc.package ?? []) {
-        if (entry.name && entry.version) resolved.set(entry.name, entry.version);
+        if (entry.name && entry.version)
+          resolved.set(entry.name, entry.version);
       }
     } catch {
       // An unparseable lockfile just means no resolved versions.
@@ -125,7 +143,10 @@ export class CargoProvider implements EcosystemProvider {
     return resolved;
   }
 
-  async detectToolchain(manifestPath: string, _ctx: ProviderContext): Promise<Toolchain> {
+  async detectToolchain(
+    manifestPath: string,
+    _ctx: ProviderContext,
+  ): Promise<Toolchain> {
     return { id: 'cargo', ecosystem: 'cargo', cwd: path.dirname(manifestPath) };
   }
 
@@ -152,8 +173,11 @@ export class CargoProvider implements EcosystemProvider {
           { signal },
         );
         const info: VersionInfo = {
-          versions: (response.versions ?? []).filter((v) => !v.yanked).map((v) => v.num),
-          latest: response.crate.max_stable_version ?? response.crate.newest_version,
+          versions: (response.versions ?? [])
+            .filter((v) => !v.yanked)
+            .map((v) => v.num),
+          latest:
+            response.crate.max_stable_version ?? response.crate.newest_version,
         };
         result.set(name, info);
         await ctx.cache.set(key, info, TTL.version);
@@ -200,7 +224,11 @@ export class CargoProvider implements EcosystemProvider {
     }
   }
 
-  async search(query: string, ctx: ProviderContext, signal?: AbortSignal): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    ctx: ProviderContext,
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]> {
     interface SearchResponse {
       crates: Array<{
         name: string;
@@ -235,7 +263,8 @@ export class CargoProvider implements EcosystemProvider {
   ): Command | null {
     if (!this.isValidPackageName(name)) return null;
     const spec = version ? `${name}@${version}` : name;
-    const flags = scope === 'dev' ? ['--dev'] : scope === 'build' ? ['--build'] : [];
+    const flags =
+      scope === 'dev' ? ['--dev'] : scope === 'build' ? ['--build'] : [];
     return {
       argv: ['cargo', 'add', spec, ...flags],
       cwd: toolchain.cwd,
@@ -243,7 +272,11 @@ export class CargoProvider implements EcosystemProvider {
     };
   }
 
-  updateCommand(toolchain: Toolchain, dep: Dependency, toVersion: string): Command | null {
+  updateCommand(
+    toolchain: Toolchain,
+    dep: Dependency,
+    toVersion: string,
+  ): Command | null {
     return this.installCommand(toolchain, dep.name, toVersion, dep.scope);
   }
 

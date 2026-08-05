@@ -91,8 +91,17 @@ export class HttpClient {
     return JSON.parse(text) as T;
   }
 
-  async postJson<T>(url: string, body: unknown, options: HttpOptions = {}): Promise<T> {
-    const text = await this.request(url, { ...options, method: 'POST', body, noCache: true });
+  async postJson<T>(
+    url: string,
+    body: unknown,
+    options: HttpOptions = {},
+  ): Promise<T> {
+    const text = await this.request(url, {
+      ...options,
+      method: 'POST',
+      body,
+      noCache: true,
+    });
     return JSON.parse(text) as T;
   }
 
@@ -115,7 +124,11 @@ export class HttpClient {
     return this.attempt(url, options, 0);
   }
 
-  private async attempt(url: string, options: HttpOptions, retryCount: number): Promise<string> {
+  private async attempt(
+    url: string,
+    options: HttpOptions,
+    retryCount: number,
+  ): Promise<string> {
     const cached = options.noCache ? undefined : this.etagCache.get(url);
 
     const headers: Record<string, string> = {
@@ -146,7 +159,8 @@ export class HttpClient {
       const response = await fetch(url, {
         method: options.method ?? 'GET',
         headers,
-        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        body:
+          options.body !== undefined ? JSON.stringify(options.body) : undefined,
         signal,
       });
 
@@ -158,16 +172,21 @@ export class HttpClient {
       if (response.status === 429 || response.status >= 500) {
         if (retryCount < 3) {
           const retryAfter = Number(response.headers.get('retry-after'));
-          const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
-            ? retryAfter * 1000
-            : 2 ** retryCount * 500;
+          const delayMs =
+            Number.isFinite(retryAfter) && retryAfter > 0
+              ? retryAfter * 1000
+              : 2 ** retryCount * 500;
           await sleep(delayMs, options.signal);
           return this.attempt(url, options, retryCount + 1);
         }
       }
 
       if (!response.ok) {
-        throw new HttpError(`${response.status} ${response.statusText}`, response.status, url);
+        throw new HttpError(
+          `${response.status} ${response.statusText}`,
+          response.status,
+          url,
+        );
       }
 
       const body = await response.text();
@@ -204,9 +223,7 @@ export class HttpError extends Error {
 }
 
 function buildUserAgent(version: string, contactEmail?: string): string {
-  const contact = contactEmail?.trim()
-    ? `; mailto=${contactEmail.trim()}`
-    : '';
+  const contact = contactEmail?.trim() ? `; mailto=${contactEmail.trim()}` : '';
   return `Panorama-VSCode/${version} (+https://github.com/salvatorecorvaglia/panorama${contact})`;
 }
 
@@ -239,7 +256,9 @@ function anySignal(signals: AbortSignal[]): AbortSignal {
       controller.abort(signal.reason);
       break;
     }
-    signal.addEventListener('abort', () => controller.abort(signal.reason), { once: true });
+    signal.addEventListener('abort', () => controller.abort(signal.reason), {
+      once: true,
+    });
   }
   return controller.signal;
 }

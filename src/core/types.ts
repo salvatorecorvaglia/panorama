@@ -149,7 +149,12 @@ export interface SearchResult {
   deprecated?: string;
   repository?: string;
   /** Set by the host when the package already appears in a loaded manifest. */
-  installedIn?: Array<{ manifestPath: string; projectLabel: string; declared: string; scope: DepScope }>;
+  installedIn?: Array<{
+    manifestPath: string;
+    projectLabel: string;
+    declared: string;
+    scope: DepScope;
+  }>;
 }
 
 /** A node in the "why is this installed" reverse-dependency tree. */

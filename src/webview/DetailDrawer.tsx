@@ -4,7 +4,7 @@
  */
 
 import { useEffect } from 'react';
-import type { DepNode, Dependency } from '../core/types.js';
+import type { Dependency, DepNode } from '../core/types.js';
 import { currentVersion, ECOSYSTEM_LABELS, formatBytes } from './format.js';
 import { post } from './vscodeApi.js';
 
@@ -46,12 +46,14 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
 
       {dep.lookupFailed && (
         <div className="callout callout--info">
-          Could not reach the registry for this package, so version information may be missing or
-          out of date.
+          Could not reach the registry for this package, so version information
+          may be missing or out of date.
         </div>
       )}
 
-      {dep.meta?.description && <p style={{ marginTop: 0 }}>{dep.meta.description}</p>}
+      {dep.meta?.description && (
+        <p style={{ marginTop: 0 }}>{dep.meta.description}</p>
+      )}
 
       <section>
         <h3>Versions</h3>
@@ -66,7 +68,9 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
           </dd>
           {dep.wanted && dep.wanted !== dep.installed && (
             <>
-              <dt title="Highest version allowed by the declared range">Wanted</dt>
+              <dt title="Highest version allowed by the declared range">
+                Wanted
+              </dt>
               <dd>
                 <code>{dep.wanted}</code>
               </dd>
@@ -78,12 +82,14 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
           </dd>
         </dl>
 
-        {dep.latest && dep.updateKind !== 'none' && dep.updateKind !== 'unknown' && (
-          <button style={{ marginTop: 10 }} onClick={() => onUpdate(dep)}>
-            Update to {dep.latest}
-            {dep.updateKind === 'major' ? ' (major)' : ''}
-          </button>
-        )}
+        {dep.latest &&
+          dep.updateKind !== 'none' &&
+          dep.updateKind !== 'unknown' && (
+            <button style={{ marginTop: 10 }} onClick={() => onUpdate(dep)}>
+              Update to {dep.latest}
+              {dep.updateKind === 'major' ? ' (major)' : ''}
+            </button>
+          )}
       </section>
 
       <section>
@@ -101,31 +107,49 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
           )}
         </dl>
 
-        <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
-          {dep.meta?.homepage && (
-            <button className="link" onClick={() => openLink(dep.meta!.homepage!)}>
-              Homepage
-            </button>
-          )}
-          {dep.meta?.repository && (
-            <button className="link" onClick={() => openLink(dep.meta!.repository!)}>
-              Repository
-            </button>
-          )}
-          {dep.meta?.changelogUrl && (
-            <button className="link" onClick={() => openLink(dep.meta!.changelogUrl!)}>
-              Changelog
-            </button>
-          )}
-          <button
-            className="link"
-            onClick={() =>
-              post({ type: 'openManifest', manifestPath: dep.manifestPath, packageName: dep.name })
-            }
-          >
-            Open manifest
-          </button>
-        </div>
+        {(() => {
+          const homepage = dep.meta?.homepage;
+          const repository = dep.meta?.repository;
+          const changelogUrl = dep.meta?.changelogUrl;
+          return (
+            <div
+              style={{
+                display: 'flex',
+                gap: 12,
+                marginTop: 10,
+                flexWrap: 'wrap',
+              }}
+            >
+              {homepage && (
+                <button className="link" onClick={() => openLink(homepage)}>
+                  Homepage
+                </button>
+              )}
+              {repository && (
+                <button className="link" onClick={() => openLink(repository)}>
+                  Repository
+                </button>
+              )}
+              {changelogUrl && (
+                <button className="link" onClick={() => openLink(changelogUrl)}>
+                  Changelog
+                </button>
+              )}
+              <button
+                className="link"
+                onClick={() =>
+                  post({
+                    type: 'openManifest',
+                    manifestPath: dep.manifestPath,
+                    packageName: dep.name,
+                  })
+                }
+              >
+                Open manifest
+              </button>
+            </div>
+          );
+        })()}
       </section>
 
       {dep.vulnerabilities.length > 0 && (
@@ -146,7 +170,10 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
                 </div>
               )}
               {vuln.aliases.length > 0 && (
-                <div className="muted" style={{ marginTop: 4, fontSize: '0.9em' }}>
+                <div
+                  className="muted"
+                  style={{ marginTop: 4, fontSize: '0.9em' }}
+                >
                   {vuln.aliases.join(', ')}
                 </div>
               )}
@@ -161,12 +188,15 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
           <div className="muted">Resolving…</div>
         ) : why.roots.length === 0 ? (
           <div className="muted">
-            No dependency graph available. Install the project to generate a lockfile and this will
-            fill in.
+            No dependency graph available. Install the project to generate a
+            lockfile and this will fill in.
           </div>
         ) : (
           <>
-            <div className="muted" style={{ marginBottom: 8, fontSize: '0.9em' }}>
+            <div
+              className="muted"
+              style={{ marginBottom: 8, fontSize: '0.9em' }}
+            >
               {why.source === 'lockfile'
                 ? 'From this project’s lockfile.'
                 : 'Resolved from the registry — no local lockfile was found.'}
@@ -184,17 +214,27 @@ export function DetailDrawer({ dep, why, onClose, onUpdate }: Props) {
 function NodeList({ nodes, depth }: { nodes: DepNode[]; depth: number }) {
   // A hard stop keeps a pathological graph from locking up the renderer.
   if (depth > 8) {
-    return <ul><li className="muted">…</li></ul>;
+    return (
+      <ul>
+        <li className="muted">…</li>
+      </ul>
+    );
   }
 
   return (
     <ul>
-      {nodes.map((node, index) => (
-        <li key={`${node.name}-${index}`}>
+      {nodes.map((node) => (
+        <li
+          key={`${node.name}-${node.version ?? ''}-${node.requestedRange ?? ''}`}
+        >
           {node.name}
           {node.version && <span className="muted"> {node.version}</span>}
-          {node.requestedRange && <span className="muted"> ({node.requestedRange})</span>}
-          {node.children.length > 0 && <NodeList nodes={node.children} depth={depth + 1} />}
+          {node.requestedRange && (
+            <span className="muted"> ({node.requestedRange})</span>
+          )}
+          {node.children.length > 0 && (
+            <NodeList nodes={node.children} depth={depth + 1} />
+          )}
         </li>
       ))}
     </ul>

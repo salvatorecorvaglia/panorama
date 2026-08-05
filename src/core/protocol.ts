@@ -19,7 +19,12 @@ export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'refresh' }
   | { type: 'checkUpdates' }
-  | { type: 'search'; query: string; ecosystem: Ecosystem | 'all'; requestId: string }
+  | {
+      type: 'search';
+      query: string;
+      ecosystem: Ecosystem | 'all';
+      requestId: string;
+    }
   | { type: 'cancelSearch'; requestId: string }
   | {
       type: 'install';
@@ -43,7 +48,12 @@ export type HostMessage =
   | { type: 'scanning'; busy: boolean; label?: string }
   | { type: 'searchResults'; requestId: string; results: SearchResult[] }
   | { type: 'searchError'; requestId: string; message: string }
-  | { type: 'whyTree'; depKey: string; roots: DepNode[]; source: 'lockfile' | 'registry' }
+  | {
+      type: 'whyTree';
+      depKey: string;
+      roots: DepNode[];
+      source: 'lockfile' | 'registry';
+    }
   | { type: 'error'; message: string }
   | { type: 'notice'; message: string }
   /** Opens the registry search UI — fired by the `panorama.searchInstall` command. */

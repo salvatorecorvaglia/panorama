@@ -5,7 +5,11 @@
  * is captured here and shared.
  */
 
-import type { HostMessage, VsCodeApi, WebviewMessage } from '../core/protocol.js';
+import type {
+  HostMessage,
+  VsCodeApi,
+  WebviewMessage,
+} from '../core/protocol.js';
 
 declare function acquireVsCodeApi(): VsCodeApi;
 
@@ -15,7 +19,9 @@ export function post(message: WebviewMessage): void {
   api.postMessage(message);
 }
 
-export function onHostMessage(handler: (message: HostMessage) => void): () => void {
+export function onHostMessage(
+  handler: (message: HostMessage) => void,
+): () => void {
   const listener = (event: MessageEvent<HostMessage>) => handler(event.data);
   window.addEventListener('message', listener);
   return () => window.removeEventListener('message', listener);

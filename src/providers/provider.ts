@@ -5,9 +5,11 @@
  * registering it in `registry.ts` — nothing above this layer changes.
  */
 
+import type { TtlCache } from '../core/cache.js';
+import type { HttpClient } from '../core/http.js';
 import type {
-  DepScope,
   Dependency,
+  DepScope,
   Ecosystem,
   PackageMeta,
   ParsedManifest,
@@ -15,8 +17,6 @@ import type {
   Toolchain,
   ToolchainId,
 } from '../core/types.js';
-import type { HttpClient } from '../core/http.js';
-import type { TtlCache } from '../core/cache.js';
 
 export interface ProviderContext {
   http: HttpClient;
@@ -61,15 +61,25 @@ export interface EcosystemProvider {
   /** Validates a package name before it can reach a command line. */
   isValidPackageName(name: string): boolean;
 
-  parse(absolutePath: string, text: string, ctx: ProviderContext): Promise<ParsedManifest>;
+  parse(
+    absolutePath: string,
+    text: string,
+    ctx: ProviderContext,
+  ): Promise<ParsedManifest>;
 
   /**
    * Reads resolved versions out of a lockfile, keyed by package name.
    * Returning an empty map is fine — the UI falls back to the constraint.
    */
-  readLockfile?(manifestDir: string, ctx: ProviderContext): Promise<Map<string, string>>;
+  readLockfile?(
+    manifestDir: string,
+    ctx: ProviderContext,
+  ): Promise<Map<string, string>>;
 
-  detectToolchain(manifestPath: string, ctx: ProviderContext): Promise<Toolchain>;
+  detectToolchain(
+    manifestPath: string,
+    ctx: ProviderContext,
+  ): Promise<Toolchain>;
 
   /** Batched version lookup. Implementations should respect `signal`. */
   fetchVersions(
@@ -78,9 +88,17 @@ export interface EcosystemProvider {
     signal?: AbortSignal,
   ): Promise<Map<string, VersionInfo>>;
 
-  fetchMetadata(name: string, ctx: ProviderContext, signal?: AbortSignal): Promise<PackageMeta | undefined>;
+  fetchMetadata(
+    name: string,
+    ctx: ProviderContext,
+    signal?: AbortSignal,
+  ): Promise<PackageMeta | undefined>;
 
-  search(query: string, ctx: ProviderContext, signal?: AbortSignal): Promise<SearchResult[]>;
+  search(
+    query: string,
+    ctx: ProviderContext,
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]>;
 
   /** The OSV.dev ecosystem string, when OSV covers this ecosystem. */
   readonly osvEcosystem?: string;
@@ -95,7 +113,11 @@ export interface EcosystemProvider {
     scope: DepScope,
   ): Command | null;
 
-  updateCommand(toolchain: Toolchain, dep: Dependency, toVersion: string): Command | null;
+  updateCommand(
+    toolchain: Toolchain,
+    dep: Dependency,
+    toVersion: string,
+  ): Command | null;
 
   uninstallCommand(toolchain: Toolchain, dep: Dependency): Command | null;
 
@@ -118,18 +140,28 @@ export interface EcosystemProvider {
 /** Maps an ecosystem's own scope vocabulary onto our five buckets. */
 export function normalizeScope(raw: string): DepScope {
   const lower = raw.toLowerCase();
-  if (lower.includes('dev') || lower === 'test' || lower === 'testing') return 'dev';
-  if (lower === 'build' || lower === 'provided' || lower === 'compile-only') return 'build';
+  if (lower.includes('dev') || lower === 'test' || lower === 'testing')
+    return 'dev';
+  if (lower === 'build' || lower === 'provided' || lower === 'compile-only')
+    return 'build';
   if (lower.includes('optional')) return 'optional';
   if (lower.includes('peer')) return 'peer';
   return 'prod';
 }
 
 /** Builds the stable per-row identity the webview uses for selection. */
-export function dependencyKey(manifestPath: string, scope: DepScope, name: string): string {
+export function dependencyKey(
+  manifestPath: string,
+  scope: DepScope,
+  name: string,
+): string {
   return `${manifestPath}::${scope}::${name}`;
 }
 
-export function toolchainOf(id: ToolchainId, ecosystem: Ecosystem, cwd: string): Toolchain {
+export function toolchainOf(
+  id: ToolchainId,
+  ecosystem: Ecosystem,
+  cwd: string,
+): Toolchain {
   return { id, ecosystem, cwd };
 }

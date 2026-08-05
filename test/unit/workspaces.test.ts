@@ -7,12 +7,12 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { ParsedManifest } from '../../src/core/types.js';
 import {
   assignWorkspaces,
   globMatchesPath,
   readSidecarMembers,
 } from '../../src/core/workspaces.js';
-import type { ParsedManifest } from '../../src/core/types.js';
 import { makeContext } from './helpers.js';
 
 function manifest(overrides: Partial<ParsedManifest> = {}): ParsedManifest {
@@ -68,7 +68,9 @@ describe('pnpm-workspace.yaml', () => {
   });
 
   it('returns nothing for a malformed file instead of throwing', async () => {
-    const ctx = makeContext({ '/repo/pnpm-workspace.yaml': 'packages: [unclosed' });
+    const ctx = makeContext({
+      '/repo/pnpm-workspace.yaml': 'packages: [unclosed',
+    });
     await expect(readSidecarMembers(manifest(), ctx)).resolves.toEqual([]);
   });
 });
@@ -128,37 +130,69 @@ include ':libs:ui'
 describe('member attribution', () => {
   it('marks the root and attributes members beneath it', () => {
     const assignments = assignWorkspaces([
-      { manifest: manifest({ path: '/repo/package.json' }), members: ['packages/*'] },
-      { manifest: manifest({ path: '/repo/packages/web/package.json' }), members: [] },
-      { manifest: manifest({ path: '/repo/packages/api/package.json' }), members: [] },
-      { manifest: manifest({ path: '/repo/unrelated/package.json' }), members: [] },
+      {
+        manifest: manifest({ path: '/repo/package.json' }),
+        members: ['packages/*'],
+      },
+      {
+        manifest: manifest({ path: '/repo/packages/web/package.json' }),
+        members: [],
+      },
+      {
+        manifest: manifest({ path: '/repo/packages/api/package.json' }),
+        members: [],
+      },
+      {
+        manifest: manifest({ path: '/repo/unrelated/package.json' }),
+        members: [],
+      },
     ]);
 
     expect(assignments.get('/repo/package.json')?.isRoot).toBe(true);
-    expect(assignments.get('/repo/packages/web/package.json')?.rootPath).toBe('/repo/package.json');
-    expect(assignments.get('/repo/packages/api/package.json')?.rootPath).toBe('/repo/package.json');
+    expect(assignments.get('/repo/packages/web/package.json')?.rootPath).toBe(
+      '/repo/package.json',
+    );
+    expect(assignments.get('/repo/packages/api/package.json')?.rootPath).toBe(
+      '/repo/package.json',
+    );
     // Outside the member glob, so not part of the workspace.
-    expect(assignments.get('/repo/unrelated/package.json')?.rootPath).toBeUndefined();
+    expect(
+      assignments.get('/repo/unrelated/package.json')?.rootPath,
+    ).toBeUndefined();
   });
 
   it('does not attribute across ecosystems', () => {
     const assignments = assignWorkspaces([
-      { manifest: manifest({ path: '/repo/package.json' }), members: ['packages/*'] },
       {
-        manifest: manifest({ ecosystem: 'cargo', path: '/repo/packages/rust/Cargo.toml' }),
+        manifest: manifest({ path: '/repo/package.json' }),
+        members: ['packages/*'],
+      },
+      {
+        manifest: manifest({
+          ecosystem: 'cargo',
+          path: '/repo/packages/rust/Cargo.toml',
+        }),
         members: [],
       },
     ]);
 
     // A Cargo crate inside a JS workspace glob is still its own project.
-    expect(assignments.get('/repo/packages/rust/Cargo.toml')?.rootPath).toBeUndefined();
+    expect(
+      assignments.get('/repo/packages/rust/Cargo.toml')?.rootPath,
+    ).toBeUndefined();
   });
 
   it('prefers the nearest root when workspaces nest', () => {
     const assignments = assignWorkspaces([
       { manifest: manifest({ path: '/repo/package.json' }), members: ['**'] },
-      { manifest: manifest({ path: '/repo/inner/package.json' }), members: ['pkg/*'] },
-      { manifest: manifest({ path: '/repo/inner/pkg/a/package.json' }), members: [] },
+      {
+        manifest: manifest({ path: '/repo/inner/package.json' }),
+        members: ['pkg/*'],
+      },
+      {
+        manifest: manifest({ path: '/repo/inner/pkg/a/package.json' }),
+        members: [],
+      },
     ]);
 
     expect(assignments.get('/repo/inner/pkg/a/package.json')?.rootPath).toBe(

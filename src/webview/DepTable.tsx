@@ -6,12 +6,24 @@
  * filtering feel sluggish.
  */
 
-import { useEffect, useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useEffect, useMemo, useRef } from 'react';
 import type { Dependency, ProjectGroup } from '../core/types.js';
-import { currentVersion, formatBytes, hasUpdate, SCOPE_LABELS, updateClass } from './format.js';
+import {
+  currentVersion,
+  formatBytes,
+  hasUpdate,
+  SCOPE_LABELS,
+  updateClass,
+} from './format.js';
 
-export type SortKey = 'name' | 'scope' | 'current' | 'latest' | 'size' | 'status';
+export type SortKey =
+  | 'name'
+  | 'scope'
+  | 'current'
+  | 'latest'
+  | 'size'
+  | 'status';
 export interface SortState {
   key: SortKey;
   direction: 'asc' | 'desc';
@@ -84,7 +96,9 @@ export function DepTable({
   // command targeting it has to move the viewport rather than call focus().
   useEffect(() => {
     if (!scrollToKey) return;
-    const index = rows.findIndex((row) => row.kind === 'dep' && row.dep.key === scrollToKey);
+    const index = rows.findIndex(
+      (row) => row.kind === 'dep' && row.dep.key === scrollToKey,
+    );
     if (index >= 0) {
       virtualizer.scrollToIndex(index, { align: 'center' });
     }
@@ -114,28 +128,46 @@ export function DepTable({
     <>
       <div className="table__header" role="row">
         <div className="cell cell--name">
-          <button onClick={() => toggleSort('name')}>Package{indicator('name')}</button>
+          <button onClick={() => toggleSort('name')}>
+            Package{indicator('name')}
+          </button>
         </div>
         <div className="cell cell--scope">
-          <button onClick={() => toggleSort('scope')}>Scope{indicator('scope')}</button>
+          <button onClick={() => toggleSort('scope')}>
+            Scope{indicator('scope')}
+          </button>
         </div>
         <div className="cell cell--version">
-          <button onClick={() => toggleSort('current')}>Current{indicator('current')}</button>
+          <button onClick={() => toggleSort('current')}>
+            Current{indicator('current')}
+          </button>
         </div>
         <div className="cell cell--latest">
-          <button onClick={() => toggleSort('latest')}>Latest{indicator('latest')}</button>
+          <button onClick={() => toggleSort('latest')}>
+            Latest{indicator('latest')}
+          </button>
         </div>
         <div className="cell cell--size">
-          <button onClick={() => toggleSort('size')}>Size{indicator('size')}</button>
+          <button onClick={() => toggleSort('size')}>
+            Size{indicator('size')}
+          </button>
         </div>
         <div className="cell cell--license">License</div>
         <div className="cell cell--actions">
-          <button onClick={() => toggleSort('status')}>Status{indicator('status')}</button>
+          <button onClick={() => toggleSort('status')}>
+            Status{indicator('status')}
+          </button>
         </div>
       </div>
 
       <div className="table" ref={parentRef}>
-        <div style={{ height: virtualizer.getTotalSize(), position: 'relative', width: '100%' }}>
+        <div
+          style={{
+            height: virtualizer.getTotalSize(),
+            position: 'relative',
+            width: '100%',
+          }}
+        >
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const row = rows[virtualRow.index];
             return (
@@ -182,7 +214,10 @@ function GroupHeader({
     <div className="table__group">
       <span>{row.group.label}</span>
       {row.group.isWorkspaceRoot && (
-        <span className="badge badge--workspace" title="Declares workspace members">
+        <span
+          className="badge badge--workspace"
+          title="Declares workspace members"
+        >
           workspace root
         </span>
       )}
@@ -200,7 +235,10 @@ function GroupHeader({
       </span>
       <div style={{ flex: 1 }} />
       {row.outdated > 0 && (
-        <button className="secondary" onClick={() => onUpdateAll(row.group.manifestPath)}>
+        <button
+          className="secondary"
+          onClick={() => onUpdateAll(row.group.manifestPath)}
+        >
           Update all
         </button>
       )}
@@ -243,6 +281,7 @@ function DepRow({
         {dep.vulnerabilities.length > 0 && (
           <span
             className="icon-vuln"
+            role="img"
             title={`${dep.vulnerabilities.length} known vulnerability(ies)`}
             aria-label="Vulnerable"
           >
@@ -250,20 +289,30 @@ function DepRow({
           </span>
         )}
         {dep.meta?.deprecated && (
-          <span className="icon-warn" title={dep.meta.deprecated} aria-label="Deprecated">
+          <span
+            className="icon-warn"
+            role="img"
+            title={dep.meta.deprecated}
+            aria-label="Deprecated"
+          >
             ▲
           </span>
         )}
         <span>{dep.name}</span>
         {dep.muted && (
-          <span className="badge badge--muted" title="Updates muted — not counted as outdated">
+          <span
+            className="badge badge--muted"
+            title="Updates muted — not counted as outdated"
+          >
             muted
           </span>
         )}
       </div>
 
       <div className="cell cell--scope">
-        <span className={`badge badge--${dep.scope}`}>{SCOPE_LABELS[dep.scope]}</span>
+        <span className={`badge badge--${dep.scope}`}>
+          {SCOPE_LABELS[dep.scope]}
+        </span>
       </div>
 
       <div className="cell cell--version" title={`Declared as ${dep.declared}`}>
@@ -338,7 +387,10 @@ function statusRank(dep: Dependency): number {
   return 5;
 }
 
-function sortDependencies(dependencies: Dependency[], sort: SortState): Dependency[] {
+function sortDependencies(
+  dependencies: Dependency[],
+  sort: SortState,
+): Dependency[] {
   const factor = sort.direction === 'asc' ? 1 : -1;
 
   return [...dependencies].sort((a, b) => {
@@ -348,21 +400,29 @@ function sortDependencies(dependencies: Dependency[], sort: SortState): Dependen
         comparison = a.name.localeCompare(b.name);
         break;
       case 'scope':
-        comparison = a.scope.localeCompare(b.scope) || a.name.localeCompare(b.name);
+        comparison =
+          a.scope.localeCompare(b.scope) || a.name.localeCompare(b.name);
         break;
       case 'current':
-        comparison = currentVersion(a).localeCompare(currentVersion(b), undefined, {
-          numeric: true,
-        });
+        comparison = currentVersion(a).localeCompare(
+          currentVersion(b),
+          undefined,
+          {
+            numeric: true,
+          },
+        );
         break;
       case 'latest':
-        comparison = (a.latest ?? '').localeCompare(b.latest ?? '', undefined, { numeric: true });
+        comparison = (a.latest ?? '').localeCompare(b.latest ?? '', undefined, {
+          numeric: true,
+        });
         break;
       case 'size':
         comparison = (a.meta?.sizeBytes ?? -1) - (b.meta?.sizeBytes ?? -1);
         break;
       case 'status':
-        comparison = statusRank(a) - statusRank(b) || a.name.localeCompare(b.name);
+        comparison =
+          statusRank(a) - statusRank(b) || a.name.localeCompare(b.name);
         break;
     }
     return comparison * factor;

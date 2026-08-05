@@ -56,7 +56,9 @@ export function Toolbar({
             placeholder="Filter installed packages…"
             value={filters.text}
             aria-label="Filter installed packages"
-            onChange={(event) => onFiltersChange({ ...filters, text: event.target.value })}
+            onChange={(event) =>
+              onFiltersChange({ ...filters, text: event.target.value })
+            }
           />
         </div>
 
@@ -88,21 +90,33 @@ export function Toolbar({
         <button
           className="chip"
           aria-pressed={filters.onlyOutdated}
-          onClick={() => onFiltersChange({ ...filters, onlyOutdated: !filters.onlyOutdated })}
+          onClick={() =>
+            onFiltersChange({ ...filters, onlyOutdated: !filters.onlyOutdated })
+          }
         >
           outdated
         </button>
         <button
           className="chip"
           aria-pressed={filters.onlyVulnerable}
-          onClick={() => onFiltersChange({ ...filters, onlyVulnerable: !filters.onlyVulnerable })}
+          onClick={() =>
+            onFiltersChange({
+              ...filters,
+              onlyVulnerable: !filters.onlyVulnerable,
+            })
+          }
         >
           vulnerable
         </button>
         <button
           className="chip"
           aria-pressed={filters.onlyDeprecated}
-          onClick={() => onFiltersChange({ ...filters, onlyDeprecated: !filters.onlyDeprecated })}
+          onClick={() =>
+            onFiltersChange({
+              ...filters,
+              onlyDeprecated: !filters.onlyDeprecated,
+            })
+          }
         >
           deprecated
         </button>
@@ -111,7 +125,9 @@ export function Toolbar({
             className="chip"
             aria-pressed={filters.hideMuted}
             title={`Hide the ${summary.muted} package(s) whose updates you have muted`}
-            onClick={() => onFiltersChange({ ...filters, hideMuted: !filters.hideMuted })}
+            onClick={() =>
+              onFiltersChange({ ...filters, hideMuted: !filters.hideMuted })
+            }
           >
             hide muted
           </button>
@@ -129,8 +145,14 @@ export function Toolbar({
           {summary.deprecated > 0 && (
             <span className="icon-warn">{summary.deprecated} deprecated</span>
           )}
-          {summary.muted > 0 && <span title="Excluded from the outdated count">{summary.muted} muted</span>}
-          {summary.stale && <span title="Registries were unreachable">cached</span>}
+          {summary.muted > 0 && (
+            <span title="Excluded from the outdated count">
+              {summary.muted} muted
+            </span>
+          )}
+          {summary.stale && (
+            <span title="Registries were unreachable">cached</span>
+          )}
         </div>
       </div>
 

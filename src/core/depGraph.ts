@@ -8,9 +8,9 @@
  */
 
 import * as path from 'node:path';
-import type { DepNode, Dependency, Ecosystem } from './types.js';
 import type { ProviderContext } from '../providers/provider.js';
 import { providerFor } from '../providers/registry.js';
+import type { Dependency, DepNode, Ecosystem } from './types.js';
 
 const MAX_DEPTH = 8;
 
@@ -69,7 +69,6 @@ async function buildForwardGraph(
       return buildComposerGraph(dir, ctx);
     case 'python':
       return buildPythonGraph(dir, ctx);
-    case 'golang':
     default:
       // Go, Maven and Gradle have no local file describing dependency *edges*:
       // go.sum lists the transitive closure with hashes but records nothing
@@ -80,7 +79,10 @@ async function buildForwardGraph(
   }
 }
 
-async function buildNodeGraph(dir: string, ctx: ProviderContext): Promise<ForwardGraph | undefined> {
+async function buildNodeGraph(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<ForwardGraph | undefined> {
   // npm, pnpm and yarn each have their own format; try whichever is present.
   return (
     (await buildNpmLockGraph(dir, ctx)) ??
@@ -107,11 +109,16 @@ async function buildNpmLockGraph(
       const name =
         key === ''
           ? '__root__'
-          : key.slice(key.lastIndexOf('node_modules/') + 'node_modules/'.length);
+          : key.slice(
+              key.lastIndexOf('node_modules/') + 'node_modules/'.length,
+            );
       const children = Object.keys(entry.dependencies ?? {});
       // A package can appear at several install paths; union their edges.
       const existing = graph.get(name);
-      graph.set(name, existing ? [...new Set([...existing, ...children])] : children);
+      graph.set(
+        name,
+        existing ? [...new Set([...existing, ...children])] : children,
+      );
     }
 
     return graph;
@@ -128,7 +135,10 @@ async function buildNpmLockGraph(
  * with an optional nested `dependencies:` map. That shape is stable across
  * lockfile versions 5–9, where the surrounding schema is not.
  */
-async function buildPnpmGraph(dir: string, ctx: ProviderContext): Promise<ForwardGraph | undefined> {
+async function buildPnpmGraph(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<ForwardGraph | undefined> {
   const text = await ctx.readFile(path.join(dir, 'pnpm-lock.yaml'));
   if (!text) return undefined;
 
@@ -149,13 +159,17 @@ async function buildPnpmGraph(dir: string, ctx: ProviderContext): Promise<Forwar
       const key = trimmed.slice(0, -1).replace(/^['"]|['"]$/g, '');
       currentPackage = pnpmNameFromKey(key);
       inDependencies = false;
-      if (currentPackage && !graph.has(currentPackage)) graph.set(currentPackage, []);
+      if (currentPackage && !graph.has(currentPackage))
+        graph.set(currentPackage, []);
       continue;
     }
 
     if (!currentPackage) continue;
 
-    if (indent === 4 && (trimmed === 'dependencies:' || trimmed === 'optionalDependencies:')) {
+    if (
+      indent === 4 &&
+      (trimmed === 'dependencies:' || trimmed === 'optionalDependencies:')
+    ) {
       inDependencies = true;
       dependencyIndent = 6;
       continue;
@@ -168,7 +182,7 @@ async function buildPnpmGraph(dir: string, ctx: ProviderContext): Promise<Forwar
 
     if (inDependencies && indent === dependencyIndent) {
       const name = trimmed.split(':')[0].replace(/^['"]|['"]$/g, '');
-      if (name) graph.get(currentPackage)!.push(name);
+      if (name) graph.get(currentPackage)?.push(name);
     }
   }
 
@@ -193,7 +207,10 @@ function pnpmNameFromKey(key: string): string | undefined {
  * Blocks are separated by a blank line: a header naming one or more specs, then
  * an indented body that may contain a `dependencies:` map.
  */
-async function buildYarnGraph(dir: string, ctx: ProviderContext): Promise<ForwardGraph | undefined> {
+async function buildYarnGraph(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<ForwardGraph | undefined> {
   const text = await ctx.readFile(path.join(dir, 'yarn.lock'));
   if (!text) return undefined;
 
@@ -207,7 +224,11 @@ async function buildYarnGraph(dir: string, ctx: ProviderContext): Promise<Forwar
     if (header.startsWith('#') || !header.endsWith(':')) continue;
 
     // The header can list several specs; they all resolve to the same package.
-    const firstSpec = header.slice(0, -1).split(',')[0].trim().replace(/^['"]|['"]$/g, '');
+    const firstSpec = header
+      .slice(0, -1)
+      .split(',')[0]
+      .trim()
+      .replace(/^['"]|['"]$/g, '');
     const name = yarnNameFromSpec(firstSpec);
     if (!name) continue;
 
@@ -231,7 +252,10 @@ async function buildYarnGraph(dir: string, ctx: ProviderContext): Promise<Forwar
     }
 
     const existing = graph.get(name);
-    graph.set(name, existing ? [...new Set([...existing, ...children])] : children);
+    graph.set(
+      name,
+      existing ? [...new Set([...existing, ...children])] : children,
+    );
   }
 
   return graph.size > 0 ? graph : undefined;
@@ -277,7 +301,8 @@ async function buildPythonGraph(
 
       // poetry: [package.dependencies] followed by `key = "constraint"` lines,
       // ending at the next table header.
-      const poetryTable = /\n\[package\.dependencies\]\s*\n([\s\S]*?)(?=\n\[|$)/.exec(block)?.[1];
+      const poetryTable =
+        /\n\[package\.dependencies\]\s*\n([\s\S]*?)(?=\n\[|$)/.exec(block)?.[1];
       if (poetryTable) {
         for (const line of poetryTable.split(/\r?\n/)) {
           const key = /^([A-Za-z0-9._-]+)\s*=/.exec(line.trim())?.[1];
@@ -310,12 +335,16 @@ function splitTomlPackageBlocks(text: string): string[] {
   const headers = [...text.matchAll(/(?:^|\n)\[\[package\]\][^\n]*\n/g)];
   return headers.map((header, index) => {
     const start = header.index! + header[0].length;
-    const end = index + 1 < headers.length ? headers[index + 1].index! : text.length;
+    const end =
+      index + 1 < headers.length ? headers[index + 1].index! : text.length;
     return text.slice(start, end);
   });
 }
 
-async function buildCargoGraph(dir: string, ctx: ProviderContext): Promise<ForwardGraph | undefined> {
+async function buildCargoGraph(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<ForwardGraph | undefined> {
   const text = await ctx.readFile(path.join(dir, 'Cargo.lock'));
   if (!text) return undefined;
 
@@ -327,8 +356,11 @@ async function buildCargoGraph(dir: string, ctx: ProviderContext): Promise<Forwa
     for (const block of splitTomlPackageBlocks(text)) {
       const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
       if (!name) continue;
-      const depsBlock = /dependencies\s*=\s*\[([\s\S]*?)\]/.exec(block)?.[1] ?? '';
-      const children = [...depsBlock.matchAll(/"([^"\s]+)/g)].map((match) => match[1].split(' ')[0]);
+      const depsBlock =
+        /dependencies\s*=\s*\[([\s\S]*?)\]/.exec(block)?.[1] ?? '';
+      const children = [...depsBlock.matchAll(/"([^"\s]+)/g)].map(
+        (match) => match[1].split(' ')[0],
+      );
       graph.set(name, children);
     }
 
@@ -348,10 +380,16 @@ async function buildComposerGraph(
   try {
     const lock = JSON.parse(text) as {
       packages?: Array<{ name: string; require?: Record<string, string> }>;
-      'packages-dev'?: Array<{ name: string; require?: Record<string, string> }>;
+      'packages-dev'?: Array<{
+        name: string;
+        require?: Record<string, string>;
+      }>;
     };
     const graph: ForwardGraph = new Map();
-    for (const entry of [...(lock.packages ?? []), ...(lock['packages-dev'] ?? [])]) {
+    for (const entry of [
+      ...(lock.packages ?? []),
+      ...(lock['packages-dev'] ?? []),
+    ]) {
       graph.set(
         entry.name,
         Object.keys(entry.require ?? {}).filter(
@@ -490,7 +528,9 @@ async function buildFromDepsDev(
 
     const self = nodes.find((node) => node.relation === 'SELF');
     if (!self) return [];
-    return [{ name: self.name, version: self.version, children: self.children }];
+    return [
+      { name: self.name, version: self.version, children: self.children },
+    ];
   } catch {
     return [];
   }

@@ -10,22 +10,26 @@
 import * as path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
 import type {
-  DepScope,
   Dependency,
+  DepScope,
   PackageMeta,
   ParsedManifest,
   SearchResult,
   Toolchain,
 } from '../../core/types.js';
 import {
-  dependencyKey,
-  normalizeScope,
   type Command,
+  dependencyKey,
   type EcosystemProvider,
+  normalizeScope,
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { fetchMavenMetadata, fetchMavenVersions, searchMavenCentral } from '../shared/mavenCentral.js';
+import {
+  fetchMavenMetadata,
+  fetchMavenVersions,
+  searchMavenCentral,
+} from '../shared/mavenCentral.js';
 
 const COORDINATE_PATTERN = /^[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+$/;
 
@@ -46,7 +50,9 @@ interface Pom {
     parent?: { groupId?: string; artifactId?: string; version?: string };
     modules?: { module?: string | string[] };
     dependencies?: { dependency?: PomDependency | PomDependency[] };
-    dependencyManagement?: { dependencies?: { dependency?: PomDependency | PomDependency[] } };
+    dependencyManagement?: {
+      dependencies?: { dependency?: PomDependency | PomDependency[] };
+    };
   };
 }
 
@@ -61,7 +67,11 @@ export class MavenProvider implements EcosystemProvider {
     return COORDINATE_PATTERN.test(name);
   }
 
-  async parse(absolutePath: string, text: string, _ctx: ProviderContext): Promise<ParsedManifest> {
+  async parse(
+    absolutePath: string,
+    text: string,
+    _ctx: ProviderContext,
+  ): Promise<ParsedManifest> {
     const parser = new XMLParser({
       ignoreAttributes: true,
       parseTagValue: false,
@@ -90,12 +100,15 @@ export class MavenProvider implements EcosystemProvider {
       };
     }
 
-    const projectLabel = project.artifactId ?? path.basename(path.dirname(absolutePath));
+    const projectLabel =
+      project.artifactId ?? path.basename(path.dirname(absolutePath));
     const properties = buildPropertyTable(project);
 
     // dependencyManagement supplies versions omitted in the dependency itself.
     const managed = new Map<string, string>();
-    for (const entry of toArray(project.dependencyManagement?.dependencies?.dependency)) {
+    for (const entry of toArray(
+      project.dependencyManagement?.dependencies?.dependency,
+    )) {
       if (entry.groupId && entry.artifactId && entry.version) {
         managed.set(
           `${entry.groupId}:${entry.artifactId}`,
@@ -145,7 +158,10 @@ export class MavenProvider implements EcosystemProvider {
     };
   }
 
-  async detectToolchain(manifestPath: string, ctx: ProviderContext): Promise<Toolchain> {
+  async detectToolchain(
+    manifestPath: string,
+    ctx: ProviderContext,
+  ): Promise<Toolchain> {
     const cwd = path.dirname(manifestPath);
     // Prefer the wrapper when the project ships one — it pins the Maven version,
     // so using the system `mvn` could build with a different one than CI does.
@@ -156,7 +172,9 @@ export class MavenProvider implements EcosystemProvider {
       ecosystem: 'maven',
       cwd,
       // POSIX needs the explicit ./ since cwd is not on PATH.
-      ...(hasWrapper ? { wrapper: process.platform === 'win32' ? wrapper : `./${wrapper}` } : {}),
+      ...(hasWrapper
+        ? { wrapper: process.platform === 'win32' ? wrapper : `./${wrapper}` }
+        : {}),
     };
   }
 
@@ -176,7 +194,11 @@ export class MavenProvider implements EcosystemProvider {
     return fetchMavenMetadata(name, ctx, signal);
   }
 
-  async search(query: string, ctx: ProviderContext, signal?: AbortSignal): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    ctx: ProviderContext,
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]> {
     return searchMavenCentral(query, 'maven', ctx, signal);
   }
 
@@ -226,15 +248,25 @@ export class MavenProvider implements EcosystemProvider {
       if (!block) return null;
       // Take the leading whitespace with the block so we do not leave a blank line.
       const start = manifestText.lastIndexOf('\n', block.start) + 1;
-      return manifestText.slice(0, start) + manifestText.slice(block.end).replace(/^\r?\n/, '');
+      return (
+        manifestText.slice(0, start) +
+        manifestText.slice(block.end).replace(/^\r?\n/, '')
+      );
     }
 
     if (edit.kind === 'update') {
       if (!block) return null;
       const body = manifestText.slice(block.start, block.end);
       if (!/<version>/.test(body)) return null;
-      const updated = body.replace(/<version>[^<]*<\/version>/, `<version>${edit.version}</version>`);
-      return manifestText.slice(0, block.start) + updated + manifestText.slice(block.end);
+      const updated = body.replace(
+        /<version>[^<]*<\/version>/,
+        `<version>${edit.version}</version>`,
+      );
+      return (
+        manifestText.slice(0, block.start) +
+        updated +
+        manifestText.slice(block.end)
+      );
     }
 
     // Add: insert before the closing </dependencies>, matching its indentation.
@@ -244,10 +276,13 @@ export class MavenProvider implements EcosystemProvider {
 
     const lineStart = manifestText.lastIndexOf('\n', closing) + 1;
     const indent = manifestText.slice(lineStart, closing);
-    const inner = indent + '    ';
+    const inner = `${indent}    `;
 
-    const versionLine = edit.version ? `\n${inner}<version>${edit.version}</version>` : '';
-    const scopeLine = edit.scope === 'dev' ? `\n${inner}<scope>test</scope>` : '';
+    const versionLine = edit.version
+      ? `\n${inner}<version>${edit.version}</version>`
+      : '';
+    const scopeLine =
+      edit.scope === 'dev' ? `\n${inner}<scope>test</scope>` : '';
 
     const snippet =
       `${indent}<dependency>\n` +
@@ -256,7 +291,9 @@ export class MavenProvider implements EcosystemProvider {
       `${versionLine}${scopeLine}\n` +
       `${indent}</dependency>\n`;
 
-    return manifestText.slice(0, lineStart) + snippet + manifestText.slice(lineStart);
+    return (
+      manifestText.slice(0, lineStart) + snippet + manifestText.slice(lineStart)
+    );
   }
 }
 
@@ -279,7 +316,9 @@ function findDependencyBlock(
 }
 
 /** Collects `<properties>` plus the implicit project.* and parent.* values. */
-function buildPropertyTable(project: NonNullable<Pom['project']>): Map<string, string> {
+function buildPropertyTable(
+  project: NonNullable<Pom['project']>,
+): Map<string, string> {
   const table = new Map<string, string>();
   for (const [key, value] of Object.entries(project.properties ?? {})) {
     table.set(key, String(value));
@@ -296,10 +335,16 @@ function buildPropertyTable(project: NonNullable<Pom['project']>): Map<string, s
 }
 
 /** Expands `${...}` placeholders, guarding against self-referential loops. */
-function resolveProperties(value: string, properties: Map<string, string>): string {
+function resolveProperties(
+  value: string,
+  properties: Map<string, string>,
+): string {
   let result = value;
   for (let depth = 0; depth < 5 && result.includes('${'); depth++) {
-    result = result.replace(/\$\{([^}]+)\}/g, (whole, key: string) => properties.get(key) ?? whole);
+    result = result.replace(
+      /\$\{([^}]+)\}/g,
+      (whole, key: string) => properties.get(key) ?? whole,
+    );
   }
   return result;
 }

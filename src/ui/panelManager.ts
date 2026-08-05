@@ -10,13 +10,18 @@
 
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import type { HostMessage, WebviewMessage } from '../core/protocol.js';
-import type { Dependency, DepScope, Ecosystem, ProjectGroup } from '../core/types.js';
-import type { Scanner, ScanResult } from '../core/scanner.js';
-import type { ProviderContext } from '../providers/provider.js';
-import { providerFor, providerForPath } from '../providers/registry.js';
 import { explainDependency } from '../core/depGraph.js';
 import type { MuteList } from '../core/muteList.js';
+import type { HostMessage, WebviewMessage } from '../core/protocol.js';
+import type { Scanner, ScanResult } from '../core/scanner.js';
+import type {
+  Dependency,
+  DepScope,
+  Ecosystem,
+  ProjectGroup,
+} from '../core/types.js';
+import type { ProviderContext } from '../providers/provider.js';
+import { providerFor, providerForPath } from '../providers/registry.js';
 import { TerminalRunner } from './terminalRunner.js';
 
 export class PanelManager implements vscode.Disposable {
@@ -64,11 +69,17 @@ export class PanelManager implements vscode.Disposable {
         // The table keeps sort/filter state, so rebuilding it on every tab
         // switch would be user-hostile.
         retainContextWhenHidden: true,
-        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'),
+        ],
       },
     );
 
-    this.panel.iconPath = vscode.Uri.joinPath(this.extensionUri, 'resources', 'panorama.svg');
+    this.panel.iconPath = vscode.Uri.joinPath(
+      this.extensionUri,
+      'resources',
+      'panorama.svg',
+    );
     this.panel.webview.html = this.buildHtml(this.panel.webview);
 
     this.panel.onDidDispose(() => {
@@ -87,7 +98,11 @@ export class PanelManager implements vscode.Disposable {
   /** Pushes a new scan result to the webview and the tree view. */
   setResult(result: ScanResult): void {
     this.latest = result;
-    this.post({ type: 'state', groups: result.groups, summary: result.summary });
+    this.post({
+      type: 'state',
+      groups: result.groups,
+      summary: result.summary,
+    });
     this.onStateChanged(result);
   }
 
@@ -125,7 +140,9 @@ export class PanelManager implements vscode.Disposable {
 
     const nowMuted = await this.muteList.toggle(found.dep);
     // Recomputing the summary keeps the badge honest without a network round-trip.
-    this.setResult(this.scanner.resummarize(this.latest.groups, this.latest.summary.stale));
+    this.setResult(
+      this.scanner.resummarize(this.latest.groups, this.latest.summary.stale),
+    );
     this.post({
       type: 'notice',
       message: nowMuted
@@ -141,7 +158,11 @@ export class PanelManager implements vscode.Disposable {
   private async handleMessage(message: WebviewMessage): Promise<void> {
     switch (message.type) {
       case 'ready':
-        this.post({ type: 'state', groups: this.latest.groups, summary: this.latest.summary });
+        this.post({
+          type: 'state',
+          groups: this.latest.groups,
+          summary: this.latest.summary,
+        });
         this.post({ type: 'scanning', busy: this.busy });
         return;
 
@@ -154,7 +175,11 @@ export class PanelManager implements vscode.Disposable {
         return;
 
       case 'search':
-        await this.handleSearch(message.query, message.ecosystem, message.requestId);
+        await this.handleSearch(
+          message.query,
+          message.ecosystem,
+          message.requestId,
+        );
         return;
 
       case 'cancelSearch': {
@@ -164,7 +189,12 @@ export class PanelManager implements vscode.Disposable {
       }
 
       case 'install':
-        await this.handleInstall(message.name, message.version, message.scope, message.manifestPath);
+        await this.handleInstall(
+          message.name,
+          message.version,
+          message.scope,
+          message.manifestPath,
+        );
         return;
 
       case 'update':
@@ -216,15 +246,23 @@ export class PanelManager implements vscode.Disposable {
     this.searches.set(requestId, controller);
 
     try {
-      const results = await this.scanner.search(query, ecosystem, controller.signal);
+      const results = await this.scanner.search(
+        query,
+        ecosystem,
+        controller.signal,
+      );
 
       // Annotate anything already present in a loaded manifest so the UI can
       // offer "uninstall" instead of "install".
       for (const result of results) {
-        const matches: NonNullable<(typeof results)[number]['installedIn']> = [];
+        const matches: NonNullable<(typeof results)[number]['installedIn']> =
+          [];
         for (const group of this.latest.groups) {
           for (const dep of group.dependencies) {
-            if (dep.ecosystem === result.ecosystem && dep.name === result.name) {
+            if (
+              dep.ecosystem === result.ecosystem &&
+              dep.name === result.name
+            ) {
               matches.push({
                 manifestPath: group.manifestPath,
                 projectLabel: group.label,
@@ -244,7 +282,11 @@ export class PanelManager implements vscode.Disposable {
       }
     } catch (error) {
       if (!controller.signal.aborted) {
-        this.post({ type: 'searchError', requestId, message: describeError(error) });
+        this.post({
+          type: 'searchError',
+          requestId,
+          message: describeError(error),
+        });
       }
     } finally {
       this.searches.delete(requestId);
@@ -259,12 +301,18 @@ export class PanelManager implements vscode.Disposable {
   ): Promise<void> {
     const provider = providerForPath(manifestPath);
     if (!provider) {
-      this.post({ type: 'error', message: `No provider handles ${path.basename(manifestPath)}` });
+      this.post({
+        type: 'error',
+        message: `No provider handles ${path.basename(manifestPath)}`,
+      });
       return;
     }
 
     if (!provider.isValidPackageName(name)) {
-      this.post({ type: 'error', message: `"${name}" is not a valid package name.` });
+      this.post({
+        type: 'error',
+        message: `"${name}" is not a valid package name.`,
+      });
       return;
     }
 
@@ -302,7 +350,10 @@ export class PanelManager implements vscode.Disposable {
     const { dep } = found;
 
     const provider = providerFor(dep.ecosystem);
-    const toolchain = await provider.detectToolchain(dep.manifestPath, this.ctx);
+    const toolchain = await provider.detectToolchain(
+      dep.manifestPath,
+      this.ctx,
+    );
     const command = provider.updateCommand(toolchain, dep, toVersion);
 
     if (command) {
@@ -330,14 +381,19 @@ export class PanelManager implements vscode.Disposable {
 
   /** Also invoked from the `panorama.updateAll` command, not just the webview. */
   async updateAll(manifestPath: string): Promise<void> {
-    const group = this.latest.groups.find((candidate) => candidate.manifestPath === manifestPath);
+    const group = this.latest.groups.find(
+      (candidate) => candidate.manifestPath === manifestPath,
+    );
     if (!group) return;
 
     const outdated = group.dependencies.filter(
       (dep) => dep.updateKind !== 'none' && dep.updateKind !== 'unknown',
     );
     if (outdated.length === 0) {
-      this.post({ type: 'notice', message: 'Everything is already up to date.' });
+      this.post({
+        type: 'notice',
+        message: 'Everything is already up to date.',
+      });
       return;
     }
 
@@ -359,7 +415,10 @@ export class PanelManager implements vscode.Disposable {
     const command = provider.updateAllCommand(toolchain);
 
     if (!command) {
-      this.post({ type: 'error', message: `No bulk update command for ${group.ecosystem}.` });
+      this.post({
+        type: 'error',
+        message: `No bulk update command for ${group.ecosystem}.`,
+      });
       return;
     }
 
@@ -379,7 +438,10 @@ export class PanelManager implements vscode.Disposable {
     if (choice !== 'Remove') return;
 
     const provider = providerFor(dep.ecosystem);
-    const toolchain = await provider.detectToolchain(dep.manifestPath, this.ctx);
+    const toolchain = await provider.detectToolchain(
+      dep.manifestPath,
+      this.ctx,
+    );
     const command = provider.uninstallCommand(toolchain, dep);
 
     if (command) {
@@ -414,8 +476,15 @@ export class PanelManager implements vscode.Disposable {
       const meta = await this.scanner.fetchDetails(found.dep);
       if (meta) {
         // Preserve any deprecation notice the version lookup already found.
-        found.dep.meta = { ...meta, deprecated: meta.deprecated ?? found.dep.meta?.deprecated };
-        this.post({ type: 'state', groups: this.latest.groups, summary: this.latest.summary });
+        found.dep.meta = {
+          ...meta,
+          deprecated: meta.deprecated ?? found.dep.meta?.deprecated,
+        };
+        this.post({
+          type: 'state',
+          groups: this.latest.groups,
+          summary: this.latest.summary,
+        });
       }
     } catch (error) {
       this.post({ type: 'error', message: describeError(error) });
@@ -428,14 +497,23 @@ export class PanelManager implements vscode.Disposable {
 
     try {
       const result = await explainDependency(found.dep, this.ctx);
-      this.post({ type: 'whyTree', depKey, roots: result.roots, source: result.source });
+      this.post({
+        type: 'whyTree',
+        depKey,
+        roots: result.roots,
+        source: result.source,
+      });
     } catch (error) {
       this.post({ type: 'error', message: describeError(error) });
     }
   }
 
   /** Runs a command and refreshes once it completes. */
-  private async runCommand(argv: string[], cwd: string, description: string): Promise<void> {
+  private async runCommand(
+    argv: string[],
+    cwd: string,
+    description: string,
+  ): Promise<void> {
     this.setBusy(true, description);
     try {
       await this.terminal.run({ argv, cwd, description });
@@ -477,9 +555,13 @@ export class PanelManager implements vscode.Disposable {
     return true;
   }
 
-  private findDependency(depKey: string): { group: ProjectGroup; dep: Dependency } | undefined {
+  private findDependency(
+    depKey: string,
+  ): { group: ProjectGroup; dep: Dependency } | undefined {
     for (const group of this.latest.groups) {
-      const dep = group.dependencies.find((candidate) => candidate.key === depKey);
+      const dep = group.dependencies.find(
+        (candidate) => candidate.key === depKey,
+      );
       if (dep) return { group, dep };
     }
     return undefined;
@@ -498,9 +580,16 @@ export class PanelManager implements vscode.Disposable {
     }
   }
 
-  private async openManifest(manifestPath: string, packageName?: string): Promise<void> {
-    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(manifestPath));
-    const editor = await vscode.window.showTextDocument(document, { preview: false });
+  private async openManifest(
+    manifestPath: string,
+    packageName?: string,
+  ): Promise<void> {
+    const document = await vscode.workspace.openTextDocument(
+      vscode.Uri.file(manifestPath),
+    );
+    const editor = await vscode.window.showTextDocument(document, {
+      preview: false,
+    });
 
     if (!packageName) return;
 
@@ -509,14 +598,21 @@ export class PanelManager implements vscode.Disposable {
     if (index >= 0) {
       const position = document.positionAt(index);
       editor.selection = new vscode.Selection(position, position);
-      editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+      editor.revealRange(
+        new vscode.Range(position, position),
+        vscode.TextEditorRevealType.InCenter,
+      );
     }
   }
 
   private buildHtml(webview: vscode.Webview): string {
     const base = vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview');
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(base, 'index.js'));
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(base, 'index.css'));
+    const scriptUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(base, 'index.js'),
+    );
+    const styleUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(base, 'index.css'),
+    );
     const nonce = createNonce();
 
     // connect-src 'none' is deliberate: the webview never talks to the network.
@@ -552,7 +648,8 @@ export class PanelManager implements vscode.Disposable {
 }
 
 function createNonce(): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const alphabet =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let nonce = '';
   for (let i = 0; i < 32; i++) {
     nonce += alphabet.charAt(Math.floor(Math.random() * alphabet.length));

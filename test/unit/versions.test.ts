@@ -5,16 +5,20 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { compareComposer } from '../../src/core/versions/composer.js';
 import {
   classifyUpdate,
   compareVersions,
+  isPrerelease,
   maxSatisfying,
   maxVersion,
-  isPrerelease,
 } from '../../src/core/versions/index.js';
-import { comparePep440, satisfiesPep440, parsePep440 } from '../../src/core/versions/pep440.js';
 import { compareMaven, maxMaven } from '../../src/core/versions/maven.js';
-import { compareComposer } from '../../src/core/versions/composer.js';
+import {
+  comparePep440,
+  parsePep440,
+  satisfiesPep440,
+} from '../../src/core/versions/pep440.js';
 
 const asc = (a: string, b: string, cmp: (x: string, y: string) => number) =>
   cmp(a, b) < 0 ? 'lt' : cmp(a, b) > 0 ? 'gt' : 'eq';
@@ -127,7 +131,9 @@ describe('Composer ordering', () => {
 describe('cross-ecosystem facade', () => {
   it('routes each ecosystem to its own scheme', () => {
     // Only PEP 440 ranks a post-release above the plain release.
-    expect(compareVersions('python', '1.0.0.post1', '1.0.0')).toBeGreaterThan(0);
+    expect(compareVersions('python', '1.0.0.post1', '1.0.0')).toBeGreaterThan(
+      0,
+    );
     expect(compareVersions('maven', '1.0-SNAPSHOT', '1.0')).toBeLessThan(0);
     expect(compareVersions('node', '1.0.0-beta', '1.0.0')).toBeLessThan(0);
   });

@@ -7,13 +7,13 @@
  */
 
 import * as vscode from 'vscode';
-import { HttpClient } from './core/http.js';
 import { TtlCache } from './core/cache.js';
+import { HttpClient } from './core/http.js';
 import { MuteList } from './core/muteList.js';
-import type { Dependency } from './core/types.js';
-import { createProviderContext } from './core/workspace.js';
 import { Scanner, type ScanResult } from './core/scanner.js';
+import type { Dependency } from './core/types.js';
 import { ManifestWatcher } from './core/watcher.js';
+import { createProviderContext } from './core/workspace.js';
 import { PanelManager } from './ui/panelManager.js';
 import { DependencyTreeProvider } from './ui/treeProvider.js';
 
@@ -25,14 +25,18 @@ import { DependencyTreeProvider } from './ui/treeProvider.js';
  */
 export interface PanoramaApi {
   /** Runs a scan. Pass `checkUpdates: false` to stay entirely offline. */
-  scan(options?: { checkUpdates?: boolean; audit?: boolean }): Promise<ScanResult>;
+  scan(options?: {
+    checkUpdates?: boolean;
+    audit?: boolean;
+  }): Promise<ScanResult>;
   /** The most recent result, without triggering new work. */
   getResult(): ScanResult;
   muteList: MuteList;
 }
 
 export function activate(context: vscode.ExtensionContext): PanoramaApi {
-  const version = (context.extension.packageJSON as { version?: string }).version ?? '0.0.0';
+  const version =
+    (context.extension.packageJSON as { version?: string }).version ?? '0.0.0';
   const config = () => vscode.workspace.getConfiguration('panorama');
 
   /**
@@ -61,7 +65,10 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     treeDataProvider: tree,
   });
 
-  const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  const statusBar = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100,
+  );
   statusBar.command = 'panorama.open';
 
   const panel = new PanelManager(
@@ -73,7 +80,10 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       updateStatusBar(statusBar, result);
       treeView.badge =
         result.summary.outdated > 0
-          ? { value: result.summary.outdated, tooltip: `${result.summary.outdated} outdated` }
+          ? {
+              value: result.summary.outdated,
+              tooltip: `${result.summary.outdated} outdated`,
+            }
           : undefined;
     },
     muteList,
@@ -98,11 +108,17 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     checkUpdates: boolean,
     audit?: boolean,
   ): Promise<ScanResult | undefined> => {
-    panel.setBusy(true, checkUpdates ? 'Checking registries…' : 'Reading manifests…');
+    panel.setBusy(
+      true,
+      checkUpdates ? 'Checking registries…' : 'Reading manifests…',
+    );
 
     try {
       const result = await scanner.scan(
-        { checkUpdates, audit: audit ?? config().get<boolean>('enableAudit', true) },
+        {
+          checkUpdates,
+          audit: audit ?? config().get<boolean>('enableAudit', true),
+        },
         // Paint manifest data immediately; registry data lands a moment later.
         (partial) => panel.setResult(partial),
       );
@@ -117,7 +133,9 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       return result;
     } catch (error) {
       if (!isAbort(error)) {
-        void vscode.window.showErrorMessage(`Panorama scan failed: ${describe(error)}`);
+        void vscode.window.showErrorMessage(
+          `Panorama scan failed: ${describe(error)}`,
+        );
       }
       return undefined;
     } finally {
@@ -148,49 +166,67 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
 
     // Explicit user intent, so this ignores autoCheckUpdates — but still stays
     // offline under the test host.
-    vscode.commands.registerCommand('panorama.checkUpdates', () => runScan(!isTestHost)),
+    vscode.commands.registerCommand('panorama.checkUpdates', () =>
+      runScan(!isTestHost),
+    ),
 
     vscode.commands.registerCommand('panorama.searchInstall', () => {
       panel.revealSearch();
     }),
 
-    vscode.commands.registerCommand('panorama.toggleMute', async (item?: unknown) => {
-      const dep = dependencyFromTreeItem(item) ?? findByKey(panel.currentResult, panel.lastSelectedKey);
-      if (!dep) {
-        void vscode.window.showInformationMessage(
-          'Select a package in the Panorama panel or sidebar first.',
+    vscode.commands.registerCommand(
+      'panorama.toggleMute',
+      async (item?: unknown) => {
+        const dep =
+          dependencyFromTreeItem(item) ??
+          findByKey(panel.currentResult, panel.lastSelectedKey);
+        if (!dep) {
+          void vscode.window.showInformationMessage(
+            'Select a package in the Panorama panel or sidebar first.',
+          );
+          return;
+        }
+        const nowMuted = await muteList.toggle(dep);
+        panel.setResult(
+          scanner.resummarize(
+            panel.currentResult.groups,
+            panel.currentResult.summary.stale,
+          ),
         );
-        return;
-      }
-      const nowMuted = await muteList.toggle(dep);
-      panel.setResult(scanner.resummarize(panel.currentResult.groups, panel.currentResult.summary.stale));
-      void vscode.window.showInformationMessage(
-        nowMuted ? `Muted updates for ${dep.name}.` : `Unmuted ${dep.name}.`,
-      );
-    }),
+        void vscode.window.showInformationMessage(
+          nowMuted ? `Muted updates for ${dep.name}.` : `Unmuted ${dep.name}.`,
+        );
+      },
+    ),
 
     vscode.commands.registerCommand('panorama.clearMuted', async () => {
       if (muteList.size === 0) {
-        void vscode.window.showInformationMessage('No muted packages in this workspace.');
+        void vscode.window.showInformationMessage(
+          'No muted packages in this workspace.',
+        );
         return;
       }
       const count = muteList.size;
       await muteList.clear();
-      panel.setResult(scanner.resummarize(panel.currentResult.groups, panel.currentResult.summary.stale));
+      panel.setResult(
+        scanner.resummarize(
+          panel.currentResult.groups,
+          panel.currentResult.summary.stale,
+        ),
+      );
       void vscode.window.showInformationMessage(`Unmuted ${count} package(s).`);
     }),
 
     vscode.commands.registerCommand('panorama.updateAll', async () => {
       const groups = panel.currentResult.groups;
       if (groups.length === 0) {
-        void vscode.window.showInformationMessage('Panorama has not found any manifests yet.');
+        void vscode.window.showInformationMessage(
+          'Panorama has not found any manifests yet.',
+        );
         return;
       }
       // With one project there is nothing to disambiguate.
-      const target =
-        groups.length === 1
-          ? groups[0]
-          : await pickGroup(groups);
+      const target = groups.length === 1 ? groups[0] : await pickGroup(groups);
       if (!target) return;
       panel.reveal();
       await panel.updateAll(target.manifestPath);
@@ -199,7 +235,9 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     // Invoked from the tree view's inline action (which passes the item) or
     // from the command palette (which does not, so we fall back to selection).
     vscode.commands.registerCommand('panorama.showWhy', (item?: unknown) => {
-      const dep = dependencyFromTreeItem(item) ?? findByKey(panel.currentResult, panel.lastSelectedKey);
+      const dep =
+        dependencyFromTreeItem(item) ??
+        findByKey(panel.currentResult, panel.lastSelectedKey);
       if (!dep) {
         void vscode.window.showInformationMessage(
           'Select a package in the Panorama panel or sidebar first.',
@@ -248,7 +286,10 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       // Let any in-flight scan settle first, so a caller never observes the
       // empty state that precedes the activation scan.
       await inFlight?.catch(() => undefined);
-      const result = await runScan(options?.checkUpdates ?? false, options?.audit ?? false);
+      const result = await runScan(
+        options?.checkUpdates ?? false,
+        options?.audit ?? false,
+      );
       return result ?? panel.currentResult;
     },
     getResult: () => panel.currentResult,
@@ -284,10 +325,15 @@ function updateStatusBar(item: vscode.StatusBarItem, result: ScanResult): void {
   if (vulnerable > 0) parts.push(`$(shield) ${vulnerable}`);
   if (outdated > 0) parts.push(`$(arrow-up) ${outdated}`);
 
-  item.text = parts.length > 0 ? `$(package) ${parts.join(' ')}` : `$(package) ${totalDependencies}`;
+  item.text =
+    parts.length > 0
+      ? `$(package) ${parts.join(' ')}`
+      : `$(package) ${totalDependencies}`;
   item.tooltip = `Panorama — ${totalDependencies} dependencies, ${outdated} outdated, ${vulnerable} vulnerable`;
   item.backgroundColor =
-    vulnerable > 0 ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
+    vulnerable > 0
+      ? new vscode.ThemeColor('statusBarItem.warningBackground')
+      : undefined;
   item.show();
 }
 
@@ -302,7 +348,10 @@ function dependencyFromTreeItem(item: unknown): Dependency | undefined {
   return node.dep as Dependency;
 }
 
-function findByKey(result: ScanResult, key: string | undefined): Dependency | undefined {
+function findByKey(
+  result: ScanResult,
+  key: string | undefined,
+): Dependency | undefined {
   if (!key) return undefined;
   for (const group of result.groups) {
     const dep = group.dependencies.find((candidate) => candidate.key === key);

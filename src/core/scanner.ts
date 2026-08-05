@@ -8,6 +8,15 @@
 
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import type { ProviderContext } from '../providers/provider.js';
+import {
+  manifestGlob,
+  PROVIDERS,
+  providerFor,
+  providerForPath,
+} from '../providers/registry.js';
+import { auditDependencies } from './audit.js';
+import type { MuteList } from './muteList.js';
 import type {
   Dependency,
   Ecosystem,
@@ -15,12 +24,13 @@ import type {
   ProjectGroup,
   ScanSummary,
 } from './types.js';
+import {
+  classifyUpdate,
+  constraintToApproxVersion,
+  maxSatisfying,
+  maxVersion,
+} from './versions/index.js';
 import { assignWorkspaces, readSidecarMembers } from './workspaces.js';
-import type { MuteList } from './muteList.js';
-import { classifyUpdate, constraintToApproxVersion, maxSatisfying, maxVersion } from './versions/index.js';
-import { providerFor, providerForPath, manifestGlob, PROVIDERS } from '../providers/registry.js';
-import type { ProviderContext } from '../providers/provider.js';
-import { auditDependencies } from './audit.js';
 
 export interface ScanResult {
   groups: ProjectGroup[];
@@ -98,12 +108,19 @@ export class Scanner {
   /** Finds and parses every manifest in the workspace. */
   private async collectGroups(): Promise<ProjectGroup[]> {
     const excludes = [
-      ...vscode.workspace.getConfiguration('panorama').get<string[]>('excludeGlobs', []),
+      ...vscode.workspace
+        .getConfiguration('panorama')
+        .get<string[]>('excludeGlobs', []),
       ...(await this.gitignoreExcludes()),
     ];
-    const excludePattern = excludes.length > 0 ? `{${excludes.join(',')}}` : undefined;
+    const excludePattern =
+      excludes.length > 0 ? `{${excludes.join(',')}}` : undefined;
 
-    const uris = await vscode.workspace.findFiles(manifestGlob(), excludePattern, 500);
+    const uris = await vscode.workspace.findFiles(
+      manifestGlob(),
+      excludePattern,
+      500,
+    );
 
     const groups: ProjectGroup[] = [];
     // Collected alongside the groups so workspace membership can be resolved
@@ -117,7 +134,7 @@ export class Scanner {
       const text = await this.ctx.readFile(uri.fsPath);
       if (text === null) continue;
 
-      let manifest;
+      let manifest: ParsedManifest;
       try {
         manifest = await provider.parse(uri.fsPath, text, this.ctx);
       } catch {
@@ -140,10 +157,14 @@ export class Scanner {
       // Fill in resolved versions from the lockfile where the provider has one.
       if (provider.readLockfile) {
         try {
-          const resolved = await provider.readLockfile(path.dirname(uri.fsPath), this.ctx);
+          const resolved = await provider.readLockfile(
+            path.dirname(uri.fsPath),
+            this.ctx,
+          );
           if (resolved.size > 0) {
             for (const dep of manifest.dependencies) {
-              dep.installed ??= resolved.get(dep.name) ?? resolved.get(dep.name.toLowerCase());
+              dep.installed ??=
+                resolved.get(dep.name) ?? resolved.get(dep.name.toLowerCase());
             }
           }
         } catch {
@@ -188,7 +209,9 @@ export class Scanner {
     const globs = new Set<string>();
 
     for (const folder of folders) {
-      const text = await this.ctx.readFile(path.join(folder.uri.fsPath, '.gitignore'));
+      const text = await this.ctx.readFile(
+        path.join(folder.uri.fsPath, '.gitignore'),
+      );
       if (!text) continue;
 
       for (const rawLine of text.split(/\r?\n/)) {
@@ -219,7 +242,9 @@ export class Scanner {
     parsed: Array<{ manifest: ParsedManifest; members: string[] }>,
   ): void {
     const assignments = assignWorkspaces(parsed);
-    const labelByPath = new Map(groups.map((group) => [group.manifestPath, group.label]));
+    const labelByPath = new Map(
+      groups.map((group) => [group.manifestPath, group.label]),
+    );
 
     for (const group of groups) {
       const info = assignments.get(group.manifestPath);
@@ -232,13 +257,17 @@ export class Scanner {
         // A root with no dependencies of its own never became a group, so fall
         // back to its directory name rather than dropping the attribution.
         group.workspaceRootLabel =
-          labelByPath.get(info.rootPath) ?? path.basename(path.dirname(info.rootPath));
+          labelByPath.get(info.rootPath) ??
+          path.basename(path.dirname(info.rootPath));
       }
     }
   }
 
   /** One batched registry round-trip per ecosystem, then merge the results. */
-  private async enrichVersions(groups: ProjectGroup[], signal: AbortSignal): Promise<void> {
+  private async enrichVersions(
+    groups: ProjectGroup[],
+    signal: AbortSignal,
+  ): Promise<void> {
     const byEcosystem = new Map<Ecosystem, Set<string>>();
     for (const group of groups) {
       for (const dep of group.dependencies) {
@@ -254,7 +283,11 @@ export class Scanner {
     await Promise.all(
       [...byEcosystem.entries()].map(async ([ecosystem, names]) => {
         const provider = providerFor(ecosystem);
-        const versions = await provider.fetchVersions([...names], this.ctx, signal);
+        const versions = await provider.fetchVersions(
+          [...names],
+          this.ctx,
+          signal,
+        );
 
         for (const group of groups) {
           for (const dep of group.dependencies) {
@@ -268,15 +301,21 @@ export class Scanner {
             }
 
             dep.latest = info.latest ?? maxVersion(ecosystem, info.versions);
-            dep.wanted = maxSatisfying(ecosystem, info.versions, dep.declared) ?? dep.installed;
+            dep.wanted =
+              maxSatisfying(ecosystem, info.versions, dep.declared) ??
+              dep.installed;
 
             if (info.deprecated) {
-              dep.meta = { ...(dep.meta ?? { name: dep.name }), deprecated: info.deprecated };
+              dep.meta = {
+                ...(dep.meta ?? { name: dep.name }),
+                deprecated: info.deprecated,
+              };
             }
 
             // Compare against what is actually resolved, falling back to the
             // constraint's lower bound when nothing pins an exact version.
-            const current = dep.installed ?? constraintToApproxVersion(dep.declared);
+            const current =
+              dep.installed ?? constraintToApproxVersion(dep.declared);
             dep.updateKind = classifyUpdate(ecosystem, current, dep.latest);
           }
         }
@@ -296,16 +335,19 @@ export class Scanner {
     ecosystem: Ecosystem | 'all',
     signal: AbortSignal,
   ) {
-    const targets =
-      ecosystem === 'all' ? PROVIDERS : [providerFor(ecosystem)];
+    const targets = ecosystem === 'all' ? PROVIDERS : [providerFor(ecosystem)];
 
     const settled = await Promise.allSettled(
       targets.map((provider) => provider.search(query, this.ctx, signal)),
     );
 
     return settled
-      .filter((entry): entry is PromiseFulfilledResult<Awaited<ReturnType<typeof PROVIDERS[0]['search']>>> =>
-        entry.status === 'fulfilled',
+      .filter(
+        (
+          entry,
+        ): entry is PromiseFulfilledResult<
+          Awaited<ReturnType<(typeof PROVIDERS)[0]['search']>>
+        > => entry.status === 'fulfilled',
       )
       .flatMap((entry) => entry.value);
   }
@@ -322,7 +364,9 @@ function summarize(groups: ProjectGroup[], stale: boolean): ScanSummary {
     for (const dep of group.dependencies) {
       total++;
       const isOutdated =
-        dep.updateKind === 'patch' || dep.updateKind === 'minor' || dep.updateKind === 'major';
+        dep.updateKind === 'patch' ||
+        dep.updateKind === 'minor' ||
+        dep.updateKind === 'major';
       if (isOutdated) {
         // Muted updates are counted separately so the badge keeps meaning
         // "things I still need to look at".
@@ -336,7 +380,14 @@ function summarize(groups: ProjectGroup[], stale: boolean): ScanSummary {
     }
   }
 
-  return { totalDependencies: total, outdated, vulnerable, deprecated, muted, stale };
+  return {
+    totalDependencies: total,
+    outdated,
+    vulnerable,
+    deprecated,
+    muted,
+    stale,
+  };
 }
 
 /**
@@ -344,7 +395,9 @@ function summarize(groups: ProjectGroup[], stale: boolean): ScanSummary {
  * the manifest's own name when it sits at the root.
  */
 function relativeLabel(manifestPath: string, manifestName: string): string {
-  const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(manifestPath));
+  const folder = vscode.workspace.getWorkspaceFolder(
+    vscode.Uri.file(manifestPath),
+  );
   if (!folder) return manifestName;
 
   const relative = path.relative(folder.uri.fsPath, path.dirname(manifestPath));
@@ -352,7 +405,8 @@ function relativeLabel(manifestPath: string, manifestName: string): string {
 
   // Several manifests can share a directory (pyproject.toml + requirements.txt),
   // so name the file when it is not the directory's obvious primary manifest.
-  const suffix = base === 'package.json' || base === 'pyproject.toml' ? '' : ` · ${base}`;
+  const suffix =
+    base === 'package.json' || base === 'pyproject.toml' ? '' : ` · ${base}`;
 
   if (relative === '') return `${manifestName}${suffix}`;
   return `${relative}${suffix}`;

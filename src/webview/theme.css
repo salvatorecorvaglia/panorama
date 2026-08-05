@@ -88,8 +88,8 @@ body {
 
 /* ---------- Controls ---------- */
 
-input[type='text'],
-input[type='search'],
+input[type="text"],
+input[type="search"],
 select {
   font-family: inherit;
   font-size: inherit;
@@ -181,7 +181,7 @@ button.danger:hover:not(:disabled) {
   opacity: 0.6;
 }
 
-.chip[aria-pressed='true'] {
+.chip[aria-pressed="true"] {
   opacity: 1;
   outline: 1px solid var(--vscode-focusBorder);
 }
@@ -250,7 +250,7 @@ button.danger:hover:not(:disabled) {
   background-color: var(--vscode-list-hoverBackground);
 }
 
-.row[aria-selected='true'] {
+.row[aria-selected="true"] {
   background-color: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
 }
@@ -385,7 +385,10 @@ button.danger:hover:not(:disabled) {
   border-left: 1px solid var(--vscode-panel-border);
   overflow-y: auto;
   padding: var(--panorama-gap);
-  background-color: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  background-color: var(
+    --vscode-sideBar-background,
+    var(--vscode-editor-background)
+  );
 }
 
 .drawer__title {
@@ -459,13 +462,19 @@ a:hover,
 .callout--warn {
   border-color: var(--vscode-charts-yellow);
   background-color: var(--vscode-inputValidation-warningBackground);
-  color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground));
+  color: var(
+    --vscode-inputValidation-warningForeground,
+    var(--vscode-foreground)
+  );
 }
 
 .callout--error {
   border-color: var(--vscode-charts-red);
   background-color: var(--vscode-inputValidation-errorBackground);
-  color: var(--vscode-inputValidation-errorForeground, var(--vscode-foreground));
+  color: var(
+    --vscode-inputValidation-errorForeground,
+    var(--vscode-foreground)
+  );
 }
 
 .callout--info {

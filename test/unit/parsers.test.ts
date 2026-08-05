@@ -7,13 +7,20 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { NodeProvider } from '../../src/providers/node/index.js';
-import { PythonProvider, parseRequirement, normalizeName } from '../../src/providers/python/index.js';
 import { CargoProvider } from '../../src/providers/cargo/index.js';
-import { GoProvider, escapeModulePath } from '../../src/providers/golang/index.js';
 import { ComposerProvider } from '../../src/providers/composer/index.js';
-import { MavenProvider } from '../../src/providers/maven/index.js';
+import {
+  escapeModulePath,
+  GoProvider,
+} from '../../src/providers/golang/index.js';
 import { GradleProvider } from '../../src/providers/gradle/index.js';
+import { MavenProvider } from '../../src/providers/maven/index.js';
+import { NodeProvider } from '../../src/providers/node/index.js';
+import {
+  normalizeName,
+  PythonProvider,
+  parseRequirement,
+} from '../../src/providers/python/index.js';
 import { providerForPath } from '../../src/providers/registry.js';
 import { findDep, makeContext } from './helpers.js';
 
@@ -87,8 +94,13 @@ describe('Node provider', () => {
         '/p/package.json': '{}',
         [`/p/${lockfile}`]: '',
       });
-      const toolchain = await provider.detectToolchain('/p/package.json', context);
-      expect(toolchain.id, `${lockfile} should mean ${expected}`).toBe(expected);
+      const toolchain = await provider.detectToolchain(
+        '/p/package.json',
+        context,
+      );
+      expect(toolchain.id, `${lockfile} should mean ${expected}`).toBe(
+        expected,
+      );
     }
   });
 
@@ -97,12 +109,18 @@ describe('Node provider', () => {
       '/p/package.json': JSON.stringify({ packageManager: 'pnpm@9.0.0' }),
       '/p/package-lock.json': '',
     });
-    const toolchain = await provider.detectToolchain('/p/package.json', context);
+    const toolchain = await provider.detectToolchain(
+      '/p/package.json',
+      context,
+    );
     expect(toolchain.id).toBe('pnpm');
   });
 
   it('defaults to npm when nothing indicates otherwise', async () => {
-    const toolchain = await provider.detectToolchain('/p/package.json', makeContext({}));
+    const toolchain = await provider.detectToolchain(
+      '/p/package.json',
+      makeContext({}),
+    );
     expect(toolchain.id).toBe('npm');
   });
 
@@ -132,12 +150,9 @@ describe('Node provider', () => {
 
   it('builds scope-correct commands per toolchain', () => {
     const pnpm = { id: 'pnpm' as const, ecosystem: 'node' as const, cwd: '/p' };
-    expect(provider.installCommand(pnpm, 'vitest', '2.1.0', 'dev')?.argv).toEqual([
-      'pnpm',
-      'add',
-      'vitest@2.1.0',
-      '--dev',
-    ]);
+    expect(
+      provider.installCommand(pnpm, 'vitest', '2.1.0', 'dev')?.argv,
+    ).toEqual(['pnpm', 'add', 'vitest@2.1.0', '--dev']);
 
     const npm = { id: 'npm' as const, ecosystem: 'node' as const, cwd: '/p' };
     expect(provider.installCommand(npm, 'vitest', null, 'dev')?.argv).toEqual([
@@ -146,16 +161,16 @@ describe('Node provider', () => {
       'vitest',
       '--save-dev',
     ]);
-    expect(provider.uninstallCommand(npm, { name: 'react' } as never)?.argv).toEqual([
-      'npm',
-      'uninstall',
-      'react',
-    ]);
+    expect(
+      provider.uninstallCommand(npm, { name: 'react' } as never)?.argv,
+    ).toEqual(['npm', 'uninstall', 'react']);
   });
 
   it('refuses to build a command for an invalid name', () => {
     const npm = { id: 'npm' as const, ecosystem: 'node' as const, cwd: '/p' };
-    expect(provider.installCommand(npm, 'evil; rm -rf /', null, 'prod')).toBeNull();
+    expect(
+      provider.installCommand(npm, 'evil; rm -rf /', null, 'prod'),
+    ).toBeNull();
   });
 });
 
@@ -208,7 +223,9 @@ pytest = "^8.0"
     );
 
     // The interpreter constraint is not a package.
-    expect(manifest.dependencies.some((dep) => dep.name === 'python')).toBe(false);
+    expect(manifest.dependencies.some((dep) => dep.name === 'python')).toBe(
+      false,
+    );
     expect(findDep(manifest.dependencies, 'requests').declared).toBe('^2.28');
     expect(findDep(manifest.dependencies, 'django').declared).toBe('^5.0');
     expect(findDep(manifest.dependencies, 'pytest').scope).toBe('dev');
@@ -246,23 +263,41 @@ flask>=2,<3  # inline comment
       ctx,
     );
 
-    expect(manifest.dependencies.map((dep) => dep.name).sort()).toEqual(['flask', 'requests']);
-    expect(findDep(manifest.dependencies, 'requests').declared).toBe('==2.31.0');
+    expect(manifest.dependencies.map((dep) => dep.name).sort()).toEqual([
+      'flask',
+      'requests',
+    ]);
+    expect(findDep(manifest.dependencies, 'requests').declared).toBe(
+      '==2.31.0',
+    );
     expect(findDep(manifest.dependencies, 'flask').declared).toBe('>=2,<3');
   });
 
   it('treats a dev-named requirements file as dev scope', async () => {
-    const manifest = await provider.parse('/p/requirements-dev.txt', 'pytest==8.0.0', ctx);
+    const manifest = await provider.parse(
+      '/p/requirements-dev.txt',
+      'pytest==8.0.0',
+      ctx,
+    );
     expect(manifest.dependencies[0].scope).toBe('dev');
   });
 
   it('detects the toolchain from lockfiles and pyproject markers', async () => {
     expect(
-      (await provider.detectToolchain('/p/pyproject.toml', makeContext({ '/p/uv.lock': '' }))).id,
+      (
+        await provider.detectToolchain(
+          '/p/pyproject.toml',
+          makeContext({ '/p/uv.lock': '' }),
+        )
+      ).id,
     ).toBe('uv');
     expect(
-      (await provider.detectToolchain('/p/pyproject.toml', makeContext({ '/p/poetry.lock': '' })))
-        .id,
+      (
+        await provider.detectToolchain(
+          '/p/pyproject.toml',
+          makeContext({ '/p/poetry.lock': '' }),
+        )
+      ).id,
     ).toBe('poetry');
     expect(
       (
@@ -272,7 +307,9 @@ flask>=2,<3  # inline comment
         )
       ).id,
     ).toBe('poetry');
-    expect((await provider.detectToolchain('/p/pyproject.toml', makeContext({}))).id).toBe('pip');
+    expect(
+      (await provider.detectToolchain('/p/pyproject.toml', makeContext({}))).id,
+    ).toBe('pip');
   });
 
   it('normalises names per PEP 503', () => {
@@ -282,7 +319,9 @@ flask>=2,<3  # inline comment
   });
 
   it('splits requirement strings', () => {
-    expect(parseRequirement('requests[security]>=2.0; python_version<"3.11"')).toEqual({
+    expect(
+      parseRequirement('requests[security]>=2.0; python_version<"3.11"'),
+    ).toEqual({
       name: 'requests',
       extras: ['security'],
       specifier: '>=2.0',
@@ -328,14 +367,14 @@ flask>=2,<3  # inline comment
       'pytest',
     ]);
 
-    const poetry = { id: 'poetry' as const, ecosystem: 'python' as const, cwd: '/p' };
-    expect(provider.installCommand(poetry, 'pytest', '8.0.0', 'dev')?.argv).toEqual([
-      'poetry',
-      'add',
-      '--group',
-      'dev',
-      'pytest==8.0.0',
-    ]);
+    const poetry = {
+      id: 'poetry' as const,
+      ecosystem: 'python' as const,
+      cwd: '/p',
+    };
+    expect(
+      provider.installCommand(poetry, 'pytest', '8.0.0', 'dev')?.argv,
+    ).toEqual(['poetry', 'add', '--group', 'dev', 'pytest==8.0.0']);
   });
 });
 
@@ -370,8 +409,12 @@ cc = "1.0"
     expect(findDep(manifest.dependencies, 'cc').scope).toBe('build');
 
     // Path and git dependencies have no registry version, so they are excluded.
-    expect(manifest.dependencies.some((dep) => dep.name === 'local')).toBe(false);
-    expect(manifest.dependencies.some((dep) => dep.name === 'from-git')).toBe(false);
+    expect(manifest.dependencies.some((dep) => dep.name === 'local')).toBe(
+      false,
+    );
+    expect(manifest.dependencies.some((dep) => dep.name === 'from-git')).toBe(
+      false,
+    );
   });
 
   it('recognises a virtual workspace manifest', async () => {
@@ -402,13 +445,14 @@ version = "1.35.1"
   });
 
   it('builds cargo commands', () => {
-    const toolchain = { id: 'cargo' as const, ecosystem: 'cargo' as const, cwd: '/p' };
-    expect(provider.installCommand(toolchain, 'serde', '1.0.200', 'dev')?.argv).toEqual([
-      'cargo',
-      'add',
-      'serde@1.0.200',
-      '--dev',
-    ]);
+    const toolchain = {
+      id: 'cargo' as const,
+      ecosystem: 'cargo' as const,
+      cwd: '/p',
+    };
+    expect(
+      provider.installCommand(toolchain, 'serde', '1.0.200', 'dev')?.argv,
+    ).toEqual(['cargo', 'add', 'serde@1.0.200', '--dev']);
   });
 });
 
@@ -434,25 +478,40 @@ require github.com/spf13/cobra v1.8.0
     );
 
     expect(manifest.name).toBe('example.com/demo');
-    expect(findDep(manifest.dependencies, 'github.com/gin-gonic/gin').scope).toBe('prod');
-    expect(findDep(manifest.dependencies, 'github.com/gin-gonic/gin').installed).toBe('v1.10.0');
+    expect(
+      findDep(manifest.dependencies, 'github.com/gin-gonic/gin').scope,
+    ).toBe('prod');
+    expect(
+      findDep(manifest.dependencies, 'github.com/gin-gonic/gin').installed,
+    ).toBe('v1.10.0');
     // Indirect requirements are transitive, so they are not shown as direct.
-    expect(findDep(manifest.dependencies, 'golang.org/x/text').scope).toBe('optional');
-    expect(findDep(manifest.dependencies, 'github.com/spf13/cobra').declared).toBe('v1.8.0');
+    expect(findDep(manifest.dependencies, 'golang.org/x/text').scope).toBe(
+      'optional',
+    );
+    expect(
+      findDep(manifest.dependencies, 'github.com/spf13/cobra').declared,
+    ).toBe('v1.8.0');
   });
 
   it('case-escapes module paths for the proxy', () => {
-    expect(escapeModulePath('github.com/BurntSushi/toml')).toBe('github.com/!burnt!sushi/toml');
-    expect(escapeModulePath('github.com/spf13/cobra')).toBe('github.com/spf13/cobra');
+    expect(escapeModulePath('github.com/BurntSushi/toml')).toBe(
+      'github.com/!burnt!sushi/toml',
+    );
+    expect(escapeModulePath('github.com/spf13/cobra')).toBe(
+      'github.com/spf13/cobra',
+    );
   });
 
   it('removes a module with @none', () => {
-    const toolchain = { id: 'go' as const, ecosystem: 'golang' as const, cwd: '/p' };
-    expect(provider.uninstallCommand(toolchain, { name: 'example.com/m' } as never)?.argv).toEqual([
-      'go',
-      'get',
-      'example.com/m@none',
-    ]);
+    const toolchain = {
+      id: 'go' as const,
+      ecosystem: 'golang' as const,
+      cwd: '/p',
+    };
+    expect(
+      provider.uninstallCommand(toolchain, { name: 'example.com/m' } as never)
+        ?.argv,
+    ).toEqual(['go', 'get', 'example.com/m@none']);
   });
 });
 
@@ -533,7 +592,10 @@ describe('Maven provider', () => {
   it('resolves property placeholders and managed versions', async () => {
     const manifest = await provider.parse('/p/pom.xml', pom, ctx);
 
-    const junit = findDep(manifest.dependencies, 'org.junit.jupiter:junit-jupiter');
+    const junit = findDep(
+      manifest.dependencies,
+      'org.junit.jupiter:junit-jupiter',
+    );
     expect(junit.declared).toBe('5.10.2');
     expect(junit.scope).toBe('dev'); // <scope>test</scope>
 
@@ -577,7 +639,9 @@ describe('Maven provider', () => {
     });
     expect(updated).toContain('<artifactId>slf4j-api</artifactId>');
     expect(updated).toContain('<version>2.0.13</version>');
-    expect(updated!.indexOf('slf4j-api')).toBeLessThan(updated!.lastIndexOf('</dependencies>'));
+    expect(updated!.indexOf('slf4j-api')).toBeLessThan(
+      updated!.lastIndexOf('</dependencies>'),
+    );
   });
 });
 
@@ -593,21 +657,31 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     compileOnly("org.projectlombok:lombok:1.18.30")
     // implementation("commented:out:1.0")
-    implementation("dynamic:version:\$someVar")
+    implementation("dynamic:version:$someVar")
 }
 `,
       ctx,
     );
 
-    expect(findDep(manifest.dependencies, 'com.google.guava:guava').declared).toBe('33.0.0-jre');
-    expect(findDep(manifest.dependencies, 'org.junit.jupiter:junit-jupiter').scope).toBe('dev');
-    expect(findDep(manifest.dependencies, 'org.projectlombok:lombok').scope).toBe('build');
+    expect(
+      findDep(manifest.dependencies, 'com.google.guava:guava').declared,
+    ).toBe('33.0.0-jre');
+    expect(
+      findDep(manifest.dependencies, 'org.junit.jupiter:junit-jupiter').scope,
+    ).toBe('dev');
+    expect(
+      findDep(manifest.dependencies, 'org.projectlombok:lombok').scope,
+    ).toBe('build');
 
     // A commented-out dependency is not a dependency.
-    expect(manifest.dependencies.some((dep) => dep.name === 'commented:out')).toBe(false);
+    expect(
+      manifest.dependencies.some((dep) => dep.name === 'commented:out'),
+    ).toBe(false);
 
     // A computed version must not be reported as if it were literal.
-    expect(findDep(manifest.dependencies, 'dynamic:version').declared).toBe('unspecified');
+    expect(findDep(manifest.dependencies, 'dynamic:version').declared).toBe(
+      'unspecified',
+    );
   });
 
   it('parses version catalogs including version.ref indirection', async () => {
@@ -626,11 +700,20 @@ shorthand = "commons-io:commons-io:2.15.1"
       ctx,
     );
 
-    expect(findDep(manifest.dependencies, 'com.google.guava:guava').declared).toBe('33.0.0-jre');
+    expect(
+      findDep(manifest.dependencies, 'com.google.guava:guava').declared,
+    ).toBe('33.0.0-jre');
     // The ref must resolve through the [versions] table.
-    expect(findDep(manifest.dependencies, 'org.junit.jupiter:junit-jupiter').declared).toBe('5.10.2');
-    expect(findDep(manifest.dependencies, 'org.slf4j:slf4j-api').declared).toBe('2.0.13');
-    expect(findDep(manifest.dependencies, 'commons-io:commons-io').declared).toBe('2.15.1');
+    expect(
+      findDep(manifest.dependencies, 'org.junit.jupiter:junit-jupiter')
+        .declared,
+    ).toBe('5.10.2');
+    expect(findDep(manifest.dependencies, 'org.slf4j:slf4j-api').declared).toBe(
+      '2.0.13',
+    );
+    expect(
+      findDep(manifest.dependencies, 'commons-io:commons-io').declared,
+    ).toBe('2.15.1');
   });
 
   it('updates a literal version in a build script', () => {

@@ -7,10 +7,10 @@
  * the small subset that actually matched.
  */
 
-import type { ProjectGroup, Severity, Vulnerability } from './types.js';
 import type { ProviderContext } from '../providers/provider.js';
 import { providerFor } from '../providers/registry.js';
 import { cacheKey, TTL } from './cache.js';
+import type { ProjectGroup, Severity, Vulnerability } from './types.js';
 
 const OSV_API = 'https://api.osv.dev';
 const MAX_BATCH = 500;
@@ -28,7 +28,10 @@ interface OsvVuln {
   database_specific?: { severity?: string };
   affected?: Array<{
     package?: { name?: string; ecosystem?: string };
-    ranges?: Array<{ type: string; events: Array<{ introduced?: string; fixed?: string }> }>;
+    ranges?: Array<{
+      type: string;
+      events: Array<{ introduced?: string; fixed?: string }>;
+    }>;
   }>;
 }
 
@@ -70,7 +73,10 @@ export async function auditDependencies(
       }
 
       seen.set(identity, queries.length);
-      queries.push({ package: { name: dep.name, ecosystem: osvEcosystem }, version });
+      queries.push({
+        package: { name: dep.name, ecosystem: osvEcosystem },
+        version,
+      });
       owners.push([{ group, index }]);
     });
   }
@@ -78,7 +84,9 @@ export async function auditDependencies(
   if (queries.length === 0) return;
 
   // Batch, then fetch details only for the IDs that came back.
-  const idsPerQuery: Array<string[]> = new Array(queries.length).fill(null).map(() => []);
+  const idsPerQuery: Array<string[]> = new Array(queries.length)
+    .fill(null)
+    .map(() => []);
 
   for (let offset = 0; offset < queries.length; offset += MAX_BATCH) {
     const slice = queries.slice(offset, offset + MAX_BATCH);
@@ -134,7 +142,10 @@ async function fetchVulnerabilities(
         }
 
         try {
-          const raw = await ctx.http.getJson<OsvVuln>(`${OSV_API}/v1/vulns/${id}`, { signal });
+          const raw = await ctx.http.getJson<OsvVuln>(
+            `${OSV_API}/v1/vulns/${id}`,
+            { signal },
+          );
           const vuln = toVulnerability(raw);
           result.set(id, vuln);
           await ctx.cache.set(key, vuln, TTL.audit);
@@ -178,7 +189,12 @@ function toVulnerability(raw: OsvVuln): Vulnerability {
  */
 function deriveSeverity(raw: OsvVuln): Severity {
   const label = raw.database_specific?.severity?.toLowerCase();
-  if (label === 'critical' || label === 'high' || label === 'moderate' || label === 'low') {
+  if (
+    label === 'critical' ||
+    label === 'high' ||
+    label === 'moderate' ||
+    label === 'low'
+  ) {
     return label;
   }
   if (label === 'medium') return 'moderate';

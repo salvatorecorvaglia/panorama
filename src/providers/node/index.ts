@@ -6,26 +6,29 @@
  */
 
 import * as path from 'node:path';
-import { parse as parseJsonc, type ParseError } from 'jsonc-parser';
+import { type ParseError, parse as parseJsonc } from 'jsonc-parser';
+import { cacheKey, TTL } from '../../core/cache.js';
+import { HttpError } from '../../core/http.js';
 import type {
-  DepScope,
   Dependency,
+  DepScope,
   PackageMeta,
   ParsedManifest,
   SearchResult,
   Toolchain,
   ToolchainId,
 } from '../../core/types.js';
-import { cacheKey, TTL } from '../../core/cache.js';
-import { HttpError } from '../../core/http.js';
 import {
-  dependencyKey,
   type Command,
+  dependencyKey,
   type EcosystemProvider,
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { changelogUrlFor, normalizeRepositoryUrl } from '../shared/repository.js';
+import {
+  changelogUrlFor,
+  normalizeRepositoryUrl,
+} from '../shared/repository.js';
 
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org';
 
@@ -65,7 +68,13 @@ interface PackumentVersion {
 export class NodeProvider implements EcosystemProvider {
   readonly id = 'node' as const;
   readonly manifestFiles = ['package.json'];
-  readonly lockFiles = ['package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb'];
+  readonly lockFiles = [
+    'package-lock.json',
+    'pnpm-lock.yaml',
+    'yarn.lock',
+    'bun.lock',
+    'bun.lockb',
+  ];
   readonly osvEcosystem = 'npm';
   readonly depsDevSystem = 'NPM';
 
@@ -73,9 +82,14 @@ export class NodeProvider implements EcosystemProvider {
     return name.length <= 214 && NAME_PATTERN.test(name);
   }
 
-  async parse(absolutePath: string, text: string, _ctx: ProviderContext): Promise<ParsedManifest> {
+  async parse(
+    absolutePath: string,
+    text: string,
+    _ctx: ProviderContext,
+  ): Promise<ParsedManifest> {
     const errors: ParseError[] = [];
-    const json = (parseJsonc(text, errors, { allowTrailingComma: true }) ?? {}) as PackageJson;
+    const json = (parseJsonc(text, errors, { allowTrailingComma: true }) ??
+      {}) as PackageJson;
 
     const projectLabel = json.name ?? path.basename(path.dirname(absolutePath));
     const dependencies: Dependency[] = [];
@@ -105,7 +119,7 @@ export class NodeProvider implements EcosystemProvider {
 
     const workspaceGlobs = Array.isArray(json.workspaces)
       ? json.workspaces
-      : json.workspaces?.packages ?? [];
+      : (json.workspaces?.packages ?? []);
 
     return {
       ecosystem: 'node',
@@ -117,10 +131,15 @@ export class NodeProvider implements EcosystemProvider {
     };
   }
 
-  async readLockfile(manifestDir: string, ctx: ProviderContext): Promise<Map<string, string>> {
+  async readLockfile(
+    manifestDir: string,
+    ctx: ProviderContext,
+  ): Promise<Map<string, string>> {
     const resolved = new Map<string, string>();
 
-    const npmLock = await ctx.readFile(path.join(manifestDir, 'package-lock.json'));
+    const npmLock = await ctx.readFile(
+      path.join(manifestDir, 'package-lock.json'),
+    );
     if (npmLock) {
       try {
         const parsed = JSON.parse(npmLock) as {
@@ -130,11 +149,14 @@ export class NodeProvider implements EcosystemProvider {
         // lockfileVersion 2/3 keys entries by install path.
         for (const [key, entry] of Object.entries(parsed.packages ?? {})) {
           if (!key.startsWith('node_modules/') || !entry.version) continue;
-          const name = key.slice('node_modules/'.length).replace(/.*\/node_modules\//, '');
+          const name = key
+            .slice('node_modules/'.length)
+            .replace(/.*\/node_modules\//, '');
           if (!resolved.has(name)) resolved.set(name, entry.version);
         }
         for (const [name, entry] of Object.entries(parsed.dependencies ?? {})) {
-          if (entry.version && !resolved.has(name)) resolved.set(name, entry.version);
+          if (entry.version && !resolved.has(name))
+            resolved.set(name, entry.version);
         }
       } catch {
         // A malformed lockfile is not worth failing the scan over.
@@ -142,7 +164,9 @@ export class NodeProvider implements EcosystemProvider {
       return resolved;
     }
 
-    const pnpmLock = await ctx.readFile(path.join(manifestDir, 'pnpm-lock.yaml'));
+    const pnpmLock = await ctx.readFile(
+      path.join(manifestDir, 'pnpm-lock.yaml'),
+    );
     if (pnpmLock) {
       // Entries look like `/react@18.2.0:` or `react@18.2.0:` depending on version.
       const pattern = /^\s{2}\/?(@?[^@\s:]+(?:\/[^@\s:]+)?)@([^(:\s]+)/gm;
@@ -168,7 +192,10 @@ export class NodeProvider implements EcosystemProvider {
     return resolved;
   }
 
-  async detectToolchain(manifestPath: string, ctx: ProviderContext): Promise<Toolchain> {
+  async detectToolchain(
+    manifestPath: string,
+    ctx: ProviderContext,
+  ): Promise<Toolchain> {
     const cwd = path.dirname(manifestPath);
     const preferred = ctx.preferredToolchain('node');
     if (preferred !== 'auto') {
@@ -178,7 +205,9 @@ export class NodeProvider implements EcosystemProvider {
     // `packageManager` is the project's own declaration and outranks lockfiles.
     const manifestText = await ctx.readFile(manifestPath);
     if (manifestText) {
-      const declared = /"packageManager"\s*:\s*"([a-z]+)@/.exec(manifestText)?.[1];
+      const declared = /"packageManager"\s*:\s*"([a-z]+)@/.exec(
+        manifestText,
+      )?.[1];
       if (declared && ['npm', 'yarn', 'pnpm', 'bun'].includes(declared)) {
         return { id: declared as ToolchainId, ecosystem: 'node', cwd };
       }
@@ -230,7 +259,9 @@ export class NodeProvider implements EcosystemProvider {
         const info: VersionInfo = {
           versions,
           latest: latestTag,
-          deprecated: latestTag ? packument.versions?.[latestTag]?.deprecated : undefined,
+          deprecated: latestTag
+            ? packument.versions?.[latestTag]?.deprecated
+            : undefined,
         };
         result.set(name, info);
         await ctx.cache.set(key, info, TTL.version);
@@ -266,19 +297,27 @@ export class NodeProvider implements EcosystemProvider {
       if (!version) return undefined;
 
       const repository = normalizeRepositoryUrl(
-        typeof version.repository === 'string' ? version.repository : version.repository?.url,
+        typeof version.repository === 'string'
+          ? version.repository
+          : version.repository?.url,
       );
 
       const meta: PackageMeta = {
         name,
         description: version.description,
-        license: typeof version.license === 'string' ? version.license : version.license?.type,
+        license:
+          typeof version.license === 'string'
+            ? version.license
+            : version.license?.type,
         homepage: version.homepage,
         repository,
         changelogUrl: changelogUrlFor(repository),
         sizeBytes: version.dist?.unpackedSize,
         deprecated: version.deprecated,
-        author: typeof version.author === 'string' ? version.author : version.author?.name,
+        author:
+          typeof version.author === 'string'
+            ? version.author
+            : version.author?.name,
       };
       await ctx.cache.set(key, meta, TTL.metadata);
       return meta;
@@ -287,7 +326,11 @@ export class NodeProvider implements EcosystemProvider {
     }
   }
 
-  async search(query: string, ctx: ProviderContext, signal?: AbortSignal): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    ctx: ProviderContext,
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]> {
     const registry = ctx.registryOverride('node') ?? DEFAULT_REGISTRY;
     const url = `${registry}/-/v1/search?text=${encodeURIComponent(query)}&size=25`;
 
@@ -334,7 +377,11 @@ export class NodeProvider implements EcosystemProvider {
     };
   }
 
-  updateCommand(toolchain: Toolchain, dep: Dependency, toVersion: string): Command | null {
+  updateCommand(
+    toolchain: Toolchain,
+    dep: Dependency,
+    toVersion: string,
+  ): Command | null {
     return this.installCommand(toolchain, dep.name, toVersion, dep.scope);
   }
 
@@ -351,7 +398,8 @@ export class NodeProvider implements EcosystemProvider {
   updateAllCommand(toolchain: Toolchain): Command | null {
     // `update` respects the declared ranges rather than jumping majors, which
     // is the behaviour people expect from an "update all" button.
-    const argv = toolchain.id === 'bun' ? ['bun', 'update'] : [toolchain.id, 'update'];
+    const argv =
+      toolchain.id === 'bun' ? ['bun', 'update'] : [toolchain.id, 'update'];
     return {
       argv,
       cwd: toolchain.cwd,
@@ -385,11 +433,14 @@ export async function mapWithConcurrency<T>(
   worker: (item: T) => Promise<void>,
 ): Promise<void> {
   let cursor = 0;
-  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor++;
-      await worker(items[index]);
-    }
-  });
+  const runners = Array.from(
+    { length: Math.min(limit, items.length) },
+    async () => {
+      while (cursor < items.length) {
+        const index = cursor++;
+        await worker(items[index]);
+      }
+    },
+  );
   await Promise.all(runners);
 }

@@ -7,13 +7,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { MuteList, type Memento } from '../../src/core/muteList.js';
+import { type Memento, MuteList } from '../../src/core/muteList.js';
 import type { Dependency } from '../../src/core/types.js';
 
 function makeMemento(): Memento {
   const store = new Map<string, unknown>();
   return {
-    get: <T,>(key: string) => store.get(key) as T | undefined,
+    get: <T>(key: string) => store.get(key) as T | undefined,
     update: (key: string, value: unknown) => {
       store.set(key, value);
       return Promise.resolve();
@@ -68,10 +68,20 @@ describe('MuteList', () => {
 
   it('keeps packages of the same name in different ecosystems separate', async () => {
     const list = new MuteList(makeMemento());
-    await list.mute(dep({ name: 'requests', ecosystem: 'python', latest: '2.0.0' }));
+    await list.mute(
+      dep({ name: 'requests', ecosystem: 'python', latest: '2.0.0' }),
+    );
 
-    expect(list.isMuted(dep({ name: 'requests', ecosystem: 'python', latest: '2.0.0' }))).toBe(true);
-    expect(list.isMuted(dep({ name: 'requests', ecosystem: 'node', latest: '2.0.0' }))).toBe(false);
+    expect(
+      list.isMuted(
+        dep({ name: 'requests', ecosystem: 'python', latest: '2.0.0' }),
+      ),
+    ).toBe(true);
+    expect(
+      list.isMuted(
+        dep({ name: 'requests', ecosystem: 'node', latest: '2.0.0' }),
+      ),
+    ).toBe(false);
   });
 
   it('survives being reconstructed from storage', async () => {
@@ -89,7 +99,10 @@ describe('MuteList', () => {
     const list = new MuteList(makeMemento());
     await list.mute(dep({ name: 'lodash' }));
 
-    const deps = [dep({ name: 'lodash' }), dep({ name: 'express', latest: '5.0.0' })];
+    const deps = [
+      dep({ name: 'lodash' }),
+      dep({ name: 'express', latest: '5.0.0' }),
+    ];
     list.applyTo(deps);
 
     expect(deps[0].muted).toBe(true);

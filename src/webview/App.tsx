@@ -6,20 +6,20 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { HostMessage } from '../core/protocol.js';
 import type {
+  Dependency,
   DepNode,
   DepScope,
-  Dependency,
   Ecosystem,
   ProjectGroup,
   ScanSummary,
   SearchResult,
 } from '../core/types.js';
-import type { HostMessage } from '../core/protocol.js';
 import { DepTable, type SortState } from './DepTable.js';
 import { DetailDrawer } from './DetailDrawer.js';
 import { SearchInstall } from './SearchInstall.js';
-import { Toolbar, type Filters } from './Toolbar.js';
+import { type Filters, Toolbar } from './Toolbar.js';
 import { loadState, onHostMessage, post, saveState } from './vscodeApi.js';
 
 const ALL_SCOPES: DepScope[] = ['prod', 'dev', 'build', 'peer', 'optional'];
@@ -48,7 +48,9 @@ export function App() {
   const [notice, setNotice] = useState<string | undefined>();
   const [error, setError] = useState<string | undefined>();
 
-  const [sort, setSort] = useState<SortState>(persisted?.sort ?? { key: 'status', direction: 'asc' });
+  const [sort, setSort] = useState<SortState>(
+    persisted?.sort ?? { key: 'status', direction: 'asc' },
+  );
   const [filters, setFilters] = useState<Filters>({
     text: '',
     scopes: new Set(persisted?.scopes ?? ALL_SCOPES),
@@ -152,11 +154,16 @@ export function App() {
           if (needle && !dep.name.toLowerCase().includes(needle)) return false;
           if (
             filters.onlyOutdated &&
-            !(dep.updateKind === 'patch' || dep.updateKind === 'minor' || dep.updateKind === 'major')
+            !(
+              dep.updateKind === 'patch' ||
+              dep.updateKind === 'minor' ||
+              dep.updateKind === 'major'
+            )
           ) {
             return false;
           }
-          if (filters.onlyVulnerable && dep.vulnerabilities.length === 0) return false;
+          if (filters.onlyVulnerable && dep.vulnerabilities.length === 0)
+            return false;
           if (filters.onlyDeprecated && !dep.meta?.deprecated) return false;
           // Muted rows stay visible by default — hiding them would make it hard
           // to remember what you muted — but can be filtered out deliberately.
@@ -170,19 +177,24 @@ export function App() {
   const selected = useMemo(() => {
     if (!selectedKey) return undefined;
     for (const group of groups) {
-      const dep = group.dependencies.find((candidate) => candidate.key === selectedKey);
+      const dep = group.dependencies.find(
+        (candidate) => candidate.key === selectedKey,
+      );
       if (dep) return dep;
     }
     return undefined;
   }, [groups, selectedKey]);
 
-  const handleSearch = useCallback((query: string, ecosystem: Ecosystem | 'all') => {
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setSearching(true);
-    setSearchError(undefined);
-    setActiveRequestId(requestId);
-    post({ type: 'search', query, ecosystem, requestId });
-  }, []);
+  const handleSearch = useCallback(
+    (query: string, ecosystem: Ecosystem | 'all') => {
+      const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setSearching(true);
+      setSearchError(undefined);
+      setActiveRequestId(requestId);
+      post({ type: 'search', query, ecosystem, requestId });
+    },
+    [],
+  );
 
   // Cancel any in-flight search when the panel closes.
   useEffect(() => {
@@ -207,7 +219,8 @@ export function App() {
       for (const group of groups) {
         if (group.manifestPath !== manifestPath) continue;
         const dep = group.dependencies.find(
-          (candidate) => candidate.name === name && candidate.ecosystem === ecosystem,
+          (candidate) =>
+            candidate.name === name && candidate.ecosystem === ecosystem,
         );
         if (dep) {
           post({ type: 'uninstall', depKey: dep.key });
@@ -224,10 +237,14 @@ export function App() {
         <div className="empty">
           <h2>No dependency manifests found</h2>
           <p>
-            Panorama looks for package.json, pyproject.toml, requirements.txt, Cargo.toml, go.mod,
-            composer.json, pom.xml and build.gradle anywhere in this workspace.
+            Panorama looks for package.json, pyproject.toml, requirements.txt,
+            Cargo.toml, go.mod, composer.json, pom.xml and build.gradle anywhere
+            in this workspace.
           </p>
-          <button style={{ marginTop: 12 }} onClick={() => post({ type: 'refresh' })}>
+          <button
+            style={{ marginTop: 12 }}
+            onClick={() => post({ type: 'refresh' })}
+          >
             Scan again
           </button>
         </div>
@@ -249,8 +266,16 @@ export function App() {
         onCheckUpdates={() => post({ type: 'checkUpdates' })}
       />
 
-      {error && <div className="callout callout--error" style={{ margin: 12 }}>{error}</div>}
-      {notice && <div className="callout callout--info" style={{ margin: 12 }}>{notice}</div>}
+      {error && (
+        <div className="callout callout--error" style={{ margin: 12 }}>
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="callout callout--info" style={{ margin: 12 }}>
+          {notice}
+        </div>
+      )}
 
       {installOpen && (
         <SearchInstall
@@ -273,11 +298,17 @@ export function App() {
             sort={sort}
             onSortChange={setSort}
             selectedKey={selectedKey}
-            onSelect={(dep) => setSelectedKey(dep.key === selectedKey ? undefined : dep.key)}
+            onSelect={(dep) =>
+              setSelectedKey(dep.key === selectedKey ? undefined : dep.key)
+            }
             onUpdate={handleUpdate}
             onUninstall={handleUninstall}
-            onUpdateAll={(manifestPath) => post({ type: 'updateAll', manifestPath })}
-            onToggleMute={(dep) => post({ type: 'toggleMute', depKey: dep.key })}
+            onUpdateAll={(manifestPath) =>
+              post({ type: 'updateAll', manifestPath })
+            }
+            onToggleMute={(dep) =>
+              post({ type: 'toggleMute', depKey: dep.key })
+            }
             scrollToKey={scrollToKey}
           />
         </div>

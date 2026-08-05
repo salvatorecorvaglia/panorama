@@ -61,8 +61,19 @@ describe('scanner discovery', () => {
     const result = await api.scan({ checkUpdates: false });
 
     const ecosystems = new Set(result.groups.map((group) => group.ecosystem));
-    for (const expected of ['node', 'python', 'cargo', 'golang', 'composer', 'maven', 'gradle']) {
-      assert.ok(ecosystems.has(expected as never), `no ${expected} project was discovered`);
+    for (const expected of [
+      'node',
+      'python',
+      'cargo',
+      'golang',
+      'composer',
+      'maven',
+      'gradle',
+    ]) {
+      assert.ok(
+        ecosystems.has(expected as never),
+        `no ${expected} project was discovered`,
+      );
     }
   });
 
@@ -76,7 +87,9 @@ describe('scanner discovery', () => {
     assert.ok(names.includes('express'), 'express not parsed');
     assert.ok(names.includes('typescript'), 'typescript not parsed');
 
-    const typescript = node.dependencies.find((dep) => dep.name === 'typescript');
+    const typescript = node.dependencies.find(
+      (dep) => dep.name === 'typescript',
+    );
     assert.equal(typescript?.scope, 'dev');
 
     const fsevents = node.dependencies.find((dep) => dep.name === 'fsevents');
@@ -86,7 +99,9 @@ describe('scanner discovery', () => {
   it('detects the toolchain for each project', async () => {
     const result = await api.scan({ checkUpdates: false });
 
-    const byEcosystem = new Map(result.groups.map((group) => [group.ecosystem, group.toolchain]));
+    const byEcosystem = new Map(
+      result.groups.map((group) => [group.ecosystem, group.toolchain]),
+    );
     assert.equal(byEcosystem.get('cargo'), 'cargo');
     assert.equal(byEcosystem.get('golang'), 'go');
     assert.equal(byEcosystem.get('composer'), 'composer');
@@ -100,12 +115,16 @@ describe('scanner discovery', () => {
     const maven = result.groups.find((group) => group.ecosystem === 'maven');
     assert.ok(maven, 'maven fixture missing');
 
-    const junit = maven.dependencies.find((dep) => dep.name === 'org.junit.jupiter:junit-jupiter');
+    const junit = maven.dependencies.find(
+      (dep) => dep.name === 'org.junit.jupiter:junit-jupiter',
+    );
     // ${junit.version} must have been expanded from <properties>.
     assert.equal(junit?.declared, '5.10.2');
     assert.equal(junit?.scope, 'dev');
 
-    const guava = maven.dependencies.find((dep) => dep.name === 'com.google.guava:guava');
+    const guava = maven.dependencies.find(
+      (dep) => dep.name === 'com.google.guava:guava',
+    );
     // The version comes from <dependencyManagement>, not the element itself.
     assert.equal(guava?.declared, '32.0.0-jre');
   });
@@ -126,18 +145,31 @@ describe('scanner discovery', () => {
   it('separates requirements.txt from pyproject.toml', async () => {
     const result = await api.scan({ checkUpdates: false });
 
-    const pythonGroups = result.groups.filter((group) => group.ecosystem === 'python');
-    assert.ok(pythonGroups.length >= 2, 'expected both Python manifests to be discovered');
+    const pythonGroups = result.groups.filter(
+      (group) => group.ecosystem === 'python',
+    );
+    assert.ok(
+      pythonGroups.length >= 2,
+      'expected both Python manifests to be discovered',
+    );
 
-    const allNames = pythonGroups.flatMap((group) => group.dependencies.map((dep) => dep.name));
+    const allNames = pythonGroups.flatMap((group) =>
+      group.dependencies.map((dep) => dep.name),
+    );
     assert.ok(allNames.includes('requests'), 'pyproject dependency missing');
-    assert.ok(allNames.includes('flask'), 'requirements.txt dependency missing');
+    assert.ok(
+      allNames.includes('flask'),
+      'requirements.txt dependency missing',
+    );
   });
 
   it('produces a summary consistent with the parsed groups', async () => {
     const result = await api.scan({ checkUpdates: false });
 
-    const counted = result.groups.reduce((total, group) => total + group.dependencies.length, 0);
+    const counted = result.groups.reduce(
+      (total, group) => total + group.dependencies.length,
+      0,
+    );
     assert.equal(result.summary.totalDependencies, counted);
     // Nothing was version-checked, so nothing can be outdated yet.
     assert.equal(result.summary.outdated, 0);
@@ -216,7 +248,10 @@ describe('commands are safe to invoke', () => {
   it('checkUpdates stays offline under the test host', async () => {
     const started = Date.now();
     await vscode.commands.executeCommand('panorama.checkUpdates');
-    assert.ok(Date.now() - started < 3000, 'checkUpdates appears to have contacted registries');
+    assert.ok(
+      Date.now() - started < 3000,
+      'checkUpdates appears to have contacted registries',
+    );
   });
 
   it('showWhy with no selection does not throw', async () => {

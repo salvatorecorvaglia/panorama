@@ -28,7 +28,9 @@ function dep(overrides: Partial<Dependency> = {}): Dependency {
 }
 
 /** Collects every name appearing anywhere in the returned tree. */
-function flatten(nodes: Array<{ name: string; children: unknown[] }>): string[] {
+function flatten(
+  nodes: Array<{ name: string; children: unknown[] }>,
+): string[] {
   const out: string[] = [];
   const walk = (list: Array<{ name: string; children: unknown[] }>) => {
     for (const node of list) {
@@ -47,7 +49,10 @@ describe('npm package-lock.json', () => {
         lockfileVersion: 3,
         packages: {
           '': { dependencies: { chalk: '^4.0.0' } },
-          'node_modules/chalk': { version: '4.1.2', dependencies: { 'ansi-styles': '^4.1.0' } },
+          'node_modules/chalk': {
+            version: '4.1.2',
+            dependencies: { 'ansi-styles': '^4.1.0' },
+          },
           'node_modules/ansi-styles': { version: '4.3.0' },
         },
       }),
@@ -99,7 +104,10 @@ snapshots:
 `,
     });
 
-    const result = await explainDependency(dep({ name: '@babel/traverse' }), ctx);
+    const result = await explainDependency(
+      dep({ name: '@babel/traverse' }),
+      ctx,
+    );
     expect(result.source).toBe('lockfile');
     // The scope must survive and the (peer) suffix must not.
     expect(flatten(result.roots)).toEqual(['@babel/core', '@babel/traverse']);
@@ -182,7 +190,11 @@ version = "2.2.1"
     });
 
     const result = await explainDependency(
-      dep({ name: 'urllib3', ecosystem: 'python', manifestPath: '/p/pyproject.toml' }),
+      dep({
+        name: 'urllib3',
+        ecosystem: 'python',
+        manifestPath: '/p/pyproject.toml',
+      }),
       ctx,
     );
     expect(result.source).toBe('lockfile');
@@ -210,7 +222,11 @@ version = "2.2.1"
     });
 
     const result = await explainDependency(
-      dep({ name: 'urllib3', ecosystem: 'python', manifestPath: '/p/pyproject.toml' }),
+      dep({
+        name: 'urllib3',
+        ecosystem: 'python',
+        manifestPath: '/p/pyproject.toml',
+      }),
       ctx,
     );
     expect(result.source).toBe('lockfile');
@@ -235,7 +251,11 @@ version = "3.1.2"
     });
 
     const result = await explainDependency(
-      dep({ name: 'Jinja2', ecosystem: 'python', manifestPath: '/p/pyproject.toml' }),
+      dep({
+        name: 'Jinja2',
+        ecosystem: 'python',
+        manifestPath: '/p/pyproject.toml',
+      }),
       ctx,
     );
     expect(result.source).toBe('lockfile');
@@ -248,14 +268,21 @@ describe('composer.lock', () => {
     const ctx = makeContext({
       '/p/composer.lock': JSON.stringify({
         packages: [
-          { name: 'laravel/framework', require: { php: '^8.2', 'psr/log': '^3.0' } },
+          {
+            name: 'laravel/framework',
+            require: { php: '^8.2', 'psr/log': '^3.0' },
+          },
           { name: 'psr/log', require: { php: '^8.0' } },
         ],
       }),
     });
 
     const result = await explainDependency(
-      dep({ name: 'psr/log', ecosystem: 'composer', manifestPath: '/p/composer.json' }),
+      dep({
+        name: 'psr/log',
+        ecosystem: 'composer',
+        manifestPath: '/p/composer.json',
+      }),
       ctx,
     );
     expect(result.source).toBe('lockfile');

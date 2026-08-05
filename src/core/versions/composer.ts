@@ -26,7 +26,10 @@ interface ComposerVersion {
 
 function parse(input: string): ComposerVersion | null {
   const cleaned = input.trim().replace(/^v/i, '');
-  const match = /^(\d+(?:\.\d+)*)(?:[-_.]?(dev|alpha|a|beta|b|rc|pl|p)[-_.]?(\d+)?)?/i.exec(cleaned);
+  const match =
+    /^(\d+(?:\.\d+)*)(?:[-_.]?(dev|alpha|a|beta|b|rc|pl|p)[-_.]?(\d+)?)?/i.exec(
+      cleaned,
+    );
   if (!match) return null;
 
   const stability = (match[2] ?? '').toLowerCase();
@@ -70,7 +73,9 @@ export function isComposerPrerelease(version: string): boolean {
 
 export function maxComposer(candidates: string[]): string | undefined {
   if (candidates.length === 0) return undefined;
-  const stable = candidates.filter((candidate) => !isComposerPrerelease(candidate));
+  const stable = candidates.filter(
+    (candidate) => !isComposerPrerelease(candidate),
+  );
   const pool = stable.length > 0 ? stable : candidates;
   return [...pool].sort(compareComposer)[pool.length - 1];
 }

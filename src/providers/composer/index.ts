@@ -7,37 +7,45 @@
 
 import * as path from 'node:path';
 import { parse as parseJsonc } from 'jsonc-parser';
+import { cacheKey, TTL } from '../../core/cache.js';
 import type {
-  DepScope,
   Dependency,
+  DepScope,
   PackageMeta,
   ParsedManifest,
   SearchResult,
   Toolchain,
 } from '../../core/types.js';
-import { cacheKey, TTL } from '../../core/cache.js';
+import { mapWithConcurrency } from '../node/index.js';
 import {
-  dependencyKey,
   type Command,
+  dependencyKey,
   type EcosystemProvider,
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { mapWithConcurrency } from '../node/index.js';
-import { changelogUrlFor, normalizeRepositoryUrl } from '../shared/repository.js';
+import {
+  changelogUrlFor,
+  normalizeRepositoryUrl,
+} from '../shared/repository.js';
 
 const PACKAGIST = 'https://packagist.org';
 const REPO = 'https://repo.packagist.org';
 
 /** Composer names are always `vendor/package`, lowercase. */
-const NAME_PATTERN = /^[a-z0-9]([_.-]?[a-z0-9]+)*\/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$/;
+const NAME_PATTERN =
+  /^[a-z0-9]([_.-]?[a-z0-9]+)*\/[a-z0-9](([_.]|-{1,2})?[a-z0-9]+)*$/;
 
 /**
  * Platform requirements are not packages — `php`, `ext-*` and `composer-*`
  * describe the runtime and have no Packagist entry.
  */
 function isPlatformRequirement(name: string): boolean {
-  return name === 'php' || /^(ext|lib|composer)-/.test(name) || name.startsWith('php-');
+  return (
+    name === 'php' ||
+    /^(ext|lib|composer)-/.test(name) ||
+    name.startsWith('php-')
+  );
 }
 
 interface P2Response {
@@ -65,7 +73,11 @@ export class ComposerProvider implements EcosystemProvider {
     return NAME_PATTERN.test(name);
   }
 
-  async parse(absolutePath: string, text: string, _ctx: ProviderContext): Promise<ParsedManifest> {
+  async parse(
+    absolutePath: string,
+    text: string,
+    _ctx: ProviderContext,
+  ): Promise<ParsedManifest> {
     const json = (parseJsonc(text) ?? {}) as {
       name?: string;
       require?: Record<string, string>;
@@ -97,10 +109,18 @@ export class ComposerProvider implements EcosystemProvider {
       }
     }
 
-    return { ecosystem: 'composer', path: absolutePath, name: projectLabel, dependencies };
+    return {
+      ecosystem: 'composer',
+      path: absolutePath,
+      name: projectLabel,
+      dependencies,
+    };
   }
 
-  async readLockfile(manifestDir: string, ctx: ProviderContext): Promise<Map<string, string>> {
+  async readLockfile(
+    manifestDir: string,
+    ctx: ProviderContext,
+  ): Promise<Map<string, string>> {
     const resolved = new Map<string, string>();
     const text = await ctx.readFile(path.join(manifestDir, 'composer.lock'));
     if (!text) return resolved;
@@ -109,7 +129,10 @@ export class ComposerProvider implements EcosystemProvider {
         packages?: Array<{ name: string; version: string }>;
         'packages-dev'?: Array<{ name: string; version: string }>;
       };
-      for (const entry of [...(lock.packages ?? []), ...(lock['packages-dev'] ?? [])]) {
+      for (const entry of [
+        ...(lock.packages ?? []),
+        ...(lock['packages-dev'] ?? []),
+      ]) {
         resolved.set(entry.name, entry.version.replace(/^v/, ''));
       }
     } catch {
@@ -118,8 +141,15 @@ export class ComposerProvider implements EcosystemProvider {
     return resolved;
   }
 
-  async detectToolchain(manifestPath: string, _ctx: ProviderContext): Promise<Toolchain> {
-    return { id: 'composer', ecosystem: 'composer', cwd: path.dirname(manifestPath) };
+  async detectToolchain(
+    manifestPath: string,
+    _ctx: ProviderContext,
+  ): Promise<Toolchain> {
+    return {
+      id: 'composer',
+      ecosystem: 'composer',
+      cwd: path.dirname(manifestPath),
+    };
   }
 
   async fetchVersions(
@@ -138,13 +168,18 @@ export class ComposerProvider implements EcosystemProvider {
       }
 
       try {
-        const response = await ctx.http.getJson<P2Response>(`${REPO}/p2/${name}.json`, { signal });
+        const response = await ctx.http.getJson<P2Response>(
+          `${REPO}/p2/${name}.json`,
+          { signal },
+        );
         const releases = response.packages[name] ?? [];
         const abandoned = releases[0]?.abandoned;
 
         const info: VersionInfo = {
           // Strip the conventional `v` prefix so comparisons stay uniform.
-          versions: releases.map((release) => release.version.replace(/^v/, '')),
+          versions: releases.map((release) =>
+            release.version.replace(/^v/, ''),
+          ),
           deprecated:
             abandoned === undefined || abandoned === false
               ? undefined
@@ -173,7 +208,10 @@ export class ComposerProvider implements EcosystemProvider {
     if (cached) return cached;
 
     try {
-      const response = await ctx.http.getJson<P2Response>(`${REPO}/p2/${name}.json`, { signal });
+      const response = await ctx.http.getJson<P2Response>(
+        `${REPO}/p2/${name}.json`,
+        { signal },
+      );
       const latest = response.packages[name]?.[0];
       if (!latest) return undefined;
 
@@ -199,7 +237,11 @@ export class ComposerProvider implements EcosystemProvider {
     }
   }
 
-  async search(query: string, ctx: ProviderContext, signal?: AbortSignal): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    ctx: ProviderContext,
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]> {
     interface SearchResponse {
       results: Array<{
         name: string;
@@ -235,20 +277,34 @@ export class ComposerProvider implements EcosystemProvider {
     if (!this.isValidPackageName(name)) return null;
     const spec = version ? `${name}:${version}` : name;
     return {
-      argv: ['composer', 'require', ...(scope === 'dev' ? ['--dev'] : []), spec],
+      argv: [
+        'composer',
+        'require',
+        ...(scope === 'dev' ? ['--dev'] : []),
+        spec,
+      ],
       cwd: toolchain.cwd,
       description: `Require ${spec}`,
     };
   }
 
-  updateCommand(toolchain: Toolchain, dep: Dependency, toVersion: string): Command | null {
+  updateCommand(
+    toolchain: Toolchain,
+    dep: Dependency,
+    toVersion: string,
+  ): Command | null {
     return this.installCommand(toolchain, dep.name, toVersion, dep.scope);
   }
 
   uninstallCommand(toolchain: Toolchain, dep: Dependency): Command | null {
     if (!this.isValidPackageName(dep.name)) return null;
     return {
-      argv: ['composer', 'remove', ...(dep.scope === 'dev' ? ['--dev'] : []), dep.name],
+      argv: [
+        'composer',
+        'remove',
+        ...(dep.scope === 'dev' ? ['--dev'] : []),
+        dep.name,
+      ],
       cwd: toolchain.cwd,
       description: `Remove ${dep.name}`,
     };

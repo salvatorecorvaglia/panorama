@@ -59,7 +59,9 @@ This runs concurrent watch processes for both the Extension Host (`esbuild`) and
 | `build` | `pnpm run build` | Builds both the extension host (`build:host`) and webview UI (`build:webview`). |
 | `watch` | `pnpm run watch` | Watches for source changes and rebuilds host & webview incrementally. |
 | `typecheck` | `pnpm run typecheck` | Runs `tsc --noEmit` across both extension host and webview TypeScript configurations. |
-| `lint` | `pnpm run lint` | Runs ESLint across TypeScript and React source files in `src/`. |
+| `lint` | `pnpm run lint` | Runs [Biome](https://biomejs.dev) linter and formatter checks across the codebase. |
+| `lint:fix` | `pnpm run lint:fix` | Runs Biome checks and automatically applies safe fixes. |
+| `format` | `pnpm run format` | Formats all files using Biome. |
 | `test` | `pnpm run test` | Runs fast unit tests via [Vitest](https://vitest.dev). |
 | `test:watch` | `pnpm run test:watch` | Runs Vitest in interactive watch mode. |
 | `test:integration` | `pnpm run test:integration` | Runs VS Code extension integration tests inside an automated extension host. |
@@ -76,13 +78,16 @@ Before opening a pull request, ensure all verification checks pass cleanly:
 # 1. Verify TypeScript types
 pnpm run typecheck
 
-# 2. Check code style with ESLint
+# 2. Check code style and formatting with Biome
 pnpm run lint
 
-# 3. Run unit tests
+# 3. Format code automatically (if needed)
+pnpm run format
+
+# 4. Run unit tests
 pnpm run test
 
-# 4. Run integration tests (optional locally, required on CI)
+# 5. Run integration tests (optional locally, required on CI)
 pnpm run test:integration
 ```
 

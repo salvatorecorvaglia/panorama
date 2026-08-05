@@ -45,7 +45,11 @@ export class MuteList {
     const entry = this.entries[MuteList.key(dep.ecosystem, dep.name)];
     if (!entry) return false;
     // A mute covers the version it was taken at and nothing beyond it.
-    if (entry.mutedAtLatest && dep.latest && dep.latest !== entry.mutedAtLatest) {
+    if (
+      entry.mutedAtLatest &&
+      dep.latest &&
+      dep.latest !== entry.mutedAtLatest
+    ) {
       return false;
     }
     return true;

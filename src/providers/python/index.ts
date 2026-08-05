@@ -12,26 +12,29 @@
 
 import * as path from 'node:path';
 import { parse as parseToml } from 'smol-toml';
+import { cacheKey, TTL } from '../../core/cache.js';
 import type {
-  DepScope,
   Dependency,
+  DepScope,
   PackageMeta,
   ParsedManifest,
   SearchResult,
   Toolchain,
   ToolchainId,
 } from '../../core/types.js';
-import { cacheKey, TTL } from '../../core/cache.js';
+import { mapWithConcurrency } from '../node/index.js';
 import {
-  dependencyKey,
-  normalizeScope,
   type Command,
+  dependencyKey,
   type EcosystemProvider,
+  normalizeScope,
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { mapWithConcurrency } from '../node/index.js';
-import { changelogUrlFor, normalizeRepositoryUrl } from '../shared/repository.js';
+import {
+  changelogUrlFor,
+  normalizeRepositoryUrl,
+} from '../shared/repository.js';
 
 const DEFAULT_INDEX = 'https://pypi.org';
 
@@ -61,7 +64,11 @@ interface SimpleIndex {
 
 export class PythonProvider implements EcosystemProvider {
   readonly id = 'python' as const;
-  readonly manifestFiles = ['pyproject.toml', 'requirements.txt', 'requirements-dev.txt'];
+  readonly manifestFiles = [
+    'pyproject.toml',
+    'requirements.txt',
+    'requirements-dev.txt',
+  ];
   readonly lockFiles = ['poetry.lock', 'uv.lock', 'Pipfile.lock'];
   readonly osvEcosystem = 'PyPI';
   readonly depsDevSystem = 'PYPI';
@@ -70,7 +77,11 @@ export class PythonProvider implements EcosystemProvider {
     return name.length <= 214 && NAME_PATTERN.test(name);
   }
 
-  async parse(absolutePath: string, text: string, _ctx: ProviderContext): Promise<ParsedManifest> {
+  async parse(
+    absolutePath: string,
+    text: string,
+    _ctx: ProviderContext,
+  ): Promise<ParsedManifest> {
     const base = path.basename(absolutePath);
     return base === 'pyproject.toml'
       ? this.parsePyproject(absolutePath, text)
@@ -118,7 +129,9 @@ export class PythonProvider implements EcosystemProvider {
     }
 
     // PEP 735 / setuptools: optional-dependencies is a table of extras.
-    const optional = project?.['optional-dependencies'] as Record<string, string[]> | undefined;
+    const optional = project?.['optional-dependencies'] as
+      | Record<string, string[]>
+      | undefined;
     for (const [group, entries] of Object.entries(optional ?? {})) {
       const scope = normalizeScope(group);
       for (const entry of entries) {
@@ -128,7 +141,9 @@ export class PythonProvider implements EcosystemProvider {
     }
 
     // PEP 735 dependency-groups (uv, pip 25+).
-    const groups = doc['dependency-groups'] as Record<string, unknown[]> | undefined;
+    const groups = doc['dependency-groups'] as
+      | Record<string, unknown[]>
+      | undefined;
     for (const [group, entries] of Object.entries(groups ?? {})) {
       const scope = normalizeScope(group);
       for (const entry of entries) {
@@ -139,12 +154,16 @@ export class PythonProvider implements EcosystemProvider {
     }
 
     // Poetry uses tables keyed by name, with either a string or a table value.
-    const poetryDeps = poetry?.dependencies as Record<string, unknown> | undefined;
+    const poetryDeps = poetry?.dependencies as
+      | Record<string, unknown>
+      | undefined;
     for (const [name, value] of Object.entries(poetryDeps ?? {})) {
       if (name.toLowerCase() === 'python') continue; // the interpreter, not a package
       add(name, poetryConstraint(value), 'prod');
     }
-    const poetryGroups = poetry?.group as Record<string, { dependencies?: Record<string, unknown> }> | undefined;
+    const poetryGroups = poetry?.group as
+      | Record<string, { dependencies?: Record<string, unknown> }>
+      | undefined;
     for (const [group, body] of Object.entries(poetryGroups ?? {})) {
       const scope = normalizeScope(group);
       for (const [name, value] of Object.entries(body.dependencies ?? {})) {
@@ -152,7 +171,9 @@ export class PythonProvider implements EcosystemProvider {
       }
     }
     // Poetry's pre-1.2 dev group.
-    const legacyDev = poetry?.['dev-dependencies'] as Record<string, unknown> | undefined;
+    const legacyDev = poetry?.['dev-dependencies'] as
+      | Record<string, unknown>
+      | undefined;
     for (const [name, value] of Object.entries(legacyDev ?? {})) {
       add(name, poetryConstraint(value), 'dev');
     }
@@ -167,14 +188,20 @@ export class PythonProvider implements EcosystemProvider {
       name: projectLabel,
       dependencies,
       workspaceMembers: workspace?.members,
-      isWorkspaceRoot: (workspace?.members?.length ?? 0) > 0 && dependencies.length === 0,
+      isWorkspaceRoot:
+        (workspace?.members?.length ?? 0) > 0 && dependencies.length === 0,
     };
   }
 
-  private parseRequirements(absolutePath: string, text: string): ParsedManifest {
+  private parseRequirements(
+    absolutePath: string,
+    text: string,
+  ): ParsedManifest {
     const projectLabel = path.basename(path.dirname(absolutePath));
     // Convention: a file named *dev* holds dev dependencies.
-    const scope: DepScope = /dev|test/i.test(path.basename(absolutePath)) ? 'dev' : 'prod';
+    const scope: DepScope = /dev|test/i.test(path.basename(absolutePath))
+      ? 'dev'
+      : 'prod';
     const dependencies: Dependency[] = [];
 
     for (const rawLine of text.split(/\r?\n/)) {
@@ -183,7 +210,12 @@ export class PythonProvider implements EcosystemProvider {
       // Skip includes, editable installs, index URLs and bare flags.
       if (line.startsWith('-') || line.startsWith('--')) continue;
       // Skip direct URLs and local paths, which have no registry version.
-      if (/^[a-z]+:\/\//i.test(line) || line.startsWith('.') || line.startsWith('/')) continue;
+      if (
+        /^[a-z]+:\/\//i.test(line) ||
+        line.startsWith('.') ||
+        line.startsWith('/')
+      )
+        continue;
 
       const parsed = parseRequirement(line);
       if (!parsed) continue;
@@ -201,10 +233,18 @@ export class PythonProvider implements EcosystemProvider {
       });
     }
 
-    return { ecosystem: 'python', path: absolutePath, name: projectLabel, dependencies };
+    return {
+      ecosystem: 'python',
+      path: absolutePath,
+      name: projectLabel,
+      dependencies,
+    };
   }
 
-  async readLockfile(manifestDir: string, ctx: ProviderContext): Promise<Map<string, string>> {
+  async readLockfile(
+    manifestDir: string,
+    ctx: ProviderContext,
+  ): Promise<Map<string, string>> {
     const resolved = new Map<string, string>();
 
     for (const lockName of ['uv.lock', 'poetry.lock']) {
@@ -212,7 +252,9 @@ export class PythonProvider implements EcosystemProvider {
       if (!text) continue;
       try {
         // Both are TOML with an array of [[package]] tables.
-        const doc = parseToml(text) as { package?: Array<{ name?: string; version?: string }> };
+        const doc = parseToml(text) as {
+          package?: Array<{ name?: string; version?: string }>;
+        };
         for (const entry of doc.package ?? []) {
           if (entry.name && entry.version) {
             resolved.set(normalizeName(entry.name), entry.version);
@@ -227,7 +269,10 @@ export class PythonProvider implements EcosystemProvider {
     return resolved;
   }
 
-  async detectToolchain(manifestPath: string, ctx: ProviderContext): Promise<Toolchain> {
+  async detectToolchain(
+    manifestPath: string,
+    ctx: ProviderContext,
+  ): Promise<Toolchain> {
     const cwd = path.dirname(manifestPath);
     const preferred = ctx.preferredToolchain('python');
 
@@ -238,8 +283,10 @@ export class PythonProvider implements EcosystemProvider {
       return { ...base, id: preferred as ToolchainId };
     }
 
-    if (await ctx.exists(path.join(cwd, 'uv.lock'))) return { ...base, id: 'uv' };
-    if (await ctx.exists(path.join(cwd, 'poetry.lock'))) return { ...base, id: 'poetry' };
+    if (await ctx.exists(path.join(cwd, 'uv.lock')))
+      return { ...base, id: 'uv' };
+    if (await ctx.exists(path.join(cwd, 'poetry.lock')))
+      return { ...base, id: 'poetry' };
 
     // No lockfile — fall back to what pyproject.toml declares.
     const pyproject = await ctx.readFile(path.join(cwd, 'pyproject.toml'));
@@ -251,7 +298,10 @@ export class PythonProvider implements EcosystemProvider {
     return { ...base, id: 'pip' };
   }
 
-  private async findVenv(dir: string, ctx: ProviderContext): Promise<string | undefined> {
+  private async findVenv(
+    dir: string,
+    ctx: ProviderContext,
+  ): Promise<string | undefined> {
     // An activated environment wins over anything on disk.
     const active = process.env.VIRTUAL_ENV;
     if (active) return active;
@@ -318,10 +368,16 @@ export class PythonProvider implements EcosystemProvider {
       );
       const urls = response.info.project_urls ?? {};
       const repository = normalizeRepositoryUrl(
-        urls.Source ?? urls.Repository ?? urls['Source Code'] ?? urls.Homepage ?? response.info.home_page,
+        urls.Source ??
+          urls.Repository ??
+          urls['Source Code'] ??
+          urls.Homepage ??
+          response.info.home_page,
       );
       // Prefer the wheel's size; sdists are misleadingly large.
-      const wheel = response.urls?.find((entry) => entry.packagetype === 'bdist_wheel');
+      const wheel = response.urls?.find(
+        (entry) => entry.packagetype === 'bdist_wheel',
+      );
 
       const meta: PackageMeta = {
         name: response.info.name,
@@ -329,7 +385,8 @@ export class PythonProvider implements EcosystemProvider {
         license: response.info.license,
         homepage: response.info.home_page,
         repository,
-        changelogUrl: urls.Changelog ?? urls.Changes ?? changelogUrlFor(repository),
+        changelogUrl:
+          urls.Changelog ?? urls.Changes ?? changelogUrlFor(repository),
         sizeBytes: wheel?.size ?? response.urls?.[0]?.size,
         deprecated: response.info.yanked
           ? `Yanked from PyPI${response.info.yanked_reason ? `: ${response.info.yanked_reason}` : ''}`
@@ -348,11 +405,17 @@ export class PythonProvider implements EcosystemProvider {
    * when someone types a package they already know), then fall back to
    * substring matching over the cached PEP 691 project index.
    */
-  async search(query: string, ctx: ProviderContext, signal?: AbortSignal): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    ctx: ProviderContext,
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]> {
     const index = ctx.registryOverride('python') ?? DEFAULT_INDEX;
     const results: SearchResult[] = [];
 
-    const exact = await this.fetchMetadata(query, ctx, signal).catch(() => undefined);
+    const exact = await this.fetchMetadata(query, ctx, signal).catch(
+      () => undefined,
+    );
     if (exact) {
       const versions = await this.fetchVersions([query], ctx, signal);
       results.push({
@@ -441,7 +504,11 @@ export class PythonProvider implements EcosystemProvider {
     }
   }
 
-  updateCommand(toolchain: Toolchain, dep: Dependency, toVersion: string): Command | null {
+  updateCommand(
+    toolchain: Toolchain,
+    dep: Dependency,
+    toVersion: string,
+  ): Command | null {
     return this.installCommand(toolchain, dep.name, toVersion, dep.scope);
   }
 
@@ -450,19 +517,36 @@ export class PythonProvider implements EcosystemProvider {
     switch (toolchain.id) {
       case 'uv':
         return {
-          argv: ['uv', 'remove', ...(dep.scope === 'dev' ? ['--dev'] : []), dep.name],
+          argv: [
+            'uv',
+            'remove',
+            ...(dep.scope === 'dev' ? ['--dev'] : []),
+            dep.name,
+          ],
           cwd: toolchain.cwd,
           description: `Remove ${dep.name} with uv`,
         };
       case 'poetry':
         return {
-          argv: ['poetry', 'remove', ...(dep.scope === 'dev' ? ['--group', 'dev'] : []), dep.name],
+          argv: [
+            'poetry',
+            'remove',
+            ...(dep.scope === 'dev' ? ['--group', 'dev'] : []),
+            dep.name,
+          ],
           cwd: toolchain.cwd,
           description: `Remove ${dep.name} with Poetry`,
         };
       default:
         return {
-          argv: [pythonExe(toolchain), '-m', 'pip', 'uninstall', '-y', dep.name],
+          argv: [
+            pythonExe(toolchain),
+            '-m',
+            'pip',
+            'uninstall',
+            '-y',
+            dep.name,
+          ],
           cwd: toolchain.cwd,
           description: `Uninstall ${dep.name} with pip`,
         };
@@ -478,11 +562,23 @@ export class PythonProvider implements EcosystemProvider {
           description: 'Upgrade all locked versions with uv',
         };
       case 'poetry':
-        return { argv: ['poetry', 'update'], cwd: toolchain.cwd, description: 'Update all with Poetry' };
+        return {
+          argv: ['poetry', 'update'],
+          cwd: toolchain.cwd,
+          description: 'Update all with Poetry',
+        };
       default:
         // pip has no "update all"; requirements.txt is the source of truth.
         return {
-          argv: [pythonExe(toolchain), '-m', 'pip', 'install', '--upgrade', '-r', 'requirements.txt'],
+          argv: [
+            pythonExe(toolchain),
+            '-m',
+            'pip',
+            'install',
+            '--upgrade',
+            '-r',
+            'requirements.txt',
+          ],
           cwd: toolchain.cwd,
           description: 'Reinstall requirements.txt with upgrades',
         };
@@ -521,7 +617,8 @@ export class PythonProvider implements EcosystemProvider {
     if (indexOfDep === -1) {
       if (edit.kind === 'update') return null;
       // Append, keeping exactly one trailing newline.
-      while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
+      while (lines.length > 0 && lines[lines.length - 1].trim() === '')
+        lines.pop();
       lines.push(pinned, '');
       return lines.join('\n');
     }
@@ -529,7 +626,8 @@ export class PythonProvider implements EcosystemProvider {
     // Preserve any trailing comment on the line we are replacing.
     const original = lines[indexOfDep];
     const commentIndex = original.indexOf('#');
-    const comment = commentIndex >= 0 ? '  ' + original.slice(commentIndex) : '';
+    const comment =
+      commentIndex >= 0 ? `  ${original.slice(commentIndex)}` : '';
     lines[indexOfDep] = pinned + comment;
     return lines.join('\n');
   }
@@ -559,7 +657,10 @@ export function parseRequirement(
   const withoutMarker = input.split(';')[0].trim();
   if (withoutMarker === '') return null;
 
-  const match = /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[([^\]]*)\])?\s*(.*)$/.exec(withoutMarker);
+  const match =
+    /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[([^\]]*)\])?\s*(.*)$/.exec(
+      withoutMarker,
+    );
   if (!match) return null;
 
   return {

@@ -1,6 +1,11 @@
 /** Small presentation helpers shared across the webview components. */
 
-import type { DepScope, Dependency, Ecosystem, UpdateKind } from '../core/types.js';
+import type {
+  Dependency,
+  DepScope,
+  Ecosystem,
+  UpdateKind,
+} from '../core/types.js';
 
 export const SCOPE_LABELS: Record<DepScope, string> = {
   prod: 'prod',
@@ -49,5 +54,9 @@ export function currentVersion(dep: Dependency): string {
 }
 
 export function hasUpdate(dep: Dependency): boolean {
-  return dep.updateKind === 'patch' || dep.updateKind === 'minor' || dep.updateKind === 'major';
+  return (
+    dep.updateKind === 'patch' ||
+    dep.updateKind === 'minor' ||
+    dep.updateKind === 'major'
+  );
 }

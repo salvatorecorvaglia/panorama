@@ -11,8 +11,8 @@
 
 import * as path from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import type { Ecosystem, ParsedManifest } from './types.js';
 import type { ProviderContext } from '../providers/provider.js';
+import type { Ecosystem, ParsedManifest } from './types.js';
 
 /**
  * Reads member globs from an ecosystem's sidecar workspace file, if it has one.
@@ -37,7 +37,10 @@ export async function readSidecarMembers(
 }
 
 /** `packages:` is a YAML list of globs, so this is a real parse, not a regex. */
-async function readPnpmWorkspace(dir: string, ctx: ProviderContext): Promise<string[]> {
+async function readPnpmWorkspace(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<string[]> {
   const text = await ctx.readFile(path.join(dir, 'pnpm-workspace.yaml'));
   if (!text) return [];
 
@@ -45,7 +48,9 @@ async function readPnpmWorkspace(dir: string, ctx: ProviderContext): Promise<str
     const doc = parseYaml(text) as { packages?: unknown } | null;
     const packages = doc?.packages;
     if (!Array.isArray(packages)) return [];
-    return packages.filter((entry): entry is string => typeof entry === 'string');
+    return packages.filter(
+      (entry): entry is string => typeof entry === 'string',
+    );
   } catch {
     // A malformed workspace file should not break the scan.
     return [];
@@ -56,7 +61,10 @@ async function readPnpmWorkspace(dir: string, ctx: ProviderContext): Promise<str
  * go.work lists module directories in a `use (...)` block, or as single
  * `use ./dir` lines.
  */
-async function readGoWork(dir: string, ctx: ProviderContext): Promise<string[]> {
+async function readGoWork(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<string[]> {
   const text = await ctx.readFile(path.join(dir, 'go.work'));
   if (!text) return [];
 
@@ -80,15 +88,22 @@ async function readGoWork(dir: string, ctx: ProviderContext): Promise<string[]> 
  * settings.gradle(.kts) declares members as `include 'a', 'b'` using colon-
  * separated project paths (`:app:core`), which map onto directories.
  */
-async function readGradleSettings(dir: string, ctx: ProviderContext): Promise<string[]> {
+async function readGradleSettings(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<string[]> {
   for (const name of ['settings.gradle', 'settings.gradle.kts']) {
     const text = await ctx.readFile(path.join(dir, name));
     if (!text) continue;
 
-    const source = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const source = text
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
     const members: string[] = [];
 
-    for (const statement of source.matchAll(/\binclude\s*\(?\s*((?:['"][^'"]+['"]\s*,?\s*)+)\)?/g)) {
+    for (const statement of source.matchAll(
+      /\binclude\s*\(?\s*((?:['"][^'"]+['"]\s*,?\s*)+)\)?/g,
+    )) {
       for (const quoted of statement[1].matchAll(/['"]([^'"]+)['"]/g)) {
         // `:app:core` is the Gradle path form of `app/core`.
         members.push(quoted[1].replace(/^:/, '').replace(/:/g, '/'));
@@ -139,13 +154,24 @@ export function assignWorkspaces(
 
       const candidateDir = path.dirname(candidate.manifest.path);
       const relative = path.relative(rootDir, candidateDir);
-      if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) continue;
+      if (
+        relative === '' ||
+        relative.startsWith('..') ||
+        path.isAbsolute(relative)
+      )
+        continue;
 
       if (members.some((member) => globMatchesPath(member, relative))) {
         const existing = result.get(candidate.manifest.path);
         // A nearer root wins, so nested workspaces attribute correctly.
-        if (!existing?.rootPath || rootDir.length > path.dirname(existing.rootPath).length) {
-          result.set(candidate.manifest.path, { isRoot: existing?.isRoot ?? false, rootPath: manifest.path });
+        if (
+          !existing?.rootPath ||
+          rootDir.length > path.dirname(existing.rootPath).length
+        ) {
+          result.set(candidate.manifest.path, {
+            isRoot: existing?.isRoot ?? false,
+            rootPath: manifest.path,
+          });
         }
       }
     }
@@ -161,7 +187,10 @@ export function assignWorkspaces(
  * `apps/**`, or a literal path. Full glob semantics would be more machinery
  * than the input justifies.
  */
-export function globMatchesPath(pattern: string, relativePath: string): boolean {
+export function globMatchesPath(
+  pattern: string,
+  relativePath: string,
+): boolean {
   const normalisedPattern = pattern.replace(/^\.\//, '').replace(/\/$/, '');
   const normalisedPath = relativePath.split(path.sep).join('/');
 
@@ -180,7 +209,9 @@ export function globMatchesPath(pattern: string, relativePath: string): boolean 
         .map((segment) => {
           if (segment === '**') return '.*';
           // A single star matches within one segment only.
-          return segment.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*');
+          return segment
+            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+            .replace(/\*/g, '[^/]*');
         })
         .join('/')
         // `a/**` should also match `a` itself.

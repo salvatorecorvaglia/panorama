@@ -7,7 +7,9 @@
  * one form.
  */
 
-export function normalizeRepositoryUrl(raw: string | undefined): string | undefined {
+export function normalizeRepositoryUrl(
+  raw: string | undefined,
+): string | undefined {
   if (!raw) return undefined;
   let url = raw.trim();
   if (url === '') return undefined;
@@ -55,7 +57,9 @@ export function normalizeRepositoryUrl(raw: string | undefined): string | undefi
  * Best-effort changelog link. For GitHub and GitLab the releases page is more
  * reliably present than a CHANGELOG file, so we prefer it.
  */
-export function changelogUrlFor(repository: string | undefined): string | undefined {
+export function changelogUrlFor(
+  repository: string | undefined,
+): string | undefined {
   if (!repository) return undefined;
   try {
     const url = new URL(repository);

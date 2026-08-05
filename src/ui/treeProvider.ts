@@ -7,8 +7,8 @@
  */
 
 import * as vscode from 'vscode';
-import type { Dependency, ProjectGroup } from '../core/types.js';
 import type { ScanResult } from '../core/scanner.js';
+import type { Dependency, ProjectGroup } from '../core/types.js';
 
 type Node =
   | { kind: 'project'; group: ProjectGroup }
@@ -54,9 +54,10 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
           node.group.label,
           vscode.TreeItemCollapsibleState.Collapsed,
         );
-        item.description = outdated > 0
-          ? `${node.group.toolchain} · ${outdated} outdated`
-          : node.group.toolchain;
+        item.description =
+          outdated > 0
+            ? `${node.group.toolchain} · ${outdated} outdated`
+            : node.group.toolchain;
         item.iconPath = new vscode.ThemeIcon('folder-library');
         item.contextValue = 'project';
         item.resourceUri = vscode.Uri.file(node.group.manifestPath);
@@ -75,7 +76,10 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
 
       case 'dependency': {
         const dep = node.dep;
-        const item = new vscode.TreeItem(dep.name, vscode.TreeItemCollapsibleState.None);
+        const item = new vscode.TreeItem(
+          dep.name,
+          vscode.TreeItemCollapsibleState.None,
+        );
 
         item.description = describeVersion(dep);
         item.iconPath = iconFor(dep);
@@ -93,13 +97,20 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
   getChildren(node?: Node): Node[] {
     if (!node) {
       if (this.result.groups.length === 0) {
-        return [{ kind: 'empty', message: 'No manifests found in this workspace' }];
+        return [
+          { kind: 'empty', message: 'No manifests found in this workspace' },
+        ];
       }
-      return this.result.groups.map((group) => ({ kind: 'project' as const, group }));
+      return this.result.groups.map((group) => ({
+        kind: 'project' as const,
+        group,
+      }));
     }
 
     if (node.kind === 'project') {
-      const scopes = [...new Set(node.group.dependencies.map((dep) => dep.scope))];
+      const scopes = [
+        ...new Set(node.group.dependencies.map((dep) => dep.scope)),
+      ];
       // Skip the scope level entirely when there is only one — an extra click
       // for no information.
       if (scopes.length <= 1) {
@@ -149,7 +160,11 @@ function sortDependencies(dependencies: Dependency[]): Dependency[] {
 
 function describeVersion(dep: Dependency): string {
   const current = dep.installed ?? dep.declared;
-  if (dep.updateKind === 'none' || dep.updateKind === 'unknown' || !dep.latest) {
+  if (
+    dep.updateKind === 'none' ||
+    dep.updateKind === 'unknown' ||
+    !dep.latest
+  ) {
     return current;
   }
   return `${current} → ${dep.latest}`;
@@ -160,14 +175,23 @@ function iconFor(dep: Dependency): vscode.ThemeIcon {
     return new vscode.ThemeIcon('shield', new vscode.ThemeColor('charts.red'));
   }
   if (dep.meta?.deprecated) {
-    return new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));
+    return new vscode.ThemeIcon(
+      'warning',
+      new vscode.ThemeColor('charts.yellow'),
+    );
   }
   switch (dep.updateKind) {
     case 'major':
-      return new vscode.ThemeIcon('arrow-up', new vscode.ThemeColor('charts.orange'));
+      return new vscode.ThemeIcon(
+        'arrow-up',
+        new vscode.ThemeColor('charts.orange'),
+      );
     case 'minor':
     case 'patch':
-      return new vscode.ThemeIcon('arrow-up', new vscode.ThemeColor('charts.blue'));
+      return new vscode.ThemeIcon(
+        'arrow-up',
+        new vscode.ThemeColor('charts.blue'),
+      );
     default:
       return new vscode.ThemeIcon('package');
   }
@@ -186,7 +210,10 @@ function buildTooltip(dep: Dependency): vscode.MarkdownString {
   }
 
   if (dep.vulnerabilities.length > 0) {
-    lines.push('', `🛡️ **${dep.vulnerabilities.length} known vulnerability(ies)**`);
+    lines.push(
+      '',
+      `🛡️ **${dep.vulnerabilities.length} known vulnerability(ies)**`,
+    );
     for (const vuln of dep.vulnerabilities.slice(0, 3)) {
       lines.push(`- ${vuln.severity.toUpperCase()}: ${vuln.summary}`);
     }

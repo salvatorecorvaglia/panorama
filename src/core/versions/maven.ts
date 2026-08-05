@@ -86,7 +86,11 @@ function compareItems(a: Item | undefined, b: Item | undefined): number {
   // A missing item is a "null" item: numeric 0, or a plain release qualifier.
   if (a === undefined && b === undefined) return 0;
   if (a === undefined) {
-    return b!.kind === 'number' ? (b!.value === 0 ? 0 : -1) : -compareItems(b, undefined);
+    return b?.kind === 'number'
+      ? b?.value === 0
+        ? 0
+        : -1
+      : -compareItems(b, undefined);
   }
   if (b === undefined) {
     if (a.kind === 'number') return a.value === 0 ? 0 : 1;
@@ -105,7 +109,8 @@ function compareItems(a: Item | undefined, b: Item | undefined): number {
   const ra = QUALIFIER_ORDER[a.value];
   const rb = QUALIFIER_ORDER[b.value];
   // Unknown qualifiers sort after known ones, then alphabetically.
-  if (ra === undefined && rb === undefined) return a.value.localeCompare(b.value);
+  if (ra === undefined && rb === undefined)
+    return a.value.localeCompare(b.value);
   if (ra === undefined) return 1;
   if (rb === undefined) return -1;
   return ra === rb ? 0 : ra < rb ? -1 : 1;
@@ -137,7 +142,9 @@ export function isMavenPrerelease(version: string): boolean {
 /** Highest stable version, falling back to prereleases only if that is all there is. */
 export function maxMaven(candidates: string[]): string | undefined {
   if (candidates.length === 0) return undefined;
-  const stable = candidates.filter((candidate) => !isMavenPrerelease(candidate));
+  const stable = candidates.filter(
+    (candidate) => !isMavenPrerelease(candidate),
+  );
   const pool = stable.length > 0 ? stable : candidates;
   return [...pool].sort(compareMaven)[pool.length - 1];
 }

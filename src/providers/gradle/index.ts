@@ -16,21 +16,25 @@
 import * as path from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import type {
-  DepScope,
   Dependency,
+  DepScope,
   PackageMeta,
   ParsedManifest,
   SearchResult,
   Toolchain,
 } from '../../core/types.js';
 import {
-  dependencyKey,
   type Command,
+  dependencyKey,
   type EcosystemProvider,
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { fetchMavenMetadata, fetchMavenVersions, searchMavenCentral } from '../shared/mavenCentral.js';
+import {
+  fetchMavenMetadata,
+  fetchMavenVersions,
+  searchMavenCentral,
+} from '../shared/mavenCentral.js';
 
 const COORDINATE_PATTERN = /^[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+$/;
 
@@ -54,7 +58,11 @@ const CONFIGURATION_NAMES = Object.keys(CONFIGURATION_SCOPES).join('|');
 
 export class GradleProvider implements EcosystemProvider {
   readonly id = 'gradle' as const;
-  readonly manifestFiles = ['build.gradle', 'build.gradle.kts', 'libs.versions.toml'];
+  readonly manifestFiles = [
+    'build.gradle',
+    'build.gradle.kts',
+    'libs.versions.toml',
+  ];
   readonly lockFiles = ['gradle.lockfile'];
   readonly osvEcosystem = 'Maven';
   readonly depsDevSystem = 'MAVEN';
@@ -63,7 +71,11 @@ export class GradleProvider implements EcosystemProvider {
     return COORDINATE_PATTERN.test(name);
   }
 
-  async parse(absolutePath: string, text: string, ctx: ProviderContext): Promise<ParsedManifest> {
+  async parse(
+    absolutePath: string,
+    text: string,
+    ctx: ProviderContext,
+  ): Promise<ParsedManifest> {
     if (path.basename(absolutePath) === 'libs.versions.toml') {
       return this.parseVersionCatalog(absolutePath, text);
     }
@@ -75,7 +87,10 @@ export class GradleProvider implements EcosystemProvider {
    * best-effort. Entries can be a coordinate string or a table with
    * `module`/`group`+`name` plus a literal or `version.ref` version.
    */
-  private parseVersionCatalog(absolutePath: string, text: string): ParsedManifest {
+  private parseVersionCatalog(
+    absolutePath: string,
+    text: string,
+  ): ParsedManifest {
     let doc: {
       versions?: Record<string, string>;
       libraries?: Record<string, unknown>;
@@ -109,7 +124,12 @@ export class GradleProvider implements EcosystemProvider {
       });
     }
 
-    return { ecosystem: 'gradle', path: absolutePath, name: projectLabel, dependencies };
+    return {
+      ecosystem: 'gradle',
+      path: absolutePath,
+      name: projectLabel,
+      dependencies,
+    };
   }
 
   private async parseBuildScript(
@@ -141,7 +161,8 @@ export class GradleProvider implements EcosystemProvider {
       seen.add(key);
 
       // A version that is still a Gradle interpolation is not a real version.
-      const literalVersion = version && !version.includes('$') ? version : undefined;
+      const literalVersion =
+        version && !version.includes('$') ? version : undefined;
 
       dependencies.push({
         key: dependencyKey(absolutePath, scope, name),
@@ -161,16 +182,28 @@ export class GradleProvider implements EcosystemProvider {
     // parsed as its own manifest — so we note the link rather than duplicating.
     const usesCatalog = /\blibs\.[a-zA-Z0-9.]+/.test(source);
     if (usesCatalog) {
-      const catalogPath = path.join(path.dirname(absolutePath), 'gradle', 'libs.versions.toml');
+      const catalogPath = path.join(
+        path.dirname(absolutePath),
+        'gradle',
+        'libs.versions.toml',
+      );
       if (await ctx.exists(catalogPath)) {
         // The catalog manifest is discovered independently by the scanner.
       }
     }
 
-    return { ecosystem: 'gradle', path: absolutePath, name: projectLabel, dependencies };
+    return {
+      ecosystem: 'gradle',
+      path: absolutePath,
+      name: projectLabel,
+      dependencies,
+    };
   }
 
-  async detectToolchain(manifestPath: string, ctx: ProviderContext): Promise<Toolchain> {
+  async detectToolchain(
+    manifestPath: string,
+    ctx: ProviderContext,
+  ): Promise<Toolchain> {
     // A version catalog lives in `<root>/gradle/`, so its build directory is two
     // levels up rather than alongside it.
     const cwd =
@@ -185,7 +218,9 @@ export class GradleProvider implements EcosystemProvider {
       id: 'gradle',
       ecosystem: 'gradle',
       cwd,
-      ...(hasWrapper ? { wrapper: process.platform === 'win32' ? wrapper : `./${wrapper}` } : {}),
+      ...(hasWrapper
+        ? { wrapper: process.platform === 'win32' ? wrapper : `./${wrapper}` }
+        : {}),
     };
   }
 
@@ -205,7 +240,11 @@ export class GradleProvider implements EcosystemProvider {
     return fetchMavenMetadata(name, ctx, signal);
   }
 
-  async search(query: string, ctx: ProviderContext, signal?: AbortSignal): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    ctx: ProviderContext,
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]> {
     return searchMavenCentral(query, 'gradle', ctx, signal);
   }
 

@@ -5,9 +5,9 @@
  * as plain Node with no editor and no network.
  */
 
-import type { ProviderContext } from '../../src/providers/provider.js';
-import { TtlCache, type Memento } from '../../src/core/cache.js';
+import { type Memento, TtlCache } from '../../src/core/cache.js';
 import type { HttpClient } from '../../src/core/http.js';
+import type { ProviderContext } from '../../src/providers/provider.js';
 
 class MapMemento implements Memento {
   private readonly store = new Map<string, unknown>();
@@ -22,7 +22,9 @@ class MapMemento implements Memento {
   }
 }
 
-export function makeContext(files: Record<string, string> = {}): ProviderContext {
+export function makeContext(
+  files: Record<string, string> = {},
+): ProviderContext {
   const http = {
     getJson: () => Promise.reject(new Error('network disabled in tests')),
     postJson: () => Promise.reject(new Error('network disabled in tests')),
@@ -33,11 +35,12 @@ export function makeContext(files: Record<string, string> = {}): ProviderContext
   return {
     http,
     cache: new TtlCache(new MapMemento()),
-    readFile: (absolutePath: string) => Promise.resolve(files[absolutePath] ?? null),
+    readFile: (absolutePath: string) =>
+      Promise.resolve(files[absolutePath] ?? null),
     exists: (absolutePath: string) =>
       Promise.resolve(
         Object.keys(files).some(
-          (key) => key === absolutePath || key.startsWith(absolutePath + '/'),
+          (key) => key === absolutePath || key.startsWith(`${absolutePath}/`),
         ),
       ),
     registryOverride: () => undefined,
@@ -46,7 +49,10 @@ export function makeContext(files: Record<string, string> = {}): ProviderContext
 }
 
 /** Finds a parsed dependency by name, failing loudly when it is missing. */
-export function findDep<T extends { name: string }>(dependencies: T[], name: string): T {
+export function findDep<T extends { name: string }>(
+  dependencies: T[],
+  name: string,
+): T {
   const found = dependencies.find((dep) => dep.name === name);
   if (!found) {
     throw new Error(

@@ -6,19 +6,24 @@
  */
 
 import * as vscode from 'vscode';
-import type { Ecosystem } from './types.js';
 import type { ProviderContext } from '../providers/provider.js';
-import type { HttpClient } from './http.js';
 import type { TtlCache } from './cache.js';
+import type { HttpClient } from './http.js';
+import type { Ecosystem } from './types.js';
 
-export function createProviderContext(http: HttpClient, cache: TtlCache): ProviderContext {
+export function createProviderContext(
+  http: HttpClient,
+  cache: TtlCache,
+): ProviderContext {
   return {
     http,
     cache,
 
     async readFile(absolutePath: string): Promise<string | null> {
       try {
-        const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(absolutePath));
+        const bytes = await vscode.workspace.fs.readFile(
+          vscode.Uri.file(absolutePath),
+        );
         return Buffer.from(bytes).toString('utf8');
       } catch {
         return null;
@@ -40,15 +45,22 @@ export function createProviderContext(http: HttpClient, cache: TtlCache): Provid
         .get<Record<string, string>>('registryOverrides', {});
       // Accept both the ecosystem id and its common alias, so users can write
       // "npm" rather than having to know we call it "node" internally.
-      const alias = ecosystem === 'node' ? 'npm' : ecosystem === 'python' ? 'pypi' : ecosystem;
+      const alias =
+        ecosystem === 'node'
+          ? 'npm'
+          : ecosystem === 'python'
+            ? 'pypi'
+            : ecosystem;
       const value = overrides[ecosystem] ?? overrides[alias];
       return value?.replace(/\/$/, '');
     },
 
     preferredToolchain(ecosystem: Ecosystem): string {
       const config = vscode.workspace.getConfiguration('panorama');
-      if (ecosystem === 'node') return config.get<string>('preferredNodeManager', 'auto');
-      if (ecosystem === 'python') return config.get<string>('pythonManager', 'auto');
+      if (ecosystem === 'node')
+        return config.get<string>('preferredNodeManager', 'auto');
+      if (ecosystem === 'python')
+        return config.get<string>('pythonManager', 'auto');
       return 'auto';
     },
   };

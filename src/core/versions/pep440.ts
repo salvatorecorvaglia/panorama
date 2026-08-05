@@ -49,7 +49,8 @@ export function parsePep440(input: string): Pep440Version | null {
   };
 
   if (g.preType) {
-    version.preType = PRE_ALIASES[g.preType.toLowerCase()] ?? g.preType.toLowerCase();
+    version.preType =
+      PRE_ALIASES[g.preType.toLowerCase()] ?? g.preType.toLowerCase();
     version.preNumber = g.preNum ? Number(g.preNum) : 0;
   }
   if (g.post !== undefined) {
@@ -90,11 +91,19 @@ export function comparePep440(a: string, b: string): number {
   const preCmp = comparePre(va, vb);
   if (preCmp !== 0) return preCmp;
 
-  const postCmp = compareOptional(va.postNumber, vb.postNumber, 'absent-is-lower');
+  const postCmp = compareOptional(
+    va.postNumber,
+    vb.postNumber,
+    'absent-is-lower',
+  );
   if (postCmp !== 0) return postCmp;
 
   // A dev release precedes the corresponding non-dev release.
-  const devCmp = compareOptional(va.devNumber, vb.devNumber, 'absent-is-higher');
+  const devCmp = compareOptional(
+    va.devNumber,
+    vb.devNumber,
+    'absent-is-higher',
+  );
   if (devCmp !== 0) return devCmp;
 
   return 0;
@@ -107,8 +116,10 @@ function comparePre(a: Pep440Version, b: Pep440Version): number {
   const bIsPre = b.preType !== undefined;
 
   if (!aIsPre && !bIsPre) return 0;
-  if (!aIsPre) return a.devNumber !== undefined && b.devNumber === undefined ? -1 : 1;
-  if (!bIsPre) return b.devNumber !== undefined && a.devNumber === undefined ? 1 : -1;
+  if (!aIsPre)
+    return a.devNumber !== undefined && b.devNumber === undefined ? -1 : 1;
+  if (!bIsPre)
+    return b.devNumber !== undefined && a.devNumber === undefined ? 1 : -1;
 
   const order = ['a', 'b', 'rc'];
   const ai = order.indexOf(a.preType!);
@@ -136,7 +147,9 @@ function compareOptional(
 /** True when the version carries a pre-release or dev marker. */
 export function isPep440Prerelease(input: string): boolean {
   const parsed = parsePep440(input);
-  return parsed ? parsed.preType !== undefined || parsed.devNumber !== undefined : false;
+  return parsed
+    ? parsed.preType !== undefined || parsed.devNumber !== undefined
+    : false;
 }
 
 /**
@@ -171,7 +184,7 @@ function satisfiesSingle(version: string, clause: string): boolean {
   // Wildcards only make sense for equality comparisons.
   if (target.endsWith('.*') && (operator === '==' || operator === '!=')) {
     const prefix = target.slice(0, -2);
-    const matches = version === prefix || version.startsWith(prefix + '.');
+    const matches = version === prefix || version.startsWith(`${prefix}.`);
     return operator === '==' ? matches : !matches;
   }
 

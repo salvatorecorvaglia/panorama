@@ -5,14 +5,14 @@
 
 import * as path from 'node:path';
 import type { Ecosystem } from '../core/types.js';
-import type { EcosystemProvider } from './provider.js';
-import { NodeProvider } from './node/index.js';
-import { PythonProvider } from './python/index.js';
 import { CargoProvider } from './cargo/index.js';
-import { GoProvider } from './golang/index.js';
 import { ComposerProvider } from './composer/index.js';
-import { MavenProvider } from './maven/index.js';
+import { GoProvider } from './golang/index.js';
 import { GradleProvider } from './gradle/index.js';
+import { MavenProvider } from './maven/index.js';
+import { NodeProvider } from './node/index.js';
+import type { EcosystemProvider } from './provider.js';
+import { PythonProvider } from './python/index.js';
 
 export const PROVIDERS: EcosystemProvider[] = [
   new NodeProvider(),
@@ -44,7 +44,9 @@ export function providerFor(ecosystem: Ecosystem): EcosystemProvider {
 }
 
 /** Resolves a provider from an absolute manifest path, or undefined. */
-export function providerForPath(absolutePath: string): EcosystemProvider | undefined {
+export function providerForPath(
+  absolutePath: string,
+): EcosystemProvider | undefined {
   const base = path.basename(absolutePath);
   const direct = BY_MANIFEST_FILE.get(base);
   if (direct) return direct;

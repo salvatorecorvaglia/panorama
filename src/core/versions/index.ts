@@ -8,21 +8,28 @@
 
 import semver from 'semver';
 import type { Ecosystem, UpdateKind } from '../types.js';
-import { comparePep440, isPep440Prerelease, maxSatisfyingPep440, satisfiesPep440 } from './pep440.js';
-import { compareMaven, isMavenPrerelease, maxMaven } from './maven.js';
 import {
   compareComposer,
   composerConstraintToSemver,
   isComposerPrerelease,
   maxComposer,
 } from './composer.js';
+import { compareMaven, isMavenPrerelease, maxMaven } from './maven.js';
+import {
+  comparePep440,
+  isPep440Prerelease,
+  maxSatisfyingPep440,
+  satisfiesPep440,
+} from './pep440.js';
 
-export * from './pep440.js';
-export * from './maven.js';
 export * from './composer.js';
+export * from './maven.js';
+export * from './pep440.js';
 
 /** Which scheme an ecosystem uses. Cargo and Go are genuine semver. */
-function schemeFor(ecosystem: Ecosystem): 'semver' | 'pep440' | 'maven' | 'composer' {
+function schemeFor(
+  ecosystem: Ecosystem,
+): 'semver' | 'pep440' | 'maven' | 'composer' {
   switch (ecosystem) {
     case 'python':
       return 'pep440';
@@ -38,7 +45,11 @@ function schemeFor(ecosystem: Ecosystem): 'semver' | 'pep440' | 'maven' | 'compo
   }
 }
 
-export function compareVersions(ecosystem: Ecosystem, a: string, b: string): number {
+export function compareVersions(
+  ecosystem: Ecosystem,
+  a: string,
+  b: string,
+): number {
   switch (schemeFor(ecosystem)) {
     case 'pep440':
       return comparePep440(a, b);
@@ -70,13 +81,18 @@ export function isPrerelease(ecosystem: Ecosystem, version: string): boolean {
       return isComposerPrerelease(version);
     case 'semver': {
       const parsed = semver.parse(version, { loose: true });
-      return parsed ? parsed.prerelease.length > 0 : /-(alpha|beta|rc|next|canary|dev)/i.test(version);
+      return parsed
+        ? parsed.prerelease.length > 0
+        : /-(alpha|beta|rc|next|canary|dev)/i.test(version);
     }
   }
 }
 
 /** Highest published version overall, ignoring prereleases where possible. */
-export function maxVersion(ecosystem: Ecosystem, candidates: string[]): string | undefined {
+export function maxVersion(
+  ecosystem: Ecosystem,
+  candidates: string[],
+): string | undefined {
   if (candidates.length === 0) return undefined;
   switch (schemeFor(ecosystem)) {
     case 'maven':
@@ -84,9 +100,13 @@ export function maxVersion(ecosystem: Ecosystem, candidates: string[]): string |
     case 'composer':
       return maxComposer(candidates);
     default: {
-      const stable = candidates.filter((candidate) => !isPrerelease(ecosystem, candidate));
+      const stable = candidates.filter(
+        (candidate) => !isPrerelease(ecosystem, candidate),
+      );
       const pool = stable.length > 0 ? stable : candidates;
-      return [...pool].sort((a, b) => compareVersions(ecosystem, a, b))[pool.length - 1];
+      return [...pool].sort((a, b) => compareVersions(ecosystem, a, b))[
+        pool.length - 1
+      ];
     }
   }
 }
@@ -128,13 +148,22 @@ export function maxSatisfying(
   }
 }
 
-function maxSatisfyingSemver(candidates: string[], range: string): string | undefined {
+function maxSatisfyingSemver(
+  candidates: string[],
+  range: string,
+): string | undefined {
   if (!semver.validRange(range, { loose: true })) {
     return undefined;
   }
   const usable = candidates
-    .map((candidate) => ({ raw: candidate, parsed: semver.valid(candidate, { loose: true }) }))
-    .filter((entry): entry is { raw: string; parsed: string } => entry.parsed !== null);
+    .map((candidate) => ({
+      raw: candidate,
+      parsed: semver.valid(candidate, { loose: true }),
+    }))
+    .filter(
+      (entry): entry is { raw: string; parsed: string } =>
+        entry.parsed !== null,
+    );
 
   const best = semver.maxSatisfying(
     usable.map((entry) => entry.parsed),
@@ -183,7 +212,9 @@ export function classifyUpdate(
  * Strips a constraint down to a concrete version for display, e.g. `^1.2.3`
  * becomes `1.2.3`. Used when no lockfile pins an exact version.
  */
-export function constraintToApproxVersion(constraint: string): string | undefined {
+export function constraintToApproxVersion(
+  constraint: string,
+): string | undefined {
   const match = /(\d+(?:\.\d+)*(?:[-+][0-9a-zA-Z.-]+)?)/.exec(constraint);
   return match?.[1];
 }

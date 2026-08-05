@@ -6,9 +6,9 @@
  */
 
 import { cacheKey, TTL } from '../../core/cache.js';
-import type { PackageMeta, SearchResult, Ecosystem } from '../../core/types.js';
-import type { ProviderContext, VersionInfo } from '../provider.js';
+import type { Ecosystem, PackageMeta, SearchResult } from '../../core/types.js';
 import { maxMaven } from '../../core/versions/maven.js';
+import type { ProviderContext, VersionInfo } from '../provider.js';
 
 const SOLR = 'https://search.maven.org/solrsearch/select';
 
@@ -27,7 +27,9 @@ interface SolrResponse {
   };
 }
 
-export function splitCoordinate(name: string): { groupId: string; artifactId: string } | null {
+export function splitCoordinate(
+  name: string,
+): { groupId: string; artifactId: string } | null {
   const parts = name.split(':');
   if (parts.length < 2 || !parts[0] || !parts[1]) return null;
   return { groupId: parts[0], artifactId: parts[1] };
@@ -115,7 +117,10 @@ export async function searchMavenCentral(
     ? `g:${coordinate.groupId}+AND+a:${coordinate.artifactId}`
     : encodeURIComponent(query);
 
-  const response = await ctx.http.getJson<SolrResponse>(`${SOLR}?q=${q}&rows=25&wt=json`, { signal });
+  const response = await ctx.http.getJson<SolrResponse>(
+    `${SOLR}?q=${q}&rows=25&wt=json`,
+    { signal },
+  );
 
   return response.response.docs.map((doc) => ({
     name: `${doc.g}:${doc.a}`,
