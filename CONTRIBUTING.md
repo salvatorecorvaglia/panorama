@@ -1,8 +1,6 @@
 # Contributing to Panorama 🔭
 
-First off, thank you for your interest in contributing to **Panorama**! Contributions from the community help make Panorama a better universal package manager for everyone.
-
-This document provides guidelines and instructions for setting up your local environment, understanding the codebase architecture, running tests, and submitting pull requests.
+Thank you for your interest in contributing to **Panorama**! We welcome contributions, bug reports, feature requests, and security improvements from the community.
 
 ---
 
