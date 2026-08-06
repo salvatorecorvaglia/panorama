@@ -57,22 +57,53 @@ jobs:
       - name: Package extension
         run: pnpm run package
 
+      - name: Extract Release Notes from CHANGELOG.md
+        run: |
+          node -e '
+          const fs = require("fs");
+          const tag = process.env.GITHUB_REF_NAME || "";
+          const version = tag.replace(/^v/, "");
+          if (fs.existsSync("CHANGELOG.md") && version) {
+            const content = fs.readFileSync("CHANGELOG.md", "utf8");
+            const escapedVer = version.replace(/\./g, "\\.");
+            const regex = new RegExp("##\\s*\\[?v?" + escapedVer + "\\]?[^\\n]*\\n([\\s\\S]*?)(?=\\n##\\s|$)", "i");
+            const match = content.match(regex);
+            if (match && match[1].trim()) {
+              fs.writeFileSync("RELEASE_NOTES.md", match[1].trim());
+              console.log("Extracted release notes for version " + version);
+              process.exit(0);
+            }
+          }
+          console.log("No changelog entry found for version " + version);
+          '
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: Panorama ${{ github.ref_name }}
           files: '*.vsix'
+          body_path: ${{ hashFiles('RELEASE_NOTES.md') != '' && 'RELEASE_NOTES.md' || '' }}
           generate_release_notes: true
           draft: ${{ github.event.inputs.draft || false }}
           prerelease: ${{ github.event.inputs.prerelease || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
 
       - name: Publish to VS Code Marketplace
-        if: ${{ secrets.VSCE_PAT != '' }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: pnpm exec vsce publish --packagePath *.vsix
+        run: |
+          if [ -n "$VSCE_PAT" ]; then
+            pnpm exec vsce publish --packagePath *.vsix
+          else
+            echo "VSCE_PAT secret not configured; skipping VS Code Marketplace publish."
+          fi
 
       - name: Publish to Open VSX Registry
-        if: ${{ secrets.OVSX_PAT != '' }}
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: npx -y ovsx publish *.vsix
+        run: |
+          if [ -n "$OVSX_PAT" ]; then
+            npx -y ovsx publish *.vsix
+          else
+            echo "OVSX_PAT secret not configured; skipping Open VSX Registry publish."
+          fi
+
