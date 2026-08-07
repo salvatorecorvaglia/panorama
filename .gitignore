@@ -10,7 +10,6 @@ build/
 
 # VS Code test & temporary files
 .vscode-test/
-.vscode-test.mjs
 
 # Testing & Coverage & Caches
 coverage/
