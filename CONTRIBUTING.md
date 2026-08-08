@@ -56,6 +56,8 @@ This runs concurrent watch processes for both the Extension Host (`esbuild`) and
 | Script | Command | Description |
 | :--- | :--- | :--- |
 | `build` | `pnpm run build` | Builds both the extension host (`build:host`) and webview UI (`build:webview`). |
+| `build:host` | `pnpm run build:host` | Compiles extension host TypeScript source using `esbuild`. |
+| `build:webview` | `pnpm run build:webview` | Bundles webview UI application using `vite`. |
 | `watch` | `pnpm run watch` | Watches for source changes and rebuilds host & webview incrementally. |
 | `typecheck` | `pnpm run typecheck` | Runs `tsc --noEmit` across both extension host and webview TypeScript configurations. |
 | `lint` | `pnpm run lint` | Runs [Biome](https://biomejs.dev) linter and formatter checks across the codebase. |
@@ -63,6 +65,7 @@ This runs concurrent watch processes for both the Extension Host (`esbuild`) and
 | `format` | `pnpm run format` | Formats all files using Biome. |
 | `test` | `pnpm run test` | Runs fast unit tests via [Vitest](https://vitest.dev). |
 | `test:watch` | `pnpm run test:watch` | Runs Vitest in interactive watch mode. |
+| `test:coverage` | `pnpm run test:coverage` | Runs unit tests and generates coverage reports. |
 | `test:integration` | `pnpm run test:integration` | Runs VS Code extension integration tests inside an automated extension host. |
 | `test:all` | `pnpm run test:all` | Executes both unit test and integration test suites. |
 | `package` | `pnpm run package` | Packages the extension into a `.vsix` file using `@vscode/vsce`. |

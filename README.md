@@ -59,6 +59,7 @@ Panorama contributes the following commands to VS Code (`Panorama` category):
 | `panorama.showWhy` | **Why Is This Installed?** | Displays the dependency graph path explaining why a package is present. |
 | `panorama.toggleMute` | **Mute/Unmute Updates for Package** | Suppresses or restores update checks for the selected dependency. |
 | `panorama.clearMuted` | **Clear All Muted Packages** | Resets all muted package preferences in the active workspace. |
+| `panorama.revealDependency` | **Reveal Package in Panel** | Focuses and highlights the selected dependency inside the interactive React webview panel. |
 
 ---
 
