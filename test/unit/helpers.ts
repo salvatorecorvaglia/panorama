@@ -32,15 +32,24 @@ export function makeContext(
     setContactEmail: () => undefined,
   } as unknown as HttpClient;
 
+  const normalizePath = (p: string) => p.replace(/\\/g, '/');
+
+  const normalizedFiles: Record<string, string> = {};
+  for (const [k, v] of Object.entries(files)) {
+    normalizedFiles[normalizePath(k)] = v;
+  }
+
   return {
     http,
     cache: new TtlCache(new MapMemento()),
     readFile: (absolutePath: string) =>
-      Promise.resolve(files[absolutePath] ?? null),
+      Promise.resolve(normalizedFiles[normalizePath(absolutePath)] ?? null),
     exists: (absolutePath: string) =>
       Promise.resolve(
-        Object.keys(files).some(
-          (key) => key === absolutePath || key.startsWith(`${absolutePath}/`),
+        Object.keys(normalizedFiles).some(
+          (key) =>
+            key === normalizePath(absolutePath) ||
+            key.startsWith(`${normalizePath(absolutePath)}/`),
         ),
       ),
     registryOverride: () => undefined,
