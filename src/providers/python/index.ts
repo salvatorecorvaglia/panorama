@@ -22,7 +22,6 @@ import type {
   Toolchain,
   ToolchainId,
 } from '../../core/types.js';
-import { mapWithConcurrency } from '../node/index.js';
 import {
   type Command,
   dependencyKey,
@@ -31,6 +30,7 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
+import { mapWithConcurrency } from '../shared/concurrency.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
@@ -77,6 +77,11 @@ export class PythonProvider implements EcosystemProvider {
     return name.length <= 214 && NAME_PATTERN.test(name);
   }
 
+  /** PEP 503: what `readLockfile` keys by, so the scanner can match manifests. */
+  normalizeName(name: string): string {
+    return normalizeName(name);
+  }
+
   async parse(
     absolutePath: string,
     text: string,
@@ -107,10 +112,20 @@ export class PythonProvider implements EcosystemProvider {
       path.basename(path.dirname(absolutePath));
 
     const dependencies: Dependency[] = [];
+    // A pyproject can declare the same package twice — PEP 621 and Poetry
+    // tables coexist during a migration, and extras repeat their base
+    // requirements. Two rows sharing a key break selection and React
+    // reconciliation, so the first declaration wins.
+    const seen = new Set<string>();
+
     const add = (name: string, declared: string, scope: DepScope) => {
       if (!name) return;
+      const key = dependencyKey(absolutePath, scope, normalizeName(name));
+      if (seen.has(key)) return;
+      seen.add(key);
+
       dependencies.push({
-        key: dependencyKey(absolutePath, scope, name),
+        key,
         name,
         ecosystem: 'python',
         scope,
@@ -277,7 +292,12 @@ export class PythonProvider implements EcosystemProvider {
     const preferred = ctx.preferredToolchain('python');
 
     const venvPath = await this.findVenv(cwd, ctx);
-    const base = { ecosystem: 'python' as const, cwd, venvPath };
+    const base = {
+      ecosystem: 'python' as const,
+      cwd,
+      venvPath,
+      manifestFile: path.basename(manifestPath),
+    };
 
     if (preferred !== 'auto') {
       return { ...base, id: preferred as ToolchainId };
@@ -447,7 +467,15 @@ export class PythonProvider implements EcosystemProvider {
     return results;
   }
 
-  /** Downloads and caches the full PyPI project list (large, so daily at most). */
+  /**
+   * Downloads and caches the full PyPI project list (large, so daily at most).
+   *
+   * Held in memory only. The index is over half a million names, and
+   * `globalState` is a JSON blob VS Code loads and rewrites synchronously —
+   * persisting this made every subsequent extension-host start pay for a search
+   * the user may have run once. Re-fetching it after a reload costs one request
+   * on the next search instead.
+   */
   private async projectIndex(
     index: string,
     ctx: ProviderContext,
@@ -464,7 +492,7 @@ export class PythonProvider implements EcosystemProvider {
         timeoutMs: 60_000,
       });
       const names = response.projects.map((entry) => normalizeName(entry.name));
-      await ctx.cache.set(key, names, TTL.nameIndex);
+      await ctx.cache.set(key, names, TTL.nameIndex, { persist: false });
       return names;
     } catch {
       return ctx.cache.getStale<string[]>(key) ?? [];
@@ -495,11 +523,13 @@ export class PythonProvider implements EcosystemProvider {
           description: `Add ${spec} with Poetry`,
         };
       default:
-        // pip does not write to a manifest; the host pairs this with an edit.
+        // pip installs into the environment and writes nothing back, so the
+        // host pairs this with an `editManifest` call.
         return {
           argv: [pythonExe(toolchain), '-m', 'pip', 'install', spec],
           cwd: toolchain.cwd,
           description: `Install ${spec} with pip`,
+          writesManifest: false,
         };
     }
   }
@@ -549,6 +579,7 @@ export class PythonProvider implements EcosystemProvider {
           ],
           cwd: toolchain.cwd,
           description: `Uninstall ${dep.name} with pip`,
+          writesManifest: false,
         };
     }
   }
@@ -567,8 +598,12 @@ export class PythonProvider implements EcosystemProvider {
           cwd: toolchain.cwd,
           description: 'Update all with Poetry',
         };
-      default:
-        // pip has no "update all"; requirements.txt is the source of truth.
+      default: {
+        // pip has no "update all"; the requirements file is the source of
+        // truth. It is named from the manifest rather than assumed, so a
+        // project driven by `requirements-dev.txt` does not silently reinstall
+        // a `requirements.txt` that may not even exist.
+        const requirements = toolchain.manifestFile ?? 'requirements.txt';
         return {
           argv: [
             pythonExe(toolchain),
@@ -577,11 +612,12 @@ export class PythonProvider implements EcosystemProvider {
             'install',
             '--upgrade',
             '-r',
-            'requirements.txt',
+            requirements,
           ],
           cwd: toolchain.cwd,
-          description: 'Reinstall requirements.txt with upgrades',
+          description: `Reinstall ${requirements} with upgrades`,
         };
+      }
     }
   }
 
@@ -634,7 +670,11 @@ export class PythonProvider implements EcosystemProvider {
 }
 
 function pythonExe(toolchain: Toolchain): string {
-  if (!toolchain.venvPath) return 'python3';
+  // Windows ships `python`; `python3` exists on POSIX and is the safer name
+  // there, where `python` may still be a Python 2 interpreter.
+  if (!toolchain.venvPath) {
+    return process.platform === 'win32' ? 'python' : 'python3';
+  }
   // Windows venvs put the interpreter in Scripts/, POSIX in bin/.
   return process.platform === 'win32'
     ? path.join(toolchain.venvPath, 'Scripts', 'python.exe')

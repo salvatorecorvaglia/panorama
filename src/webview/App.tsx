@@ -93,6 +93,8 @@ export function App() {
   const [installOpen, setInstallOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchError, setSearchError] = useState<string | undefined>();
+  /** Registries that did not answer, when others did. */
+  const [searchPartial, setSearchPartial] = useState<Ecosystem[] | undefined>();
   const [searching, setSearching] = useState(false);
   const [activeRequestId, setActiveRequestId] = useState<string | undefined>();
 
@@ -152,12 +154,19 @@ export function App() {
         case 'searchResults':
           setSearchResults(message.results);
           setSearchError(undefined);
+          // Some registries answered and some did not. The results are real, so
+          // they are shown — but silently dropping an ecosystem would read as
+          // "that package does not exist".
+          setSearchPartial(
+            message.failed.length > 0 ? message.failed : undefined,
+          );
           setSearching(false);
           setActiveRequestId(undefined);
           break;
 
         case 'searchError':
           setSearchError(message.message);
+          setSearchPartial(undefined);
           setSearching(false);
           setActiveRequestId(undefined);
           break;
@@ -258,9 +267,12 @@ export function App() {
     }
   }, [installOpen, activeRequestId]);
 
-  const handleUpdate = useCallback((dep: Dependency) => {
-    if (!dep.latest) return;
-    post({ type: 'update', depKey: dep.key, toVersion: dep.latest });
+  // `toVersion` lets the drawer offer the in-range upgrade as well as the
+  // latest; the table's Update button has only one target and omits it.
+  const handleUpdate = useCallback((dep: Dependency, toVersion?: string) => {
+    const target = toVersion ?? dep.latest;
+    if (!target) return;
+    post({ type: 'update', depKey: dep.key, toVersion: target });
   }, []);
 
   const handleUninstall = useCallback((dep: Dependency) => {
@@ -301,6 +313,7 @@ export function App() {
       groups={groups}
       results={searchResults}
       error={searchError}
+      partialFailure={searchPartial}
       searching={searching}
       onSearch={handleSearch}
       onInstall={(name, version, scope, manifestPath) =>
@@ -319,6 +332,7 @@ export function App() {
         <div className="callout callout--error banner" role="alert">
           <div className="banner__text">{error}</div>
           <button
+            type="button"
             className="ghost"
             aria-label="Dismiss error"
             onClick={() => setError(undefined)}
@@ -331,6 +345,7 @@ export function App() {
         <div className="callout callout--info banner" role="status">
           <div className="banner__text">{notice}</div>
           <button
+            type="button"
             className="ghost"
             aria-label="Dismiss notice"
             onClick={() => setNotice(undefined)}
@@ -342,8 +357,15 @@ export function App() {
     </div>
   );
 
-  // A workspace with no manifests at all. Registry search still works here —
-  // only installing needs a manifest — so the search panel stays reachable.
+  /*
+   * A workspace with no manifests at all.
+   *
+   * Registry search still works here — only *installing* needs a manifest — so
+   * the empty state carries its own way in. The toolbar, which is the only
+   * other thing that can open the panel, is deliberately not rendered in this
+   * branch, and without a button here the feature was reachable only from the
+   * command palette.
+   */
   if (groups.length === 0 && loaded && !busy) {
     return (
       <div className="app">
@@ -356,12 +378,24 @@ export function App() {
             Cargo.toml, go.mod, composer.json, pom.xml, build.gradle and
             build.gradle.kts anywhere in this workspace.
           </p>
-          <button
-            className="empty__action"
-            onClick={() => post({ type: 'refresh' })}
-          >
-            Scan again
-          </button>
+          <div className="empty__actions">
+            <button
+              type="button"
+              className="empty__action"
+              onClick={() => post({ type: 'refresh' })}
+            >
+              Scan again
+            </button>
+            {!installOpen && (
+              <button
+                type="button"
+                className="empty__action secondary"
+                onClick={() => setInstallOpen(true)}
+              >
+                Search packages
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );

@@ -90,14 +90,22 @@ export async function auditDependencies(
 
   for (let offset = 0; offset < queries.length; offset += MAX_BATCH) {
     const slice = queries.slice(offset, offset + MAX_BATCH);
-    const response = await ctx.http.postJson<OsvBatchResponse>(
-      `${OSV_API}/v1/querybatch`,
-      { queries: slice },
-      { signal },
-    );
-    response.results.forEach((result, i) => {
-      idsPerQuery[offset + i] = (result.vulns ?? []).map((vuln) => vuln.id);
-    });
+    try {
+      const response = await ctx.http.postJson<OsvBatchResponse>(
+        `${OSV_API}/v1/querybatch`,
+        { queries: slice },
+        { signal },
+      );
+      response.results.forEach((result, i) => {
+        idsPerQuery[offset + i] = (result.vulns ?? []).map((vuln) => vuln.id);
+      });
+    } catch (error) {
+      // An unreachable OSV greys out a badge; it does not break the table, and
+      // it is not evidence that the registry data alongside it is stale. An
+      // abort is different — that is the caller withdrawing the question.
+      if (signal?.aborted) throw error;
+      return;
+    }
   }
 
   const uniqueIds = [...new Set(idsPerQuery.flat())];
@@ -185,7 +193,7 @@ function toVulnerability(raw: OsvVuln): Vulnerability {
 
 /**
  * OSV reports severity two ways: a database-specific label, or a CVSS vector.
- * We prefer the label and fall back to bucketing the CVSS base score.
+ * We prefer the label and fall back to computing the CVSS base score.
  */
 function deriveSeverity(raw: OsvVuln): Severity {
   const label = raw.database_specific?.severity?.toLowerCase();
@@ -210,16 +218,70 @@ function deriveSeverity(raw: OsvVuln): Severity {
     }
   }
 
+  // Nothing usable was reported. `moderate` is the honest middle: it does not
+  // manufacture alarm, and it does not bury something that may be critical.
   return 'moderate';
 }
 
 /**
- * OSV's `score` is usually a CVSS vector string rather than a number. Deriving
- * a full base score from the vector is out of scope, so we read a numeric score
- * when one is given and otherwise let the caller's default stand.
+ * CVSS v3.x/v4.0 base score from OSV's `score` field.
+ *
+ * The field is nearly always a vector string, not a number, so reading it with
+ * `Number()` alone meant every CVSS-only advisory silently landed on the
+ * `moderate` default — including the critical ones.
+ *
+ * The full v3.1 base-score equation is implemented here (it is short, closed
+ * form, and stable). v4.0 vectors have a different, much larger scoring table,
+ * so those fall back to the qualitative severity their vector implies.
  */
-function parseCvssBaseScore(score: string): number | undefined {
+export function parseCvssBaseScore(score: string): number | undefined {
   const numeric = Number(score);
   if (Number.isFinite(numeric)) return numeric;
-  return undefined;
+
+  const metrics = new Map<string, string>();
+  for (const part of score.split('/')) {
+    const [key, value] = part.split(':');
+    if (key && value) metrics.set(key, value);
+  }
+
+  const version = metrics.get('CVSS');
+  if (!version) return undefined;
+  // v2 vectors are unlabelled and long obsolete; v4 needs a different table.
+  if (!version.startsWith('3')) return undefined;
+
+  const AV: Record<string, number> = { N: 0.85, A: 0.62, L: 0.55, P: 0.2 };
+  const AC: Record<string, number> = { L: 0.77, H: 0.44 };
+  const UI: Record<string, number> = { N: 0.85, R: 0.62 };
+  const CIA: Record<string, number> = { H: 0.56, L: 0.22, N: 0 };
+  const scopeChanged = metrics.get('S') === 'C';
+  // Privileges Required is scored differently when scope changes.
+  const PR: Record<string, number> = scopeChanged
+    ? { N: 0.85, L: 0.68, H: 0.5 }
+    : { N: 0.85, L: 0.62, H: 0.27 };
+
+  const av = AV[metrics.get('AV') ?? ''];
+  const ac = AC[metrics.get('AC') ?? ''];
+  const pr = PR[metrics.get('PR') ?? ''];
+  const ui = UI[metrics.get('UI') ?? ''];
+  const c = CIA[metrics.get('C') ?? ''];
+  const i = CIA[metrics.get('I') ?? ''];
+  const a = CIA[metrics.get('A') ?? ''];
+  if ([av, ac, pr, ui, c, i, a].some((value) => value === undefined)) {
+    return undefined;
+  }
+
+  const impactBase = 1 - (1 - c) * (1 - i) * (1 - a);
+  if (impactBase <= 0) return 0;
+
+  const impact = scopeChanged
+    ? 7.52 * (impactBase - 0.029) - 3.25 * (impactBase - 0.02) ** 15
+    : 6.42 * impactBase;
+  const exploitability = 8.22 * av * ac * pr * ui;
+
+  const raw = scopeChanged
+    ? Math.min(1.08 * (impact + exploitability), 10)
+    : Math.min(impact + exploitability, 10);
+
+  // CVSS rounds up to one decimal place.
+  return Math.ceil(raw * 10) / 10;
 }

@@ -149,10 +149,11 @@ describe('Node provider', () => {
   });
 
   it('builds scope-correct commands per toolchain', () => {
+    // npm and pnpm both take the --save-* family; pnpm's `add` has no --dev.
     const pnpm = { id: 'pnpm' as const, ecosystem: 'node' as const, cwd: '/p' };
     expect(
       provider.installCommand(pnpm, 'vitest', '2.1.0', 'dev')?.argv,
-    ).toEqual(['pnpm', 'add', 'vitest@2.1.0', '--dev']);
+    ).toEqual(['pnpm', 'add', 'vitest@2.1.0', '--save-dev']);
 
     const npm = { id: 'npm' as const, ecosystem: 'node' as const, cwd: '/p' };
     expect(provider.installCommand(npm, 'vitest', null, 'dev')?.argv).toEqual([
@@ -164,6 +165,36 @@ describe('Node provider', () => {
     expect(
       provider.uninstallCommand(npm, { name: 'react' } as never)?.argv,
     ).toEqual(['npm', 'uninstall', 'react']);
+
+    // Yarn and bun use the short forms instead.
+    const yarn = { id: 'yarn' as const, ecosystem: 'node' as const, cwd: '/p' };
+    expect(provider.installCommand(yarn, 'vitest', null, 'dev')?.argv).toEqual([
+      'yarn',
+      'add',
+      'vitest',
+      '--dev',
+    ]);
+  });
+
+  it('uses the right bulk-update verb per manager', () => {
+    const cwd = '/p';
+    const ecosystem = 'node' as const;
+
+    // `yarn update` does not exist in either line: v1 is `upgrade`, Berry is `up`.
+    expect(
+      provider.updateAllCommand({ id: 'yarn', ecosystem, cwd })?.argv,
+    ).toEqual(['yarn', 'upgrade']);
+    expect(
+      provider.updateAllCommand({ id: 'yarn', ecosystem, cwd, yarnBerry: true })
+        ?.argv,
+    ).toEqual(['yarn', 'up']);
+
+    for (const id of ['npm', 'pnpm', 'bun'] as const) {
+      expect(provider.updateAllCommand({ id, ecosystem, cwd })?.argv).toEqual([
+        id,
+        'update',
+      ]);
+    }
   });
 
   it('refuses to build a command for an invalid name', () => {
@@ -171,6 +202,12 @@ describe('Node provider', () => {
     expect(
       provider.installCommand(npm, 'evil; rm -rf /', null, 'prod'),
     ).toBeNull();
+  });
+
+  it('accepts legacy package names that carry capitals', () => {
+    // Rejected for new publishes since 2017, but existing ones still resolve.
+    expect(provider.isValidPackageName('JSONStream')).toBe(true);
+    expect(provider.isValidPackageName('@Scope/Pkg')).toBe(true);
   });
 });
 
@@ -628,6 +665,58 @@ describe('Maven provider', () => {
     // Untouched parts of the document must survive byte for byte.
     expect(updated).toContain('<artifactId>junit-jupiter</artifactId>');
     expect(updated).toContain('<junit.version>5.10.2</junit.version>');
+  });
+
+  it('rewrites the declaration, not the managed default, when both pin a version', () => {
+    // A coordinate declared in <dependencies> *with* its own version outranks
+    // the reactor-wide default: rewriting the managed block instead would
+    // silently change the version for every other module too.
+    const both = `<project>
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>com.google.guava</groupId>
+        <artifactId>guava</artifactId>
+        <version>30.0-jre</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+  <dependencies>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>32.0.0-jre</version>
+    </dependency>
+  </dependencies>
+</project>`;
+
+    const updated = provider.editManifest(both, {
+      kind: 'update',
+      name: 'com.google.guava:guava',
+      version: '33.1.0-jre',
+      scope: 'prod',
+    });
+
+    expect(updated).toContain('<version>33.1.0-jre</version>');
+    // The shared default is left exactly as it was.
+    expect(updated).toContain('<version>30.0-jre</version>');
+    expect(updated).not.toContain('32.0.0-jre');
+  });
+
+  it('removes the declaration and leaves the managed default in place', () => {
+    const updated = provider.editManifest(pom, {
+      kind: 'remove',
+      name: 'com.google.guava:guava',
+      scope: 'prod',
+    });
+
+    // Two guava elements went in (one managed, one declared); one comes out.
+    const remaining = [
+      ...(updated ?? '').matchAll(/<artifactId>guava<\/artifactId>/g),
+    ];
+    expect(remaining).toHaveLength(1);
+    // The one left is the reactor-wide default other modules rely on.
+    expect(updated).toContain('<version>33.0.0-jre</version>');
   });
 
   it('adds a dependency before the closing tag', () => {

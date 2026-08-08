@@ -242,9 +242,10 @@ export class MavenProvider implements EcosystemProvider {
     if (coordinate.length !== 2) return null;
     const [groupId, artifactId] = coordinate;
 
-    const block = findDependencyBlock(manifestText, groupId, artifactId);
-
     if (edit.kind === 'remove') {
+      // Only ever the real declaration: deleting a managed default would drop
+      // the version out from under every other module that relies on it.
+      const block = findDeclaredBlock(manifestText, groupId, artifactId);
       if (!block) return null;
       // Take the leading whitespace with the block so we do not leave a blank line.
       const start = manifestText.lastIndexOf('\n', block.start) + 1;
@@ -255,9 +256,9 @@ export class MavenProvider implements EcosystemProvider {
     }
 
     if (edit.kind === 'update') {
+      const block = findVersionBlock(manifestText, groupId, artifactId);
       if (!block) return null;
       const body = manifestText.slice(block.start, block.end);
-      if (!/<version>/.test(body)) return null;
       const updated = body.replace(
         /<version>[^<]*<\/version>/,
         `<version>${edit.version}</version>`,
@@ -270,7 +271,9 @@ export class MavenProvider implements EcosystemProvider {
     }
 
     // Add: insert before the closing </dependencies>, matching its indentation.
-    if (block) return null; // already present
+    // A managed entry is not a dependency of this module, so it does not count
+    // as "already present".
+    if (findDeclaredBlock(manifestText, groupId, artifactId)) return null;
     const closing = manifestText.lastIndexOf('</dependencies>');
     if (closing === -1) return null;
 
@@ -297,22 +300,89 @@ export class MavenProvider implements EcosystemProvider {
   }
 }
 
-/** Locates a `<dependency>` element by coordinate, returning its char range. */
-function findDependencyBlock(
+interface DependencyBlock {
+  start: number;
+  end: number;
+  /** True when this element sits inside `<dependencyManagement>`. */
+  managed: boolean;
+  /** True when the element carries its own `<version>`. */
+  hasVersion: boolean;
+}
+
+/**
+ * Locates every `<dependency>` element matching a coordinate.
+ *
+ * A coordinate can legitimately appear twice: once in `<dependencyManagement>`
+ * declaring the version for the whole reactor, and once in `<dependencies>`
+ * requesting it. Which of the two an edit belongs in depends on the edit, so
+ * this reports both and lets the caller choose.
+ */
+function findDependencyBlocks(
   text: string,
   groupId: string,
   artifactId: string,
-): { start: number; end: number } | null {
-  const pattern = /<dependency>[\s\S]*?<\/dependency>/g;
-  for (const match of text.matchAll(pattern)) {
+): DependencyBlock[] {
+  const managed = managedRanges(text);
+  const blocks: DependencyBlock[] = [];
+
+  for (const match of text.matchAll(/<dependency>[\s\S]*?<\/dependency>/g)) {
     const body = match[0];
     const g = /<groupId>\s*([^<]*)\s*<\/groupId>/.exec(body)?.[1]?.trim();
     const a = /<artifactId>\s*([^<]*)\s*<\/artifactId>/.exec(body)?.[1]?.trim();
-    if (g === groupId && a === artifactId) {
-      return { start: match.index!, end: match.index! + body.length };
-    }
+    if (g !== groupId || a !== artifactId) continue;
+
+    const start = match.index!;
+    blocks.push({
+      start,
+      end: start + body.length,
+      managed: managed.some(([from, to]) => start >= from && start < to),
+      hasVersion: /<version>/.test(body),
+    });
   }
-  return null;
+
+  return blocks;
+}
+
+/**
+ * Picks the element an update should rewrite.
+ *
+ * The declaration in `<dependencies>` wins whenever it pins its own version —
+ * that is the one the user clicked, and rewriting the managed default instead
+ * would silently change the version for every module in the reactor. Only when
+ * the declaration defers (no `<version>` of its own) does the managed block
+ * become the right place, because that is where the version actually lives.
+ */
+function findVersionBlock(
+  text: string,
+  groupId: string,
+  artifactId: string,
+): DependencyBlock | null {
+  const blocks = findDependencyBlocks(text, groupId, artifactId);
+  return (
+    blocks.find((block) => !block.managed && block.hasVersion) ??
+    blocks.find((block) => block.managed && block.hasVersion) ??
+    null
+  );
+}
+
+/** The declaration in `<dependencies>`, ignoring any managed default. */
+function findDeclaredBlock(
+  text: string,
+  groupId: string,
+  artifactId: string,
+): DependencyBlock | null {
+  return (
+    findDependencyBlocks(text, groupId, artifactId).find(
+      (block) => !block.managed,
+    ) ?? null
+  );
+}
+
+/** Character ranges covered by `<dependencyManagement>` blocks. */
+function managedRanges(text: string): Array<[number, number]> {
+  return [
+    ...text.matchAll(/<dependencyManagement>[\s\S]*?<\/dependencyManagement>/g),
+  ].map((match) => [match.index!, match.index! + match[0].length]);
 }
 
 /** Collects `<properties>` plus the implicit project.* and parent.* values. */

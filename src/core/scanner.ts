@@ -8,7 +8,7 @@
 
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import type { ProviderContext } from '../providers/provider.js';
+import type { ProviderContext, VersionInfo } from '../providers/provider.js';
 import {
   manifestGlob,
   PROVIDERS,
@@ -23,6 +23,7 @@ import type {
   ParsedManifest,
   ProjectGroup,
   ScanSummary,
+  SearchResult,
 } from './types.js';
 import {
   classifyUpdate,
@@ -37,9 +38,32 @@ export interface ScanResult {
   summary: ScanSummary;
 }
 
+/**
+ * Upper bound on manifests discovered per scan.
+ *
+ * A cap is necessary — `findFiles` over a pathological tree is unbounded work —
+ * but hitting one silently is how a monorepo quietly loses projects, so the
+ * scanner reports when it truncates and the panel says so.
+ */
+const MAX_MANIFESTS = 2000;
+
 export class Scanner {
   /** Guards against overlapping scans when several files change at once. */
   private inFlight: AbortController | undefined;
+
+  /**
+   * True when the last scan hit `MAX_MANIFESTS`. Read by the host so it can
+   * tell the user results are incomplete rather than letting them assume the
+   * missing projects simply do not exist.
+   */
+  private truncated = false;
+
+  get hitManifestLimit(): boolean {
+    return this.truncated;
+  }
+
+  /** The cap, so the message the host shows and the limit cannot disagree. */
+  static readonly manifestLimit = MAX_MANIFESTS;
 
   constructor(
     private readonly ctx: ProviderContext,
@@ -89,13 +113,19 @@ export class Scanner {
 
     let stale = false;
     try {
-      await this.enrichVersions(groups, signal);
+      // Only a total failure means "stale". One unreachable registry should
+      // grey out its own ecosystem's rows, not relabel results that arrived
+      // perfectly well from the other six.
+      stale = await this.enrichVersions(groups, signal);
+
+      // Deliberately outside the version-lookup outcome: advisories come from
+      // OSV, not from the registries, so a registry being down is no reason to
+      // skip the security check.
       if (options.audit) {
         await auditDependencies(groups, this.ctx, signal);
       }
     } catch (error) {
       if (signal.aborted) throw error;
-      // A network failure means we render whatever the cache had.
       stale = true;
     }
 
@@ -119,8 +149,9 @@ export class Scanner {
     const uris = await vscode.workspace.findFiles(
       manifestGlob(),
       excludePattern,
-      500,
+      MAX_MANIFESTS,
     );
+    this.truncated = uris.length >= MAX_MANIFESTS;
 
     const groups: ProjectGroup[] = [];
     // Collected alongside the groups so workspace membership can be resolved
@@ -162,9 +193,18 @@ export class Scanner {
             this.ctx,
           );
           if (resolved.size > 0) {
+            // Providers normalise their lockfile keys to whatever their
+            // ecosystem considers canonical, so the manifest name has to go
+            // through the same normalisation to find them. Without this, PEP
+            // 503 alone loses every Python resolution: `typing_extensions` in
+            // pyproject.toml never matches `typing-extensions` in uv.lock.
+            const normalize =
+              provider.normalizeName ?? ((name: string) => name);
             for (const dep of manifest.dependencies) {
               dep.installed ??=
-                resolved.get(dep.name) ?? resolved.get(dep.name.toLowerCase());
+                resolved.get(dep.name) ??
+                resolved.get(dep.name.toLowerCase()) ??
+                resolved.get(normalize(dep.name));
             }
           }
         } catch {
@@ -173,9 +213,14 @@ export class Scanner {
       }
 
       // Without a lockfile, approximate from the constraint so the table still
-      // shows a number rather than a blank cell.
+      // shows a number rather than a blank cell — but record that it is a
+      // guess, because the audit matches advisories against this value.
       for (const dep of manifest.dependencies) {
-        dep.installed ??= constraintToApproxVersion(dep.declared);
+        if (dep.installed !== undefined) continue;
+        const approximate = constraintToApproxVersion(dep.declared);
+        if (approximate === undefined) continue;
+        dep.installed = approximate;
+        dep.installedIsApproximate = true;
       }
 
       groups.push({
@@ -263,11 +308,18 @@ export class Scanner {
     }
   }
 
-  /** One batched registry round-trip per ecosystem, then merge the results. */
+  /**
+   * One batched registry round-trip per ecosystem, then merge the results.
+   *
+   * Returns true only when *every* ecosystem failed, which is the one case that
+   * genuinely means "you are looking at cached data". Ecosystems are isolated
+   * from each other: a provider that throws marks its own dependencies
+   * `lookupFailed` and leaves the rest untouched.
+   */
   private async enrichVersions(
     groups: ProjectGroup[],
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const byEcosystem = new Map<Ecosystem, Set<string>>();
     for (const group of groups) {
       for (const dep of group.dependencies) {
@@ -280,47 +332,76 @@ export class Scanner {
       }
     }
 
-    await Promise.all(
+    if (byEcosystem.size === 0) return false;
+
+    const outcomes = await Promise.all(
       [...byEcosystem.entries()].map(async ([ecosystem, names]) => {
         const provider = providerFor(ecosystem);
-        const versions = await provider.fetchVersions(
-          [...names],
-          this.ctx,
-          signal,
-        );
 
-        for (const group of groups) {
-          for (const dep of group.dependencies) {
-            if (dep.ecosystem !== ecosystem) continue;
-
-            const info = versions.get(dep.name);
-            if (!info || info.versions.length === 0) {
-              dep.lookupFailed = true;
-              dep.updateKind = 'unknown';
-              continue;
-            }
-
-            dep.latest = info.latest ?? maxVersion(ecosystem, info.versions);
-            dep.wanted =
-              maxSatisfying(ecosystem, info.versions, dep.declared) ??
-              dep.installed;
-
-            if (info.deprecated) {
-              dep.meta = {
-                ...(dep.meta ?? { name: dep.name }),
-                deprecated: info.deprecated,
-              };
-            }
-
-            // Compare against what is actually resolved, falling back to the
-            // constraint's lower bound when nothing pins an exact version.
-            const current =
-              dep.installed ?? constraintToApproxVersion(dep.declared);
-            dep.updateKind = classifyUpdate(ecosystem, current, dep.latest);
-          }
+        let versions: Map<string, VersionInfo>;
+        try {
+          versions = await provider.fetchVersions([...names], this.ctx, signal);
+        } catch (error) {
+          // An abort is the caller's decision, not a registry failure, so it
+          // propagates rather than being reported as an unreachable ecosystem.
+          if (signal.aborted) throw error;
+          this.markLookupFailed(groups, ecosystem);
+          return false;
         }
+
+        this.applyVersions(groups, ecosystem, versions);
+        return true;
       }),
     );
+
+    return outcomes.every((succeeded) => !succeeded);
+  }
+
+  private markLookupFailed(groups: ProjectGroup[], ecosystem: Ecosystem): void {
+    for (const group of groups) {
+      for (const dep of group.dependencies) {
+        if (dep.ecosystem !== ecosystem) continue;
+        dep.lookupFailed = true;
+        dep.updateKind = 'unknown';
+      }
+    }
+  }
+
+  private applyVersions(
+    groups: ProjectGroup[],
+    ecosystem: Ecosystem,
+    versions: Map<string, VersionInfo>,
+  ): void {
+    for (const group of groups) {
+      for (const dep of group.dependencies) {
+        if (dep.ecosystem !== ecosystem) continue;
+
+        const info = versions.get(dep.name);
+        if (!info || info.versions.length === 0) {
+          dep.lookupFailed = true;
+          dep.updateKind = 'unknown';
+          continue;
+        }
+
+        dep.latest = info.latest ?? maxVersion(ecosystem, info.versions);
+        dep.wanted =
+          maxSatisfying(ecosystem, info.versions, dep.declared) ??
+          dep.installed;
+
+        if (info.deprecated) {
+          dep.meta = {
+            ...(dep.meta ?? { name: dep.name }),
+            deprecated: info.deprecated,
+          };
+        }
+
+        // Compare against what is actually resolved, falling back to the
+        // constraint's lower bound when nothing pins an exact version.
+        const current =
+          dep.installed ?? constraintToApproxVersion(dep.declared);
+        dep.updateKind = classifyUpdate(ecosystem, current, dep.latest);
+      }
+    }
   }
 
   /** Fetches rich metadata for a single package, on demand from the drawer. */
@@ -329,27 +410,34 @@ export class Scanner {
     return provider.fetchMetadata(dep.name, this.ctx, signal);
   }
 
-  /** Registry search across one ecosystem or all of them. */
+  /**
+   * Registry search across one ecosystem or all of them.
+   *
+   * Reports which registries failed alongside the results. One unreachable
+   * registry out of seven is a footnote, but *every* registry failing used to
+   * render as "No packages found" — which sends the user looking for a package
+   * that is right where they thought it was.
+   */
   async search(
     query: string,
     ecosystem: Ecosystem | 'all',
     signal: AbortSignal,
-  ) {
+  ): Promise<{ results: SearchResult[]; failed: Ecosystem[] }> {
     const targets = ecosystem === 'all' ? PROVIDERS : [providerFor(ecosystem)];
 
     const settled = await Promise.allSettled(
       targets.map((provider) => provider.search(query, this.ctx, signal)),
     );
 
-    return settled
-      .filter(
-        (
-          entry,
-        ): entry is PromiseFulfilledResult<
-          Awaited<ReturnType<(typeof PROVIDERS)[0]['search']>>
-        > => entry.status === 'fulfilled',
-      )
-      .flatMap((entry) => entry.value);
+    const results: SearchResult[] = [];
+    const failed: Ecosystem[] = [];
+
+    settled.forEach((entry, index) => {
+      if (entry.status === 'fulfilled') results.push(...entry.value);
+      else failed.push(targets[index].id);
+    });
+
+    return { results, failed };
   }
 }
 

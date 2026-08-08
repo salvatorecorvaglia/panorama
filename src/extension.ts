@@ -11,6 +11,7 @@ import { TtlCache } from './core/cache.js';
 import { HttpClient } from './core/http.js';
 import { MuteList } from './core/muteList.js';
 import { Scanner, type ScanResult } from './core/scanner.js';
+import { ScanQueue } from './core/scanQueue.js';
 import type { Dependency } from './core/types.js';
 import { ManifestWatcher } from './core/watcher.js';
 import { createProviderContext } from './core/workspace.js';
@@ -32,6 +33,13 @@ export interface PanoramaApi {
   /** The most recent result, without triggering new work. */
   getResult(): ScanResult;
   muteList: MuteList;
+  /**
+   * Total network requests issued since activation.
+   *
+   * Lets the integration suite assert the offline guarantee directly rather
+   * than inferring it from how long a refresh took.
+   */
+  requestCount(): number;
 }
 
 /**
@@ -62,6 +70,10 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
 
   const http = new HttpClient(version, config().get<string>('contactEmail'));
   const cache = new TtlCache(context.globalState);
+  // Lapsed entries would otherwise accumulate in globalState forever, and
+  // globalState is loaded synchronously on every extension-host start. Not
+  // awaited: nothing below depends on it, and activation stays cheap.
+  void cache.prune();
   const providerContext = createProviderContext(http, cache);
   // Muting is a per-project decision, so it lives in workspaceState rather than
   // leaking across every project the user opens.
@@ -98,19 +110,14 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
   );
 
   /** The single path through which every refresh flows. */
-  let inFlight: Promise<ScanResult | undefined> | undefined;
+  const scans = new ScanQueue<ScanResult | undefined>((request) =>
+    doScan(request.checkUpdates, request.audit),
+  );
+
   const runScan = (
     checkUpdates: boolean,
     audit?: boolean,
-  ): Promise<ScanResult | undefined> => {
-    // Coalesce rather than drop: a caller that asks for a scan while one is
-    // running wants the result, not `undefined` and a stale view.
-    if (inFlight) return inFlight;
-    inFlight = doScan(checkUpdates, audit).finally(() => {
-      inFlight = undefined;
-    });
-    return inFlight;
-  };
+  ): Promise<ScanResult | undefined> => scans.request({ checkUpdates, audit });
 
   const doScan = async (
     checkUpdates: boolean,
@@ -136,6 +143,12 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
         vscode.window.setStatusBarMessage(
           '$(cloud-offline) Panorama: showing cached data — registries unreachable',
           5000,
+        );
+      }
+      if (scanner.hitManifestLimit) {
+        vscode.window.setStatusBarMessage(
+          `$(warning) Panorama: stopped at ${Scanner.manifestLimit} manifests — add patterns to panorama.excludeGlobs`,
+          8000,
         );
       }
       return result;
@@ -277,14 +290,29 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       ) {
         void runScan(false);
       }
+      // Re-arm rather than wait for a window reload — a setting that only takes
+      // effect after a restart reads as a setting that does not work.
+      if (event.affectsConfiguration('panorama.checkIntervalMinutes')) {
+        armPeriodicCheck();
+      }
     }),
   );
 
   // Periodic background re-check, when enabled. Never armed under the test
   // host, where a timer firing mid-suite would be a source of flakiness.
-  const intervalMinutes = config().get<number>('checkIntervalMinutes', 60);
-  if (intervalMinutes > 0 && !isTestHost) {
-    const timer = setInterval(
+  let periodicTimer: NodeJS.Timeout | undefined;
+
+  const armPeriodicCheck = (): void => {
+    if (periodicTimer) {
+      clearInterval(periodicTimer);
+      periodicTimer = undefined;
+    }
+    if (isTestHost) return;
+
+    const intervalMinutes = config().get<number>('checkIntervalMinutes', 60);
+    if (intervalMinutes <= 0) return;
+
+    periodicTimer = setInterval(
       () => {
         if (networkAllowed()) {
           void runScan(true);
@@ -292,8 +320,14 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       },
       intervalMinutes * 60 * 1000,
     );
-    context.subscriptions.push({ dispose: () => clearInterval(timer) });
-  }
+  };
+
+  armPeriodicCheck();
+  context.subscriptions.push({
+    dispose: () => {
+      if (periodicTimer) clearInterval(periodicTimer);
+    },
+  });
 
   // Kick off the first scan without blocking activation.
   void runScan(networkAllowed());
@@ -302,7 +336,7 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     scan: async (options) => {
       // Let any in-flight scan settle first, so a caller never observes the
       // empty state that precedes the activation scan.
-      await inFlight?.catch(() => undefined);
+      await scans.settled();
       const result = await runScan(
         options?.checkUpdates ?? false,
         options?.audit ?? false,
@@ -311,6 +345,7 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     },
     getResult: () => panel.currentResult,
     muteList,
+    requestCount: () => http.requestCount,
   };
 }
 

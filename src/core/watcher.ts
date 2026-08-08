@@ -21,14 +21,22 @@ export class ManifestWatcher implements vscode.Disposable {
     const pattern = `**/{${names.join(',')},requirements-*.txt}`;
 
     const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-    watcher.onDidChange(() => this.schedule());
-    watcher.onDidCreate(() => this.schedule());
-    watcher.onDidDelete(() => this.schedule());
+    watcher.onDidChange((uri) => this.schedule(uri));
+    watcher.onDidCreate((uri) => this.schedule(uri));
+    watcher.onDidDelete((uri) => this.schedule(uri));
     this.watchers.push(watcher);
   }
 
-  /** Coalesces bursts — an install rewrites the manifest and lockfile together. */
-  private schedule(): void {
+  /**
+   * Coalesces bursts — an install rewrites the manifest and lockfile together.
+   *
+   * Paths the scan would ignore are dropped before the debounce rather than
+   * after: `npm install` writes thousands of `package.json` files under
+   * `node_modules`, none of which change what Panorama displays.
+   */
+  private schedule(uri: vscode.Uri): void {
+    if (isExcluded(uri)) return;
+
     if (this.timer) {
       clearTimeout(this.timer);
     }
@@ -46,4 +54,26 @@ export class ManifestWatcher implements vscode.Disposable {
       watcher.dispose();
     }
   }
+}
+
+/**
+ * Whether a changed file sits somewhere `panorama.excludeGlobs` rules out.
+ *
+ * Matched with a plain segment test rather than a glob engine: the setting's
+ * entries are directory patterns (`**​/node_modules/**`), and the only question
+ * that matters is whether the path runs through one of those directories.
+ */
+function isExcluded(uri: vscode.Uri): boolean {
+  const globs = vscode.workspace
+    .getConfiguration('panorama')
+    .get<string[]>('excludeGlobs', []);
+
+  const segments = new Set(uri.path.split('/'));
+
+  return globs.some((glob) => {
+    const directory = /^\*\*\/(.+?)\/\*\*$/.exec(glob)?.[1];
+    // Anything that is not a simple `**/dir/**` pattern is left to the scan,
+    // which has the real glob engine.
+    return directory !== undefined && segments.has(directory);
+  });
 }

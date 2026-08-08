@@ -45,10 +45,26 @@ export interface Toolchain {
   ecosystem: Ecosystem;
   /** Absolute path the command should run in. */
   cwd: string;
+  /**
+   * Base name of the manifest this toolchain was detected for.
+   *
+   * Most commands only need `cwd`, but a few have to name the file — `pip
+   * install -r` cannot assume `requirements.txt` in a project driven by
+   * `requirements-dev.txt`.
+   */
+  manifestFile?: string;
   /** True when the manifest is a workspace member rather than the root. */
   isWorkspaceMember?: boolean;
   /** Python only: absolute path to the detected virtualenv, if any. */
   venvPath?: string;
+  /**
+   * Node/yarn only: true for Yarn 2+ ("Berry").
+   *
+   * The two lines are different package managers wearing one name — Berry
+   * replaced `upgrade` with `up` and dropped several of v1's flags — so a
+   * command built without knowing which is running is a coin flip.
+   */
+  yarnBerry?: boolean;
   /**
    * Maven/Gradle only: the wrapper script to invoke instead of the bare tool.
    * A project that ships a wrapper pins its own build-tool version, so calling
@@ -95,6 +111,15 @@ export interface Dependency {
   declared: string;
   /** The concrete version currently resolved, when a lockfile tells us. */
   installed?: string;
+  /**
+   * True when `installed` was inferred from the constraint rather than read
+   * from a lockfile.
+   *
+   * It matters because advisories are matched against `installed`: a guess of
+   * `1.2.3` from `^1.2.3` may name a version nobody has, so anything derived
+   * from it has to be presented as indicative rather than certain.
+   */
+  installedIsApproximate?: boolean;
   /** Highest published version satisfying `declared`. */
   wanted?: string;
   /** Highest published version overall. */

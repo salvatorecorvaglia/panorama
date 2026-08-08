@@ -25,7 +25,10 @@
     "node_modules",
     "dist",
     "out",
+    // Both halves of the webview — source and tests — need the DOM lib and JSX,
+    // so they are typechecked by src/webview/tsconfig.json instead.
     "src/webview/**",
+    "test/webview/**",
     "test/fixtures/**"
   ]
 }

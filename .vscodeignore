@@ -1,3 +1,5 @@
+# Everything the extension does not need at runtime. The published bundle is
+# dist/ plus resources/ plus the top-level README, CHANGELOG and LICENSE.
 .vscode/**
 .vscode-test/**
 .vscode-test.mjs
@@ -14,5 +16,10 @@ esbuild.config.mjs
 vite.config.ts
 vitest.config.ts
 tsconfig*.json
-.eslintrc.json
+biome.json
 .gitignore
+pnpm-lock.yaml
+pnpm-workspace.yaml
+CONTRIBUTING.md
+CONTRIBUTORS.md
+SECURITY.md

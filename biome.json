@@ -26,11 +26,6 @@
       "preset": "recommended",
       "style": {
         "noNonNullAssertion": "off"
-      },
-      "a11y": {
-        "useButtonType": "off",
-        "useSemanticElements": "off",
-        "useFocusableInteractive": "off"
       }
     }
   },
@@ -39,6 +34,19 @@
       "quoteStyle": "single"
     }
   },
+  "overrides": [
+    {
+      "includes": ["src/webview/DepTable.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off",
+            "useFocusableInteractive": "off"
+          }
+        }
+      }
+    }
+  ],
   "assist": {
     "enabled": true,
     "actions": {

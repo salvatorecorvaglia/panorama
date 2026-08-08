@@ -1,5 +1,7 @@
 /** Search box, scope/status filters, and the project summary line. */
 
+import type { KeyboardEvent } from 'react';
+import { useRef } from 'react';
 import type { DepScope, ScanSummary } from '../core/types.js';
 import { ALL_SCOPES, SCOPE_LABELS } from '../core/vocabulary.js';
 
@@ -45,8 +47,43 @@ export function Toolbar({
     onFiltersChange({ ...filters, scopes });
   };
 
+  const container = useRef<HTMLDivElement>(null);
+
+  /*
+   * `role="toolbar"` is a promise that the whole group is one tab stop and that
+   * arrows move within it. Declaring the role without this made the toolbar
+   * *worse* than an undecorated set of buttons: assistive technology announces
+   * a navigation model that then does not work.
+   *
+   * The text inputs are excluded — arrow keys there move the caret, which is
+   * what anyone typing in them expects.
+   */
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'SELECT') return;
+
+    const focusable = [
+      ...(container.current?.querySelectorAll<HTMLElement>('button') ?? []),
+    ];
+    const index = focusable.indexOf(target);
+    if (index < 0) return;
+
+    event.preventDefault();
+    const step = event.key === 'ArrowRight' ? 1 : -1;
+    // Wrap, so the ends of the toolbar are not dead stops.
+    const next = (index + step + focusable.length) % focusable.length;
+    focusable[next]?.focus();
+  };
+
   return (
-    <div className="toolbar" role="toolbar" aria-label="Panorama actions">
+    <div
+      className="toolbar"
+      role="toolbar"
+      aria-label="Panorama actions"
+      ref={container}
+      onKeyDown={handleKeyDown}
+    >
       <div className="toolbar__row">
         <div className="toolbar__search">
           <input
@@ -61,6 +98,7 @@ export function Toolbar({
         </div>
 
         <button
+          type="button"
           onClick={onToggleInstall}
           aria-expanded={installOpen}
           aria-controls="panorama-search-panel"
@@ -69,6 +107,7 @@ export function Toolbar({
         </button>
         {/* These two look alike, so each one says what it actually does. */}
         <button
+          type="button"
           className="secondary"
           onClick={onCheckUpdates}
           disabled={busy}
@@ -77,6 +116,7 @@ export function Toolbar({
           Check updates
         </button>
         <button
+          type="button"
           className="secondary"
           onClick={onRefresh}
           disabled={busy}
@@ -87,13 +127,10 @@ export function Toolbar({
       </div>
 
       <div className="toolbar__row">
-        <div
-          className="toolbar__group"
-          role="group"
-          aria-label="Filter by scope"
-        >
+        <fieldset className="toolbar__group" aria-label="Filter by scope">
           {ALL_SCOPES.map((scope) => (
             <button
+              type="button"
               key={scope}
               className="chip"
               aria-pressed={filters.scopes.has(scope)}
@@ -102,14 +139,11 @@ export function Toolbar({
               {SCOPE_LABELS[scope].short}
             </button>
           ))}
-        </div>
+        </fieldset>
 
-        <div
-          className="toolbar__group"
-          role="group"
-          aria-label="Filter by status"
-        >
+        <fieldset className="toolbar__group" aria-label="Filter by status">
           <button
+            type="button"
             className="chip"
             aria-pressed={filters.onlyOutdated}
             onClick={() =>
@@ -122,6 +156,7 @@ export function Toolbar({
             outdated
           </button>
           <button
+            type="button"
             className="chip"
             aria-pressed={filters.onlyVulnerable}
             onClick={() =>
@@ -134,6 +169,7 @@ export function Toolbar({
             vulnerable
           </button>
           <button
+            type="button"
             className="chip"
             aria-pressed={filters.onlyDeprecated}
             onClick={() =>
@@ -147,6 +183,7 @@ export function Toolbar({
           </button>
           {summary.muted > 0 && (
             <button
+              type="button"
               className="chip"
               aria-pressed={filters.hideMuted}
               title={`Hide the ${summary.muted} package(s) whose updates you have muted`}
@@ -157,7 +194,7 @@ export function Toolbar({
               hide muted
             </button>
           )}
-        </div>
+        </fieldset>
 
         <div className="toolbar__spacer" />
 
@@ -186,7 +223,14 @@ export function Toolbar({
         </div>
       </div>
 
-      {busy && <div className="progress" />}
+      {/* Indeterminate: the scan reports no fraction, only that it is running. */}
+      {busy && (
+        <div
+          className="progress"
+          role="progressbar"
+          aria-label={busyLabel ?? 'Scanning'}
+        />
+      )}
     </div>
   );
 }

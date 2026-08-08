@@ -16,7 +16,6 @@ import type {
   SearchResult,
   Toolchain,
 } from '../../core/types.js';
-import { mapWithConcurrency } from '../node/index.js';
 import {
   type Command,
   dependencyKey,
@@ -24,6 +23,7 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
+import { mapWithConcurrency } from '../shared/concurrency.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
@@ -35,6 +35,16 @@ const REPO = 'https://repo.packagist.org';
 /** Composer names are always `vendor/package`, lowercase. */
 const NAME_PATTERN =
   /^[a-z0-9]+(?:[_.-][a-z0-9]+)*\/[a-z0-9]+(?:(?:[_.]|-{1,2})[a-z0-9]+)*$/;
+
+/**
+ * Encodes `vendor/package` for a URL path, keeping the separating slash.
+ *
+ * Packagist's p2 endpoint addresses packages as two path segments, so the slash
+ * is structural and each side is encoded independently.
+ */
+function encodePackageName(name: string): string {
+  return name.split('/').map(encodeURIComponent).join('/');
+}
 
 /**
  * Platform requirements are not packages — `php`, `ext-*` and `composer-*`
@@ -160,6 +170,11 @@ export class ComposerProvider implements EcosystemProvider {
     const result = new Map<string, VersionInfo>();
 
     await mapWithConcurrency(names, 5, async (name) => {
+      // Names come straight from composer.json, which is not ours to trust:
+      // anything that is not a real Packagist name cannot resolve, and should
+      // not be pasted into a URL to find that out.
+      if (!this.isValidPackageName(name)) return;
+
       const key = cacheKey('packagist', 'versions', name);
       const cached = ctx.cache.get<VersionInfo>(key);
       if (cached) {
@@ -169,7 +184,7 @@ export class ComposerProvider implements EcosystemProvider {
 
       try {
         const response = await ctx.http.getJson<P2Response>(
-          `${REPO}/p2/${name}.json`,
+          `${REPO}/p2/${encodePackageName(name)}.json`,
           { signal },
         );
         const releases = response.packages[name] ?? [];
@@ -203,13 +218,15 @@ export class ComposerProvider implements EcosystemProvider {
     ctx: ProviderContext,
     signal?: AbortSignal,
   ): Promise<PackageMeta | undefined> {
+    if (!this.isValidPackageName(name)) return undefined;
+
     const key = cacheKey('packagist', 'meta', name);
     const cached = ctx.cache.get<PackageMeta>(key);
     if (cached) return cached;
 
     try {
       const response = await ctx.http.getJson<P2Response>(
-        `${REPO}/p2/${name}.json`,
+        `${REPO}/p2/${encodePackageName(name)}.json`,
         { signal },
       );
       const latest = response.packages[name]?.[0];

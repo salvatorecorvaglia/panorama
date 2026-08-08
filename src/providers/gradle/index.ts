@@ -76,10 +76,11 @@ export class GradleProvider implements EcosystemProvider {
     text: string,
     ctx: ProviderContext,
   ): Promise<ParsedManifest> {
+    void ctx;
     if (path.basename(absolutePath) === 'libs.versions.toml') {
       return this.parseVersionCatalog(absolutePath, text);
     }
-    return this.parseBuildScript(absolutePath, text, ctx);
+    return this.parseBuildScript(absolutePath, text);
   }
 
   /**
@@ -110,7 +111,10 @@ export class GradleProvider implements EcosystemProvider {
       if (!parsed) continue;
 
       dependencies.push({
-        key: dependencyKey(absolutePath, 'prod', parsed.name),
+        // Keyed by alias, not by module: a catalog may point two aliases at
+        // one module (a bom and its artifact, or a rename kept for
+        // compatibility), and two rows sharing a key break row selection.
+        key: dependencyKey(absolutePath, 'prod', `${alias}:${parsed.name}`),
         name: parsed.name,
         ecosystem: 'gradle',
         scope: 'prod',
@@ -132,11 +136,7 @@ export class GradleProvider implements EcosystemProvider {
     };
   }
 
-  private async parseBuildScript(
-    absolutePath: string,
-    text: string,
-    ctx: ProviderContext,
-  ): Promise<ParsedManifest> {
+  private parseBuildScript(absolutePath: string, text: string): ParsedManifest {
     const projectLabel = path.basename(path.dirname(absolutePath));
     const dependencies: Dependency[] = [];
     const seen = new Set<string>();
@@ -178,19 +178,10 @@ export class GradleProvider implements EcosystemProvider {
       });
     }
 
-    // Catalog references (`libs.foo.bar`) resolve in the catalog file, which is
-    // parsed as its own manifest — so we note the link rather than duplicating.
-    const usesCatalog = /\blibs\.[a-zA-Z0-9.]+/.test(source);
-    if (usesCatalog) {
-      const catalogPath = path.join(
-        path.dirname(absolutePath),
-        'gradle',
-        'libs.versions.toml',
-      );
-      if (await ctx.exists(catalogPath)) {
-        // The catalog manifest is discovered independently by the scanner.
-      }
-    }
+    // Catalog references (`libs.foo.bar`) are deliberately not resolved here:
+    // `gradle/libs.versions.toml` is discovered and parsed as a manifest in its
+    // own right, so following the reference would list every catalog entry
+    // twice.
 
     return {
       ecosystem: 'gradle',

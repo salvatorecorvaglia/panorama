@@ -16,7 +16,8 @@ interface Props {
   /** Which section the command that opened this drawer wants to land on. */
   reveal: 'details' | 'why';
   onClose: () => void;
-  onUpdate: (dep: Dependency) => void;
+  /** `toVersion` defaults to `latest` when the caller does not name one. */
+  onUpdate: (dep: Dependency, toVersion?: string) => void;
 }
 
 export function DetailDrawer({ dep, why, reveal, onClose, onUpdate }: Props) {
@@ -81,7 +82,12 @@ export function DetailDrawer({ dep, why, reveal, onClose, onUpdate }: Props) {
         <h2 ref={headingRef} tabIndex={-1}>
           {dep.name}
         </h2>
-        <button className="ghost" onClick={onClose} aria-label="Close details">
+        <button
+          type="button"
+          className="ghost"
+          onClick={onClose}
+          aria-label="Close details"
+        >
           ✕
         </button>
       </div>
@@ -134,14 +140,39 @@ export function DetailDrawer({ dep, why, reveal, onClose, onUpdate }: Props) {
           </dd>
         </dl>
 
-        {dep.latest &&
-          dep.updateKind !== 'none' &&
-          dep.updateKind !== 'unknown' && (
-            <button className="drawer__action" onClick={() => onUpdate(dep)}>
-              Update to {dep.latest}
-              {dep.updateKind === 'major' ? ' (major)' : ''}
-            </button>
-          )}
+        {/*
+         * Two upgrades are worth offering, because they answer different
+         * questions. `wanted` is the highest version the declared range already
+         * allows — it needs no manifest change and cannot break the build by
+         * definition — while `latest` may cross a major boundary. Showing only
+         * the second meant the safe upgrade was computed, displayed, and then
+         * left to be applied by hand.
+         */}
+        <div className="drawer__actions">
+          {dep.wanted &&
+            dep.wanted !== dep.installed &&
+            dep.wanted !== dep.latest && (
+              <button
+                type="button"
+                className="drawer__action secondary"
+                onClick={() => onUpdate(dep, dep.wanted)}
+              >
+                Update to {dep.wanted}
+              </button>
+            )}
+          {dep.latest &&
+            dep.updateKind !== 'none' &&
+            dep.updateKind !== 'unknown' && (
+              <button
+                type="button"
+                className="drawer__action"
+                onClick={() => onUpdate(dep, dep.latest)}
+              >
+                Update to {dep.latest}
+                {dep.updateKind === 'major' ? ' (major)' : ''}
+              </button>
+            )}
+        </div>
       </section>
 
       <section>
@@ -161,21 +192,34 @@ export function DetailDrawer({ dep, why, reveal, onClose, onUpdate }: Props) {
 
         <div className="drawer__links">
           {homepage && (
-            <button className="link" onClick={() => openLink(homepage)}>
+            <button
+              type="button"
+              className="link"
+              onClick={() => openLink(homepage)}
+            >
               Homepage
             </button>
           )}
           {repository && (
-            <button className="link" onClick={() => openLink(repository)}>
+            <button
+              type="button"
+              className="link"
+              onClick={() => openLink(repository)}
+            >
               Repository
             </button>
           )}
           {changelogUrl && (
-            <button className="link" onClick={() => openLink(changelogUrl)}>
+            <button
+              type="button"
+              className="link"
+              onClick={() => openLink(changelogUrl)}
+            >
               Changelog
             </button>
           )}
           <button
+            type="button"
             className="link"
             onClick={() =>
               post({
@@ -193,11 +237,29 @@ export function DetailDrawer({ dep, why, reveal, onClose, onUpdate }: Props) {
       {dep.vulnerabilities.length > 0 && (
         <section>
           <h3>Security ({dep.vulnerabilities.length})</h3>
+          {/*
+           * Advisories are matched against the resolved version. When no
+           * lockfile pinned one we compared against the constraint's lower
+           * bound, which may name a version nobody actually installed — so the
+           * result is worth reading, but not worth stating as fact.
+           */}
+          {dep.installedIsApproximate && (
+            <div className="callout callout--info">
+              No lockfile pins a version for this package, so these advisories
+              were matched against <code>{currentVersion(dep)}</code>, inferred
+              from <code>{dep.declared}</code>. Install the project to check
+              against what you actually have.
+            </div>
+          )}
           {dep.vulnerabilities.map((vuln) => (
             <div key={vuln.id} className="callout callout--error">
               <div>
                 <strong>{vuln.severity.toUpperCase()}</strong> ·{' '}
-                <button className="link" onClick={() => openLink(vuln.url)}>
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => openLink(vuln.url)}
+                >
                   {vuln.id}
                 </button>
               </div>

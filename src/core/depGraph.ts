@@ -14,6 +14,13 @@ import type { Dependency, DepNode, Ecosystem } from './types.js';
 
 const MAX_DEPTH = 8;
 
+/**
+ * How many distinct chains the reverse walk may collect before giving up.
+ *
+ * Well past what anyone reads, and far below what a dense lockfile can produce.
+ */
+const MAX_CHAINS = 200;
+
 export interface WhyResult {
   roots: DepNode[];
   source: 'lockfile' | 'registry';
@@ -31,6 +38,9 @@ export async function explainDependency(
   signal?: AbortSignal,
 ): Promise<WhyResult> {
   const forward = await buildForwardGraph(target, ctx);
+  // Reading and parsing a large lockfile is not instant; a caller that has
+  // moved on should not pay for the walk as well.
+  if (signal?.aborted) return { roots: [], source: 'lockfile' };
 
   if (forward && forward.size > 0) {
     // The lookup key must go through the same normalisation the graph keys did,
@@ -105,13 +115,7 @@ async function buildNpmLockGraph(
     const graph: ForwardGraph = new Map();
 
     for (const [key, entry] of Object.entries(lock.packages ?? {})) {
-      // "" is the root project; other keys are install paths.
-      const name =
-        key === ''
-          ? '__root__'
-          : key.slice(
-              key.lastIndexOf('node_modules/') + 'node_modules/'.length,
-            );
+      const name = npmLockName(key);
       const children = Object.keys(entry.dependencies ?? {});
       // A package can appear at several install paths; union their edges.
       const existing = graph.get(name);
@@ -125,6 +129,30 @@ async function buildNpmLockGraph(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Turns a `packages` key from a v2/v3 npm lockfile into a graph node name.
+ *
+ * Three shapes appear, and only one of them mentions `node_modules`:
+ *   ""                         the root project
+ *   "node_modules/lodash"      an installed package
+ *   "packages/web"             a workspace member
+ *
+ * Slicing blindly from `lastIndexOf('node_modules/')` yields an empty string
+ * for that third case — every workspace member collapsing onto one nameless
+ * node, with all their edges unioned together — which is exactly the monorepo
+ * where "why is this installed" is worth asking.
+ */
+function npmLockName(key: string): string {
+  if (key === '') return '__root__';
+
+  const marker = key.lastIndexOf('node_modules/');
+  if (marker >= 0) return key.slice(marker + 'node_modules/'.length);
+
+  // A workspace member. It is a root of the graph in its own right: nothing
+  // depends on it, and its dependencies are the project's own.
+  return '__root__';
 }
 
 /**
@@ -421,11 +449,27 @@ function tracePaths(graph: ForwardGraph, target: string): DepNode[] {
   if (!reverse.has(target)) return [];
 
   const chains: string[][] = [];
+  /** True when the budget stopped the walk, so the UI can say the tree is partial. */
+  let truncated = false;
 
-  // Depth-first walk up the reverse edges, collecting each distinct chain.
+  /*
+   * Depth-first walk up the reverse edges, collecting each distinct chain.
+   *
+   * The budget is checked *inside* the recursion, not applied to the finished
+   * list. This enumerates simple paths, so its cost is the product of the
+   * branching factors rather than their sum: a widely-depended-on package in a
+   * real lockfile can have tens of parents at each of eight levels, and
+   * collecting every path before truncating to 40 would occupy the extension
+   * host — which is single-threaded, and shared with the editor — for minutes.
+   */
   const walk = (name: string, chain: string[], visited: Set<string>) => {
+    if (chains.length >= MAX_CHAINS) {
+      truncated = true;
+      return;
+    }
     if (chain.length > MAX_DEPTH) {
       chains.push([...chain]);
+      truncated = true;
       return;
     }
     const parents = reverse.get(name);
@@ -439,6 +483,10 @@ function tracePaths(graph: ForwardGraph, target: string): DepNode[] {
     let advanced = false;
 
     for (const parent of parents) {
+      if (chains.length >= MAX_CHAINS) {
+        truncated = true;
+        return;
+      }
       if (visited.has(parent)) continue; // cycle guard
       advanced = true;
       if (parent === '__root__') {
@@ -459,15 +507,21 @@ function tracePaths(graph: ForwardGraph, target: string): DepNode[] {
 
   // Fold the chains into a tree so shared prefixes render once.
   const roots: DepNode[] = [];
-  for (const chain of chains.slice(0, 40)) {
+  for (const chain of chains) {
     let level = roots;
+    let node: DepNode | undefined;
     for (const name of chain) {
-      let node = level.find((candidate) => candidate.name === name);
+      node = level.find((candidate) => candidate.name === name);
       if (!node) {
         node = { name, children: [] };
         level.push(node);
       }
       level = node.children;
+    }
+    // Mark the leaf of a chain the budget cut short, so the drawer can show
+    // that the answer continues past what is displayed.
+    if (truncated && node && chain.length > MAX_DEPTH) {
+      node.truncated = true;
     }
   }
 
@@ -497,47 +551,83 @@ async function buildFromDepsDev(
   const version = target.installed ?? target.latest;
   if (!system || !version) return [];
 
-  const name = encodeDepsDevName(target.name, target.ecosystem);
+  // deps.dev takes the package name as one URL-encoded path segment; Maven
+  // coordinates keep their colon, encoded as %3A.
   const url =
-    `https://api.deps.dev/v3/systems/${system}/packages/${name}` +
+    `https://api.deps.dev/v3/systems/${system}/packages/${encodeURIComponent(target.name)}` +
     `/versions/${encodeURIComponent(version)}:dependencies`;
 
   try {
     const response = await ctx.http.getJson<DepsDevResponse>(url, { signal });
 
-    const nodes = response.nodes.map((node) => ({
-      name: node.versionKey.name,
-      version: node.versionKey.version,
-      children: [] as DepNode[],
-      relation: node.relation,
-    }));
-
+    // The response is an adjacency list, which may contain cycles — Go and
+    // Maven graphs routinely do. Materialising it by sharing child arrays
+    // would reproduce those cycles as a cyclic *object*, and `postMessage`
+    // JSON-serializes: one `Converting circular structure to JSON` and the
+    // whole drawer silently stays empty. So the tree is expanded by explicit
+    // traversal, with the current path tracked to cut cycles.
+    const edgesFrom = new Map<number, Array<{ to: number; range?: string }>>();
     for (const edge of response.edges) {
-      const from = nodes[edge.fromNode];
-      const to = nodes[edge.toNode];
-      if (!from || !to || from === to) continue;
-      if (from.children.length < 50) {
-        from.children.push({
-          name: to.name,
-          version: to.version,
-          requestedRange: edge.requirement,
-          children: to.children,
-        });
-      }
+      if (edge.fromNode === edge.toNode) continue;
+      const list = edgesFrom.get(edge.fromNode);
+      if (list) list.push({ to: edge.toNode, range: edge.requirement });
+      else
+        edgesFrom.set(edge.fromNode, [
+          { to: edge.toNode, range: edge.requirement },
+        ]);
     }
 
-    const self = nodes.find((node) => node.relation === 'SELF');
-    if (!self) return [];
-    return [
-      { name: self.name, version: self.version, children: self.children },
-    ];
+    const expand = (
+      index: number,
+      depth: number,
+      onPath: Set<number>,
+    ): DepNode => {
+      const source = response.nodes[index];
+      const node: DepNode = {
+        name: source.versionKey.name,
+        version: source.versionKey.version,
+        children: [],
+      };
+
+      if (depth >= MAX_DEPTH) {
+        node.truncated = true;
+        return node;
+      }
+
+      for (const edge of edgesFrom.get(index) ?? []) {
+        if (!response.nodes[edge.to]) continue;
+        if (onPath.has(edge.to)) {
+          // A cycle: name it and stop rather than pretending it terminates.
+          node.children.push({
+            name: response.nodes[edge.to].versionKey.name,
+            version: response.nodes[edge.to].versionKey.version,
+            requestedRange: edge.range,
+            children: [],
+            truncated: true,
+          });
+          continue;
+        }
+        if (node.children.length >= 50) {
+          node.truncated = true;
+          break;
+        }
+
+        onPath.add(edge.to);
+        const child = expand(edge.to, depth + 1, onPath);
+        child.requestedRange = edge.range;
+        node.children.push(child);
+        onPath.delete(edge.to);
+      }
+
+      return node;
+    };
+
+    const selfIndex = response.nodes.findIndex(
+      (node) => node.relation === 'SELF',
+    );
+    if (selfIndex < 0) return [];
+    return [expand(selfIndex, 0, new Set([selfIndex]))];
   } catch {
     return [];
   }
-}
-
-/** deps.dev expects Maven coordinates colon-joined and everything URL-encoded. */
-function encodeDepsDevName(name: string, ecosystem: Ecosystem): string {
-  void ecosystem;
-  return encodeURIComponent(name);
 }

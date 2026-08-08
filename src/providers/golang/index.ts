@@ -19,7 +19,6 @@ import type {
   SearchResult,
   Toolchain,
 } from '../../core/types.js';
-import { mapWithConcurrency } from '../node/index.js';
 import {
   type Command,
   dependencyKey,
@@ -27,6 +26,7 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
+import { mapWithConcurrency } from '../shared/concurrency.js';
 import { changelogUrlFor } from '../shared/repository.js';
 
 const PROXY = 'https://proxy.golang.org';

@@ -23,6 +23,8 @@ interface Props {
   groups: ProjectGroup[];
   results: SearchResult[];
   error: string | undefined;
+  /** Registries that did not answer while others did. */
+  partialFailure?: Ecosystem[];
   searching: boolean;
   onSearch: (query: string, ecosystem: Ecosystem | 'all') => void;
   onInstall: (
@@ -48,6 +50,7 @@ export function SearchInstall({
   groups,
   results,
   error,
+  partialFailure,
   searching,
   onSearch,
   onInstall,
@@ -154,6 +157,7 @@ export function SearchInstall({
           {/* The toolbar's toggle is not on screen in the empty workspace
               state, so the panel carries its own way out. */}
           <button
+            type="button"
             className="ghost"
             onClick={onClose}
             aria-label="Close package search"
@@ -179,6 +183,21 @@ export function SearchInstall({
         <div className="banners">
           <div className="callout callout--error" role="alert">
             {error}
+          </div>
+        </div>
+      )}
+
+      {/*
+       * Some registries answered and some did not. Results below are real but
+       * incomplete, and saying so is the difference between "not published" and
+       * "we could not check".
+       */}
+      {!error && partialFailure && partialFailure.length > 0 && (
+        <div className="banners">
+          <div className="callout callout--info" role="status">
+            Could not reach{' '}
+            {partialFailure.map((id) => ECOSYSTEM_LABELS[id]).join(', ')}, so
+            these results may be incomplete.
           </div>
         </div>
       )}
@@ -253,6 +272,7 @@ export function SearchInstall({
                   <span className="muted">{installedHere.declared}</span>
                   {/* Same word the table uses for the same action. */}
                   <button
+                    type="button"
                     className="danger"
                     onClick={() =>
                       onUninstall(result.name, result.ecosystem, targetManifest)
@@ -263,6 +283,7 @@ export function SearchInstall({
                 </>
               ) : (
                 <button
+                  type="button"
                   disabled={!compatible || !targetManifest}
                   title={
                     !targetManifest

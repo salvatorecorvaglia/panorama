@@ -5,12 +5,14 @@
  * answer any prompt the tool raises (npm 2FA, private-registry auth, Poetry
  * keyring). None of that works with a hidden child process.
  *
- * Commands arrive as argv arrays and are quoted here — no caller ever builds a
- * shell string, so nothing typed into the UI can be interpreted as shell syntax.
+ * Commands arrive as argv arrays and are quoted in `quoting.ts` — no caller ever
+ * builds a shell string, so nothing typed into the UI can be interpreted as
+ * shell syntax.
  */
 
 import * as vscode from 'vscode';
 import type { Command } from '../providers/provider.js';
+import { buildCommandLine, detectShell } from './quoting.js';
 
 const TERMINAL_NAME = 'Panorama';
 
@@ -40,7 +42,12 @@ export class TerminalRunner implements vscode.Disposable {
     const terminal = this.ensureTerminal(command.cwd);
     terminal.show(true);
 
-    const commandLine = command.argv.map(quoteArgument).join(' ');
+    // Quoting depends on the shell that will actually interpret the line, not
+    // on the platform: Windows alone can mean PowerShell, cmd.exe or Git Bash.
+    const commandLine = buildCommandLine(
+      command.argv,
+      detectShell(vscode.env.shell),
+    );
 
     // Shell integration can take a moment to attach to a freshly created
     // terminal; a short wait avoids needlessly falling back on the first run.
@@ -122,24 +129,4 @@ export class TerminalRunner implements vscode.Disposable {
     }
     this.terminal?.dispose();
   }
-}
-
-/**
- * Quotes a single argv element for a POSIX or Windows shell.
- *
- * Package names and versions are already validated by their provider before
- * reaching this point; quoting is the second layer, so a name containing shell
- * metacharacters is inert even if validation is ever loosened.
- */
-export function quoteArgument(argument: string): string {
-  // Plain arguments need no quoting and stay readable in the terminal.
-  if (/^[A-Za-z0-9_@:.,+=/\\-]+$/.test(argument)) {
-    return argument;
-  }
-
-  if (process.platform === 'win32') {
-    return `"${argument.replace(/(["\\])/g, '\\$1')}"`;
-  }
-  // Single quotes disable every form of expansion in POSIX shells.
-  return `'${argument.replace(/'/g, `'\\''`)}'`;
 }

@@ -10,6 +10,26 @@
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+/**
+ * Ceiling on how long a `Retry-After` may put a request to sleep.
+ *
+ * Registries under load reply with values in the hundreds or thousands of
+ * seconds. Honouring those literally means a scan that appears to hang with no
+ * way to tell it apart from a bug, so past this point we give up and let the
+ * caller fall back to cached data — which is the same outcome, arrived at
+ * immediately and visibly.
+ */
+const MAX_RETRY_AFTER_MS = 60_000;
+
+/**
+ * How many responses the ETag cache retains.
+ *
+ * Entries hold full response bodies, so this is the difference between a
+ * revalidation cache and a memory leak: one scan of a large monorepo would
+ * otherwise pin every packument it fetched for the life of the window.
+ */
+const MAX_CACHED_RESPONSES = 500;
+
 /** Requests per second, per host. Absent means "no explicit limit". */
 const RATE_LIMITS: Record<string, number> = {
   'crates.io': 1,
@@ -77,6 +97,20 @@ export class HttpClient {
   private readonly etagCache = new Map<string, CachedEntry>();
   private userAgent: string;
 
+  /**
+   * How many requests this client has issued.
+   *
+   * Exposed so the integration suite can assert its offline guarantee against
+   * something real. It used to time a refresh and infer from the duration that
+   * no registry was contacted, which is both flaky on a loaded CI runner and
+   * not actually evidence of anything.
+   */
+  private requests = 0;
+
+  get requestCount(): number {
+    return this.requests;
+  }
+
   constructor(extensionVersion: string, contactEmail?: string) {
     this.userAgent = buildUserAgent(extensionVersion, contactEmail);
   }
@@ -110,18 +144,28 @@ export class HttpClient {
   }
 
   private async request(url: string, options: HttpOptions): Promise<string> {
+    await this.waitForSlot(url);
+    return this.attempt(url, options, 0);
+  }
+
+  /**
+   * Takes a slot from the host's rate limiter, if it has one.
+   *
+   * Called before every attempt including retries: a 429 is the server asking
+   * for *less* traffic, so replaying the request outside the limiter would be
+   * precisely backwards.
+   */
+  private async waitForSlot(url: string): Promise<void> {
     const host = new URL(url).host;
     const limit = RATE_LIMITS[host];
-    if (limit !== undefined) {
-      let limiter = this.limiters.get(host);
-      if (!limiter) {
-        limiter = new HostLimiter(limit);
-        this.limiters.set(host, limiter);
-      }
-      await limiter.acquire();
-    }
+    if (limit === undefined) return;
 
-    return this.attempt(url, options, 0);
+    let limiter = this.limiters.get(host);
+    if (!limiter) {
+      limiter = new HostLimiter(limit);
+      this.limiters.set(host, limiter);
+    }
+    await limiter.acquire();
   }
 
   private async attempt(
@@ -156,6 +200,7 @@ export class HttpClient {
       : timeoutController.signal;
 
     try {
+      this.requests++;
       const response = await fetch(url, {
         method: options.method ?? 'GET',
         headers,
@@ -172,11 +217,21 @@ export class HttpClient {
       if (response.status === 429 || response.status >= 500) {
         if (retryCount < 3) {
           const retryAfter = Number(response.headers.get('retry-after'));
-          const delayMs =
+          const requested =
             Number.isFinite(retryAfter) && retryAfter > 0
               ? retryAfter * 1000
               : 2 ** retryCount * 500;
-          await sleep(delayMs, options.signal);
+          // A registry asking us to wait an hour gets a 404-shaped answer
+          // instead; the caller falls back to cache rather than appearing hung.
+          if (requested > MAX_RETRY_AFTER_MS) {
+            throw new HttpError(
+              `${response.status} ${response.statusText} (retry-after ${Math.round(requested / 1000)}s exceeds the cap)`,
+              response.status,
+              url,
+            );
+          }
+          await sleep(requested, options.signal);
+          await this.waitForSlot(url);
           return this.attempt(url, options, retryCount + 1);
         }
       }
@@ -195,13 +250,29 @@ export class HttpClient {
         const etag = response.headers.get('etag') ?? undefined;
         const lastModified = response.headers.get('last-modified') ?? undefined;
         if (etag || lastModified) {
-          this.etagCache.set(url, { etag, lastModified, body });
+          this.rememberResponse(url, { etag, lastModified, body });
         }
       }
 
       return body;
     } finally {
       clearTimeout(timer);
+    }
+  }
+
+  /**
+   * Stores a revalidatable response, evicting the least recently stored once the
+   * cache is full. Insertion order is the eviction order: `Map` preserves it,
+   * and a re-store deletes first so the entry moves to the end.
+   */
+  private rememberResponse(url: string, entry: CachedEntry): void {
+    this.etagCache.delete(url);
+    this.etagCache.set(url, entry);
+
+    while (this.etagCache.size > MAX_CACHED_RESPONSES) {
+      const oldest = this.etagCache.keys().next();
+      if (oldest.done) break;
+      this.etagCache.delete(oldest.value);
     }
   }
 }

@@ -17,7 +17,6 @@ concurrency:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-
 jobs:
   lint:
     name: Lint
@@ -63,9 +62,17 @@ jobs:
       - name: Run TypeScript typecheck
         run: pnpm run typecheck
 
+  # Windows is not optional here: quoteArgument, pythonExe and the Maven/Gradle
+  # wrapper lookups all branch on the platform, and a Linux-only matrix means
+  # the shell-quoting layer — the one that has to hold when validation does
+  # not — is never executed by CI at all.
   test:
-    name: Unit Tests
-    runs-on: ubuntu-latest
+    name: Unit Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -82,8 +89,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run Vitest tests
-        run: pnpm run test
+      - name: Run Vitest with coverage
+        run: pnpm run test:coverage
 
   build:
     name: Build
@@ -126,6 +133,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The VS Code build is ~120MB and does not change between runs; keyed on
+      # the engine range so a version bump invalidates it.
+      - name: Cache VS Code test build
+        uses: actions/cache@v4
+        with:
+          path: .vscode-test
+          key: vscode-test-${{ runner.os }}-${{ hashFiles('package.json') }}
+          restore-keys: vscode-test-${{ runner.os }}-
+
       - name: Run VS Code integration tests
         run: xvfb-run -a pnpm run test:integration
-

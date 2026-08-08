@@ -55,7 +55,17 @@ export type HostMessage =
    */
   | { type: 'depDetails'; depKey: string; meta: PackageMeta }
   | { type: 'scanning'; busy: boolean; label?: string }
-  | { type: 'searchResults'; requestId: string; results: SearchResult[] }
+  /**
+   * `failed` names registries that did not answer. A partial result is still
+   * worth showing, but silently omitting a whole ecosystem would leave the user
+   * concluding the package does not exist.
+   */
+  | {
+      type: 'searchResults';
+      requestId: string;
+      results: SearchResult[];
+      failed: Ecosystem[];
+    }
   | { type: 'searchError'; requestId: string; message: string }
   | {
       type: 'whyTree';

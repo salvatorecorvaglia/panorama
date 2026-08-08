@@ -226,32 +226,46 @@ describe('tree view', () => {
 });
 
 describe('commands are safe to invoke', () => {
+  let api: PanoramaApi;
+
   before(async () => {
-    await getApi();
+    api = await getApi();
   });
 
-  it('refresh completes without error, and without touching the network', async () => {
-    const started = Date.now();
+  /*
+   * Under ExtensionMode.Test every automatic scan is offline, so a refresh is a
+   * filesystem walk and nothing more.
+   *
+   * This is asserted against the client's own request counter rather than
+   * against elapsed time. The previous version timed the command and inferred
+   * from "under three seconds" that no registry had been contacted, which is
+   * flaky on a loaded CI runner and, more to the point, is not evidence: a
+   * cached or fast response would have passed it just as happily.
+   */
+  it('refresh completes without touching the network', async () => {
+    const before = api.requestCount();
     await vscode.commands.executeCommand('panorama.refresh');
-    const elapsed = Date.now() - started;
-
-    // Under ExtensionMode.Test every automatic scan is offline, so a refresh is
-    // a filesystem walk and nothing more. A registry round-trip across seven
-    // ecosystems could not finish this fast, which makes the timing a real
-    // assertion that the offline guarantee still holds.
-    assert.ok(
-      elapsed < 3000,
-      `refresh took ${elapsed}ms — it appears to have contacted registries`,
+    assert.equal(
+      api.requestCount(),
+      before,
+      'refresh issued network requests under the test host',
     );
   });
 
   it('checkUpdates stays offline under the test host', async () => {
-    const started = Date.now();
+    const before = api.requestCount();
     await vscode.commands.executeCommand('panorama.checkUpdates');
-    assert.ok(
-      Date.now() - started < 3000,
-      'checkUpdates appears to have contacted registries',
+    assert.equal(
+      api.requestCount(),
+      before,
+      'checkUpdates issued network requests under the test host',
     );
+  });
+
+  it('an explicitly offline scan through the API issues no requests', async () => {
+    const before = api.requestCount();
+    await api.scan({ checkUpdates: false, audit: false });
+    assert.equal(api.requestCount(), before);
   });
 
   it('showWhy with no selection does not throw', async () => {

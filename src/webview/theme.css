@@ -126,10 +126,20 @@ body {
 }
 
 /* A labelled cluster of related filter chips. */
+/*
+ * A <fieldset> rather than a div with role="group": the element that natively
+ * means "these controls belong together" is the one to use. Its default chrome
+ * — border, margin, padding, and the min-width:min-content that stops it
+ * shrinking in a flex row — all has to be cleared.
+ */
 .toolbar__group {
   display: flex;
   align-items: center;
   gap: var(--panorama-space-2);
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
 }
 
 .toolbar__summary {
@@ -262,16 +272,32 @@ button.danger.ghost {
 /* ---------- Table ---------- */
 
 /* The ARIA grid wraps both the header row and the scrolling row group. */
+/*
+ * Eight columns need a floor to stay legible, and the panel can be dragged
+ * narrower than that. Horizontal overflow therefore lives on the grid, which
+ * contains both the header and the scrolling body, so the two scroll together —
+ * putting it on `.table` alone would slide the rows out from under their own
+ * column headings.
+ */
 .table__grid {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow-x: auto;
+}
+
+.table__header,
+.table__group,
+.row {
+  min-width: var(--panorama-table-min-width, 760px);
 }
 
 .table {
   flex: 1;
-  overflow: auto;
+  /* Vertical only: horizontal is the grid's job, above. */
+  overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
 }
 
@@ -387,6 +413,17 @@ button.danger.ghost {
   display: flex;
   align-items: center;
   gap: var(--panorama-space-2);
+}
+
+/*
+ * Scoped names run long (`@typescript-eslint/eslint-plugin`). Truncate rather
+ * than let one row widen the whole table; the full name is in the row's title
+ * attribute and in the drawer.
+ */
+.cell--name > span[data-package-name] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cell--scope {
@@ -764,6 +801,20 @@ a:hover,
 
 .empty__action {
   margin-top: var(--panorama-gap);
+}
+
+/* Two actions sit side by side: rescan, and search the registries anyway. */
+.empty__actions {
+  display: flex;
+  gap: var(--panorama-space-2);
+  justify-content: center;
+}
+
+/* The drawer offers both the in-range upgrade and the latest. */
+.drawer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--panorama-space-2);
 }
 
 .progress {

@@ -1,0 +1,273 @@
+/**
+ * The HTTP client: registry etiquette, retry behaviour, and the bounds added
+ * to keep a scan from hanging or leaking.
+ *
+ * `fetch` is stubbed rather than reached, so these run offline and
+ * deterministically. Timers are faked, which means the rate limiter and the
+ * backoff can be asserted on directly rather than by waiting.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HttpClient, HttpError } from '../../src/core/http.js';
+
+interface StubResponse {
+  status?: number;
+  body?: string;
+  headers?: Record<string, string>;
+}
+
+function respond({
+  status = 200,
+  body = '{}',
+  headers = {},
+}: StubResponse = {}): Response {
+  return {
+    status,
+    statusText: status === 200 ? 'OK' : 'Error',
+    ok: status >= 200 && status < 300,
+    headers: {
+      get: (name: string) => headers[name.toLowerCase()] ?? null,
+    },
+    text: () => Promise.resolve(body),
+  } as unknown as Response;
+}
+
+/**
+ * Queues responses, returning each in turn and repeating the last.
+ *
+ * Honours `init.signal` the way the real `fetch` does, so cancellation is
+ * exercised rather than assumed.
+ */
+function stubFetch(...responses: StubResponse[]) {
+  const calls: Array<{ url: string; init: RequestInit }> = [];
+  const fetchMock = vi.fn((url: string, init: RequestInit) => {
+    calls.push({ url, init });
+    if (init.signal?.aborted) {
+      return Promise.reject(
+        Object.assign(new Error('The operation was aborted'), {
+          name: 'AbortError',
+        }),
+      );
+    }
+    const next = responses[Math.min(calls.length - 1, responses.length - 1)];
+    return Promise.resolve(respond(next));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return calls;
+}
+
+describe('HttpClient', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  describe('identification', () => {
+    it('sends a descriptive User-Agent, as crates.io requires', async () => {
+      const calls = stubFetch({ body: '{"ok":true}' });
+      await new HttpClient('1.2.3').getJson('https://example.com/a');
+
+      const agent = (calls[0].init.headers as Record<string, string>)[
+        'User-Agent'
+      ];
+      expect(agent).toContain('Panorama-VSCode/1.2.3');
+      expect(agent).toContain('github.com/salvatorecorvaglia/panorama');
+    });
+
+    it('carries a contact address when one is configured, as Packagist asks', async () => {
+      const calls = stubFetch();
+      const client = new HttpClient('1.0.0', 'dev@example.com');
+      await client.getJson('https://example.com/a');
+
+      expect(
+        (calls[0].init.headers as Record<string, string>)['User-Agent'],
+      ).toContain('mailto=dev@example.com');
+    });
+
+    it('picks up a contact address added after construction', async () => {
+      const calls = stubFetch();
+      const client = new HttpClient('1.0.0');
+      client.setContactEmail('1.0.0', 'later@example.com');
+      await client.getJson('https://example.com/a');
+
+      expect(
+        (calls[0].init.headers as Record<string, string>)['User-Agent'],
+      ).toContain('mailto=later@example.com');
+    });
+  });
+
+  describe('ETag revalidation', () => {
+    it('replays the cached body on a 304', async () => {
+      const calls = stubFetch(
+        { body: '{"v":1}', headers: { etag: 'W/"abc"' } },
+        { status: 304 },
+      );
+      const client = new HttpClient('1.0.0');
+
+      expect(await client.getJson('https://example.com/a')).toEqual({ v: 1 });
+      expect(await client.getJson('https://example.com/a')).toEqual({ v: 1 });
+
+      // The second request offered the validator rather than asking afresh.
+      expect(
+        (calls[1].init.headers as Record<string, string>)['If-None-Match'],
+      ).toBe('W/"abc"');
+    });
+
+    it('sends If-Modified-Since when that is all the server gave', async () => {
+      const calls = stubFetch(
+        {
+          body: '{"v":1}',
+          headers: { 'last-modified': 'Wed, 21 Oct 2015 07:28:00 GMT' },
+        },
+        { status: 304 },
+      );
+      const client = new HttpClient('1.0.0');
+      await client.getJson('https://example.com/a');
+      await client.getJson('https://example.com/a');
+
+      expect(
+        (calls[1].init.headers as Record<string, string>)['If-Modified-Since'],
+      ).toBe('Wed, 21 Oct 2015 07:28:00 GMT');
+    });
+
+    it('does not cache or revalidate a POST', async () => {
+      const calls = stubFetch({ body: '{}', headers: { etag: 'W/"x"' } });
+      const client = new HttpClient('1.0.0');
+
+      await client.postJson('https://example.com/q', { a: 1 });
+      await client.postJson('https://example.com/q', { a: 1 });
+
+      expect(calls).toHaveLength(2);
+      expect(
+        (calls[1].init.headers as Record<string, string>)['If-None-Match'],
+      ).toBeUndefined();
+    });
+  });
+
+  describe('retries', () => {
+    it('retries a 429 with backoff and returns the eventual success', async () => {
+      const calls = stubFetch(
+        { status: 429 },
+        { status: 200, body: '{"v":2}' },
+      );
+      const client = new HttpClient('1.0.0');
+
+      const promise = client.getJson('https://example.com/a');
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(await promise).toEqual({ v: 2 });
+      expect(calls).toHaveLength(2);
+    });
+
+    it('retries a 5xx', async () => {
+      const calls = stubFetch({ status: 503 }, { status: 200, body: '{}' });
+      const client = new HttpClient('1.0.0');
+
+      const promise = client.getJson('https://example.com/a');
+      await vi.advanceTimersByTimeAsync(1000);
+      await promise;
+
+      expect(calls).toHaveLength(2);
+    });
+
+    it('gives up after three retries and reports the status', async () => {
+      stubFetch({ status: 500 });
+      const client = new HttpClient('1.0.0');
+
+      const promise = client.getJson('https://example.com/a');
+      const assertion = expect(promise).rejects.toBeInstanceOf(HttpError);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await assertion;
+    });
+
+    it('honours a short Retry-After', async () => {
+      const calls = stubFetch(
+        { status: 429, headers: { 'retry-after': '5' } },
+        { status: 200, body: '{}' },
+      );
+      const client = new HttpClient('1.0.0');
+      const promise = client.getJson('https://example.com/a');
+
+      // Still waiting at 4s, through at 5s — the header, not the backoff.
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(calls).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1500);
+      await promise;
+      expect(calls).toHaveLength(2);
+    });
+
+    it('refuses a Retry-After beyond the cap rather than appearing to hang', async () => {
+      stubFetch({ status: 429, headers: { 'retry-after': '3600' } });
+      const client = new HttpClient('1.0.0');
+
+      // Rejects immediately: an hour-long sleep is indistinguishable from a bug.
+      await expect(client.getJson('https://example.com/a')).rejects.toThrow(
+        /retry-after/,
+      );
+    });
+
+    it('does not retry an ordinary 404', async () => {
+      const calls = stubFetch({ status: 404 });
+      const client = new HttpClient('1.0.0');
+
+      await expect(
+        client.getJson('https://example.com/missing'),
+      ).rejects.toMatchObject({ status: 404, isNotFound: true });
+      expect(calls).toHaveLength(1);
+    });
+  });
+
+  describe('rate limiting', () => {
+    it('spaces crates.io requests to one per second', async () => {
+      const calls = stubFetch();
+      const client = new HttpClient('1.0.0');
+
+      const all = Promise.all([
+        client.getJson('https://crates.io/api/v1/crates/a'),
+        client.getJson('https://crates.io/api/v1/crates/b'),
+        client.getJson('https://crates.io/api/v1/crates/c'),
+      ]);
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(calls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(calls).toHaveLength(3);
+      await all;
+    });
+
+    it('does not throttle hosts with no declared limit', async () => {
+      const calls = stubFetch();
+      const client = new HttpClient('1.0.0');
+
+      await Promise.all([
+        client.getJson('https://registry.npmjs.org/a'),
+        client.getJson('https://registry.npmjs.org/b'),
+        client.getJson('https://registry.npmjs.org/c'),
+      ]);
+      expect(calls).toHaveLength(3);
+    });
+  });
+
+  describe('cancellation', () => {
+    it('propagates an already-aborted signal', async () => {
+      stubFetch();
+      const controller = new AbortController();
+      controller.abort();
+
+      const client = new HttpClient('1.0.0');
+      await expect(
+        client.getJson('https://example.com/a', { signal: controller.signal }),
+      ).rejects.toThrow();
+    });
+  });
+});
+
+describe('HttpError', () => {
+  it('singles out 404, which is an expected outcome rather than a failure', () => {
+    expect(new HttpError('404 Not Found', 404, 'u').isNotFound).toBe(true);
+    expect(new HttpError('500 Server Error', 500, 'u').isNotFound).toBe(false);
+  });
+});

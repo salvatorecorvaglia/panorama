@@ -25,6 +25,7 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
+import { mapWithConcurrency } from '../shared/concurrency.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
@@ -32,8 +33,16 @@ import {
 
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org';
 
-/** Scoped or plain, matching npm's own naming rules. */
-const NAME_PATTERN = /^(?:@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/;
+/**
+ * Scoped or plain, matching npm's own naming rules.
+ *
+ * Uppercase is accepted even though the registry has rejected it for new
+ * packages since 2017: names published before then keep their capitals, and a
+ * project depending on one could otherwise never be updated or removed from the
+ * panel.
+ */
+const NAME_PATTERN =
+  /^(?:@[A-Za-z0-9-~][A-Za-z0-9-._~]*\/)?[A-Za-z0-9-~][A-Za-z0-9-._~]*$/;
 
 interface PackageJson {
   name?: string;
@@ -197,20 +206,28 @@ export class NodeProvider implements EcosystemProvider {
     ctx: ProviderContext,
   ): Promise<Toolchain> {
     const cwd = path.dirname(manifestPath);
+    const manifestText = await ctx.readFile(manifestPath);
+    const declared = manifestText
+      ? /"packageManager"\s*:\s*"([a-z]+)@(\d+)?/.exec(manifestText)
+      : null;
+
+    const finish = async (id: ToolchainId): Promise<Toolchain> => ({
+      id,
+      ecosystem: 'node',
+      cwd,
+      ...(id === 'yarn'
+        ? { yarnBerry: await isYarnBerry(cwd, declared?.[2], ctx) }
+        : {}),
+    });
+
     const preferred = ctx.preferredToolchain('node');
     if (preferred !== 'auto') {
-      return { id: preferred as ToolchainId, ecosystem: 'node', cwd };
+      return finish(preferred as ToolchainId);
     }
 
     // `packageManager` is the project's own declaration and outranks lockfiles.
-    const manifestText = await ctx.readFile(manifestPath);
-    if (manifestText) {
-      const declared = /"packageManager"\s*:\s*"([a-z]+)@/.exec(
-        manifestText,
-      )?.[1];
-      if (declared && ['npm', 'yarn', 'pnpm', 'bun'].includes(declared)) {
-        return { id: declared as ToolchainId, ecosystem: 'node', cwd };
-      }
+    if (declared && ['npm', 'yarn', 'pnpm', 'bun'].includes(declared[1])) {
+      return finish(declared[1] as ToolchainId);
     }
 
     const checks: Array<[string, ToolchainId]> = [
@@ -222,11 +239,11 @@ export class NodeProvider implements EcosystemProvider {
     ];
     for (const [file, id] of checks) {
       if (await ctx.exists(path.join(cwd, file))) {
-        return { id, ecosystem: 'node', cwd };
+        return finish(id);
       }
     }
 
-    return { id: 'npm', ecosystem: 'node', cwd };
+    return finish('npm');
   }
 
   async fetchVersions(
@@ -366,7 +383,7 @@ export class NodeProvider implements EcosystemProvider {
     if (!this.isValidPackageName(name)) return null;
     const spec = version ? `${name}@${version}` : name;
 
-    const flags = scopeFlags(toolchain.id, scope);
+    const flags = scopeFlags(toolchain, scope);
     const verb = toolchain.id === 'npm' ? 'install' : 'add';
     const argv = [toolchain.id, verb, spec, ...flags];
 
@@ -396,10 +413,17 @@ export class NodeProvider implements EcosystemProvider {
   }
 
   updateAllCommand(toolchain: Toolchain): Command | null {
-    // `update` respects the declared ranges rather than jumping majors, which
-    // is the behaviour people expect from an "update all" button.
+    // Each of these respects the declared ranges rather than jumping majors,
+    // which is the behaviour people expect from an "update all" button.
+    //
+    // The verb is not shared: npm, pnpm and bun spell it `update`, Yarn 1
+    // spells it `upgrade`, and Yarn 2+ spells it `up`. `yarn update` has never
+    // existed in either line.
     const argv =
-      toolchain.id === 'bun' ? ['bun', 'update'] : [toolchain.id, 'update'];
+      toolchain.id === 'yarn'
+        ? ['yarn', toolchain.yarnBerry ? 'up' : 'upgrade']
+        : [toolchain.id, 'update'];
+
     return {
       argv,
       cwd: toolchain.cwd,
@@ -408,39 +432,49 @@ export class NodeProvider implements EcosystemProvider {
   }
 }
 
-function scopeFlags(toolchain: ToolchainId, scope: DepScope): string[] {
+/**
+ * The flag that files an install under the right dependency bucket.
+ *
+ * The four managers agree on almost nothing here. npm and pnpm use the
+ * `--save-*` family; Yarn 1 and bun use the short forms; Yarn 2+ dropped
+ * `--optional` and `--peer` in favour of `--optional`/`--peer` on `yarn add`
+ * only for peer, so anything it cannot express is left to the manifest.
+ */
+function scopeFlags(toolchain: Toolchain, scope: DepScope): string[] {
+  const savePrefixed = toolchain.id === 'npm' || toolchain.id === 'pnpm';
+
   switch (scope) {
     case 'dev':
-      return toolchain === 'npm' ? ['--save-dev'] : ['--dev'];
+      return savePrefixed ? ['--save-dev'] : ['--dev'];
     case 'optional':
-      return toolchain === 'npm' ? ['--save-optional'] : ['--optional'];
+      return savePrefixed ? ['--save-optional'] : ['--optional'];
     case 'peer':
-      return toolchain === 'npm' ? ['--save-peer'] : ['--peer'];
+      return savePrefixed ? ['--save-peer'] : ['--peer'];
     default:
       return [];
   }
 }
 
+/**
+ * Distinguishes Yarn 2+ from Yarn 1.
+ *
+ * Three signals, cheapest first: the major in `packageManager`, the presence of
+ * `.yarnrc.yml` (Berry-only — v1 used `.yarnrc`), and the `__metadata` block
+ * Berry writes at the top of every lockfile it owns.
+ */
+async function isYarnBerry(
+  cwd: string,
+  declaredMajor: string | undefined,
+  ctx: ProviderContext,
+): Promise<boolean> {
+  if (declaredMajor) return Number(declaredMajor) >= 2;
+  if (await ctx.exists(path.join(cwd, '.yarnrc.yml'))) return true;
+
+  const lock = await ctx.readFile(path.join(cwd, 'yarn.lock'));
+  return lock ? /^__metadata:/m.test(lock) : false;
+}
+
 /** Encode scoped package names for npm registry API while preserving the leading '@'. */
 function encodeName(name: string): string {
   return encodeURIComponent(name).replace(/^%40/, '@');
-}
-
-/** Runs `worker` over `items` with a bounded number in flight. */
-export async function mapWithConcurrency<T>(
-  items: T[],
-  limit: number,
-  worker: (item: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0;
-  const runners = Array.from(
-    { length: Math.min(limit, items.length) },
-    async () => {
-      while (cursor < items.length) {
-        const index = cursor++;
-        await worker(items[index]);
-      }
-    },
-  );
-  await Promise.all(runners);
 }

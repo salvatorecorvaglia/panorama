@@ -66,6 +66,48 @@ describe('MuteList', () => {
     expect(list.isMuted(dep({ latest: '5.0.0' }))).toBe(false);
   });
 
+  it('scopes a mute to the manifest it was taken in', async () => {
+    // Pinning a package in one workspace member says nothing about whether its
+    // siblings should upgrade — those are separate decisions.
+    const list = new MuteList(makeMemento());
+    const legacy = dep({ manifestPath: '/repo/packages/legacy/package.json' });
+    const next = dep({ manifestPath: '/repo/packages/next/package.json' });
+
+    await list.mute(legacy);
+
+    expect(list.isMuted(legacy)).toBe(true);
+    expect(list.isMuted(next)).toBe(false);
+  });
+
+  it('honours a mute stored before mutes were scoped to a manifest', async () => {
+    // Pre-existing entries were workspace-wide by construction; narrowing them
+    // on read would silently un-mute packages the user had muted on purpose.
+    const memento = makeMemento();
+    await memento.update('panorama.mutedUpdates', {
+      'node:lodash': {
+        ecosystem: 'node',
+        name: 'lodash',
+        mutedAtLatest: '4.18.1',
+      },
+    });
+
+    const list = new MuteList(memento);
+    expect(list.isMuted(dep({ manifestPath: '/anywhere/package.json' }))).toBe(
+      true,
+    );
+  });
+
+  it('clears a pre-scoping entry on unmute, so the button works', async () => {
+    const memento = makeMemento();
+    await memento.update('panorama.mutedUpdates', {
+      'node:lodash': { ecosystem: 'node', name: 'lodash' },
+    });
+
+    const list = new MuteList(memento);
+    await list.unmute(dep());
+    expect(list.isMuted(dep())).toBe(false);
+  });
+
   it('keeps packages of the same name in different ecosystems separate', async () => {
     const list = new MuteList(makeMemento());
     await list.mute(

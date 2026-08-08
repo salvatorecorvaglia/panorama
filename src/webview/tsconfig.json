@@ -18,6 +18,9 @@
     "./**/*.tsx",
     "../core/protocol.ts",
     "../core/types.ts",
-    "../core/vocabulary.ts"
+    "../core/vocabulary.ts",
+    "../core/versions/**/*.ts",
+    "../../test/webview/**/*.ts",
+    "../../test/webview/**/*.tsx"
   ]
 }

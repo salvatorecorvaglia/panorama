@@ -47,6 +47,16 @@ export interface Command {
   cwd: string;
   /** Shown to the user before the command runs. */
   description: string;
+  /**
+   * False when running this leaves the manifest untouched, so the host must
+   * also apply `editManifest` for the change to survive.
+   *
+   * `pip install` is the case that matters: it installs into the environment
+   * and writes nothing back, so without the paired edit the package disappears
+   * again on the next `pip install -r requirements.txt`. Defaults to true,
+   * because every other package manager records what it did.
+   */
+  writesManifest?: boolean;
 }
 
 export interface EcosystemProvider {
@@ -61,6 +71,15 @@ export interface EcosystemProvider {
   /** Validates a package name before it can reach a command line. */
   isValidPackageName(name: string): boolean;
 
+  /**
+   * Validates a version or constraint before it can reach a command line.
+   *
+   * Versions arrive from registry search results and from the webview, so they
+   * are no more trusted than names are. Providers that accept an unusual
+   * grammar (Maven ranges, Composer stability flags) override the default.
+   */
+  isValidVersion?(version: string): boolean;
+
   parse(
     absolutePath: string,
     text: string,
@@ -70,11 +89,23 @@ export interface EcosystemProvider {
   /**
    * Reads resolved versions out of a lockfile, keyed by package name.
    * Returning an empty map is fine — the UI falls back to the constraint.
+   *
+   * Keys are in the ecosystem's canonical form; implement `normalizeName` when
+   * that differs from what the manifest writes, or the two never meet.
    */
   readLockfile?(
     manifestDir: string,
     ctx: ProviderContext,
   ): Promise<Map<string, string>>;
+
+  /**
+   * The ecosystem's canonical form of a package name, where it has one.
+   *
+   * Only Python needs this today (PEP 503 collapses runs of `-_.` to a single
+   * hyphen and lowercases), but any ecosystem whose lockfile spells names
+   * differently from its manifest belongs here.
+   */
+  normalizeName?(name: string): string;
 
   detectToolchain(
     manifestPath: string,
@@ -135,6 +166,34 @@ export interface EcosystemProvider {
       | { kind: 'update'; name: string; version: string; scope: DepScope }
       | { kind: 'remove'; name: string; scope: DepScope },
   ): string | null;
+}
+
+/**
+ * The default version grammar, deliberately narrow.
+ *
+ * Every ecosystem Panorama supports expresses versions and constraints with
+ * digits, letters and a small set of punctuation. Nothing legitimate needs a
+ * quote, a space, a backtick or a dollar sign — the characters that make shell
+ * injection possible — so refusing them costs nothing and closes the category.
+ */
+const VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+~^><=!*\-[\](),|]*$/;
+
+export function isValidVersionDefault(version: string): boolean {
+  return version.length <= 256 && VERSION_PATTERN.test(version);
+}
+
+/**
+ * Validates a version against a provider's own rule, falling back to the shared
+ * grammar. Callers use this rather than reaching for `provider.isValidVersion`
+ * directly, so the fallback can never be forgotten.
+ */
+export function validateVersion(
+  provider: EcosystemProvider,
+  version: string,
+): boolean {
+  return provider.isValidVersion
+    ? provider.isValidVersion(version)
+    : isValidVersionDefault(version);
 }
 
 /** Maps an ecosystem's own scope vocabulary onto our five buckets. */

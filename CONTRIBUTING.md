@@ -10,7 +10,8 @@ Before you start, ensure you have the following installed on your system:
 
 - **Node.js**: `v22.13.0` or higher
 - **pnpm**: `v11.17.0` or higher (managed via `packageManager` in `package.json`)
-- **VS Code**: `v1.90.0` or higher
+- **VS Code**: `v1.93.0` or higher (the terminal shell integration API Panorama
+  uses to report command exit codes was finalized in 1.93)
 
 ---
 

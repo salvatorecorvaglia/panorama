@@ -8,9 +8,11 @@
  * reach the filesystem or spawn a terminal.
  */
 
+import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { explainDependency } from '../core/depGraph.js';
+import { findDeclaration } from '../core/findDeclaration.js';
 import type { MuteList } from '../core/muteList.js';
 import type { HostMessage, WebviewMessage } from '../core/protocol.js';
 import type { Scanner, ScanResult } from '../core/scanner.js';
@@ -22,6 +24,7 @@ import type {
 } from '../core/types.js';
 import { hasUpdate } from '../core/vocabulary.js';
 import type { ProviderContext } from '../providers/provider.js';
+import { validateVersion } from '../providers/provider.js';
 import { providerFor, providerForPath } from '../providers/registry.js';
 import { TerminalRunner } from './terminalRunner.js';
 
@@ -39,6 +42,8 @@ export class PanelManager implements vscode.Disposable {
     },
   };
   private readonly searches = new Map<string, AbortController>();
+  /** The in-flight "why is this installed" resolution, if any. */
+  private whyRequest: AbortController | undefined;
   private readonly terminal = new TerminalRunner();
   private busy = false;
   /** False between creating a panel and the React app announcing itself. */
@@ -278,7 +283,7 @@ export class PanelManager implements vscode.Disposable {
     this.searches.set(requestId, controller);
 
     try {
-      const results = await this.scanner.search(
+      const { results, failed } = await this.scanner.search(
         query,
         ecosystem,
         controller.signal,
@@ -310,7 +315,17 @@ export class PanelManager implements vscode.Disposable {
       }
 
       if (!controller.signal.aborted) {
-        this.post({ type: 'searchResults', requestId, results });
+        // Nothing came back and nothing succeeded: that is a failure, not an
+        // empty result set, and saying "no packages found" would be a lie.
+        if (results.length === 0 && failed.length > 0) {
+          this.post({
+            type: 'searchError',
+            requestId,
+            message: `Could not reach ${failed.map(registryName).join(', ')}. Check your connection and try again.`,
+          });
+          return;
+        }
+        this.post({ type: 'searchResults', requestId, results, failed });
       }
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -348,22 +363,33 @@ export class PanelManager implements vscode.Disposable {
       return;
     }
 
+    // A version is no more trusted than a name: both arrive from the webview,
+    // and both end up on a command line.
+    if (version !== null && !validateVersion(provider, version)) {
+      this.post({
+        type: 'error',
+        message: `"${version}" is not a valid version.`,
+      });
+      return;
+    }
+
     const toolchain = await provider.detectToolchain(manifestPath, this.ctx);
     const command = provider.installCommand(toolchain, name, version, scope);
+    const edit = { kind: 'add' as const, name, version, scope };
 
     if (command) {
       await this.runCommand(command.argv, command.cwd, command.description);
+      // pip installs into the environment without recording anything, so the
+      // manifest edit is what makes the install outlive the next reinstall.
+      if (command.writesManifest === false) {
+        await this.applyManifestEdit(provider, manifestPath, edit);
+      }
       return;
     }
 
     // No CLI for this edit — fall back to a manifest edit where the provider
     // supports one (requirements.txt, pom.xml).
-    const applied = await this.applyManifestEdit(provider, manifestPath, {
-      kind: 'add',
-      name,
-      version,
-      scope,
-    });
+    const applied = await this.applyManifestEdit(provider, manifestPath, edit);
 
     if (!applied) {
       this.post({
@@ -380,6 +406,14 @@ export class PanelManager implements vscode.Disposable {
     const found = this.findDependency(depKey);
     if (!found) return;
     const { dep } = found;
+
+    if (!validateVersion(providerFor(dep.ecosystem), toVersion)) {
+      this.post({
+        type: 'error',
+        message: `"${toVersion}" is not a valid version.`,
+      });
+      return;
+    }
 
     // Bulk updates already ask before crossing a major boundary; a single one
     // is no less likely to break the build, so it asks too.
@@ -401,18 +435,26 @@ export class PanelManager implements vscode.Disposable {
       this.ctx,
     );
     const command = provider.updateCommand(toolchain, dep, toVersion);
-
-    if (command) {
-      await this.runCommand(command.argv, command.cwd, command.description);
-      return;
-    }
-
-    const applied = await this.applyManifestEdit(provider, dep.manifestPath, {
-      kind: 'update',
+    const edit = {
+      kind: 'update' as const,
       name: dep.name,
       version: toVersion,
       scope: dep.scope,
-    });
+    };
+
+    if (command) {
+      await this.runCommand(command.argv, command.cwd, command.description);
+      if (command.writesManifest === false) {
+        await this.applyManifestEdit(provider, dep.manifestPath, edit);
+      }
+      return;
+    }
+
+    const applied = await this.applyManifestEdit(
+      provider,
+      dep.manifestPath,
+      edit,
+    );
 
     if (!applied) {
       this.post({
@@ -487,17 +529,25 @@ export class PanelManager implements vscode.Disposable {
       this.ctx,
     );
     const command = provider.uninstallCommand(toolchain, dep);
+    const edit = {
+      kind: 'remove' as const,
+      name: dep.name,
+      scope: dep.scope,
+    };
 
     if (command) {
       await this.runCommand(command.argv, command.cwd, command.description);
+      if (command.writesManifest === false) {
+        await this.applyManifestEdit(provider, dep.manifestPath, edit);
+      }
       return;
     }
 
-    const applied = await this.applyManifestEdit(provider, dep.manifestPath, {
-      kind: 'remove',
-      name: dep.name,
-      scope: dep.scope,
-    });
+    const applied = await this.applyManifestEdit(
+      provider,
+      dep.manifestPath,
+      edit,
+    );
 
     if (!applied) {
       this.post({
@@ -538,8 +588,20 @@ export class PanelManager implements vscode.Disposable {
     const found = this.findDependency(depKey);
     if (!found) return;
 
+    // Clicking through rows quickly would otherwise leave every earlier
+    // resolution running, and the registry fallback is the slowest call in the
+    // extension.
+    this.whyRequest?.abort();
+    const controller = new AbortController();
+    this.whyRequest = controller;
+
     try {
-      const result = await explainDependency(found.dep, this.ctx);
+      const result = await explainDependency(
+        found.dep,
+        this.ctx,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
       this.post({
         type: 'whyTree',
         depKey,
@@ -547,6 +609,9 @@ export class PanelManager implements vscode.Disposable {
         source: result.source,
       });
     } catch (error) {
+      // A superseded request is the expected outcome of clicking the next row,
+      // not something to put in front of the user.
+      if (controller.signal.aborted) return;
       this.post({ type: 'error', message: describeError(error) });
     }
   }
@@ -636,8 +701,7 @@ export class PanelManager implements vscode.Disposable {
 
     if (!packageName) return;
 
-    // Jump to the declaration so the user lands on the right line.
-    const index = document.getText().indexOf(packageName);
+    const index = findDeclaration(document.getText(), packageName);
     if (index >= 0) {
       const position = document.positionAt(index);
       editor.selection = new vscode.Selection(position, position);
@@ -690,17 +754,30 @@ export class PanelManager implements vscode.Disposable {
   }
 }
 
+/**
+ * A CSP nonce has to be unguessable to be worth anything, so it comes from the
+ * CSPRNG rather than `Math.random`. Base64url keeps it valid inside the
+ * `script-src 'nonce-...'` directive without escaping.
+ */
 function createNonce(): string {
-  const alphabet =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let nonce = '';
-  for (let i = 0; i < 32; i++) {
-    nonce += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
-  }
-  return nonce;
+  return randomBytes(24).toString('base64url');
 }
 
 function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/** The name users know a registry by, which is rarely our ecosystem id. */
+function registryName(ecosystem: Ecosystem): string {
+  const names: Record<Ecosystem, string> = {
+    node: 'npm',
+    python: 'PyPI',
+    cargo: 'crates.io',
+    golang: 'the Go module proxy',
+    composer: 'Packagist',
+    maven: 'Maven Central',
+    gradle: 'Maven Central',
+  };
+  return names[ecosystem];
 }

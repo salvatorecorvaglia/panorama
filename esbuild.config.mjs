@@ -13,7 +13,9 @@ const options = {
   outfile: 'dist/extension.js',
   format: 'cjs',
   platform: 'node',
-  target: 'node20',
+  // Matches `engines.node`. Targeting an older runtime than the one we require
+  // only costs downlevelling we do not need.
+  target: 'node22',
   external: ['vscode'],
   /**
    * Prefer the ESM entry point of every dependency.

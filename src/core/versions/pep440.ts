@@ -218,11 +218,18 @@ function satisfiesSingle(version: string, clause: string): boolean {
   }
 }
 
-/** Highest version in `candidates` satisfying `specifier`. */
+/**
+ * Highest version in `candidates` satisfying `specifier`.
+ *
+ * Prereleases are excluded unless asked for — but a specifier that *names* a
+ * prerelease is asking for one, which is how PEP 440 itself defines it. Without
+ * that, a project pinned `==2.0.0rc1` had no wanted version at all: the only
+ * version that satisfied the constraint was filtered out before the comparison.
+ */
 export function maxSatisfyingPep440(
   candidates: string[],
   specifier: string,
-  allowPrerelease = false,
+  allowPrerelease = specifierMentionsPrerelease(specifier),
 ): string | undefined {
   const eligible = candidates.filter((candidate) => {
     if (!allowPrerelease && isPep440Prerelease(candidate)) return false;
@@ -230,4 +237,13 @@ export function maxSatisfyingPep440(
   });
   if (eligible.length === 0) return undefined;
   return eligible.sort(comparePep440)[eligible.length - 1];
+}
+
+/** True when any clause of the specifier names a pre-release or dev version. */
+function specifierMentionsPrerelease(specifier: string): boolean {
+  return specifier
+    .split(',')
+    .some((clause) =>
+      isPep440Prerelease(clause.replace(/^\s*(===|==|!=|<=|>=|~=|<|>)\s*/, '')),
+    );
 }

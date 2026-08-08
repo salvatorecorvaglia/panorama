@@ -10,12 +10,21 @@
  * not in the DOM, so no amount of `tabIndex` would let Tab reach it.
  * `aria-rowcount`/`aria-rowindex` tell assistive technology the true size of the
  * list even though only a window of it exists.
+ *
+ * This is also the one file where `useSemanticElements` and
+ * `useFocusableInteractive` are switched off (see `biome.json`). Both rules ask
+ * for something a virtualized grid cannot give: rows are absolutely positioned
+ * at computed offsets, which a real `<table>` cannot express, and only the row
+ * holding the roving tabindex is focusable — making every gridcell a tab stop
+ * would be the accessibility regression, not the fix. Everywhere else in the
+ * webview those rules are enforced.
  */
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { FocusEvent, KeyboardEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Dependency, ProjectGroup } from '../core/types.js';
+import type { Dependency, Ecosystem, ProjectGroup } from '../core/types.js';
+import { compareVersions } from '../core/versions/index.js';
 import {
   currentVersion,
   hasUpdate,
@@ -280,7 +289,11 @@ export function DepTable({
       <div className="empty">
         <h2>No dependencies match your filters</h2>
         <p>Clear the search box and re-enable the scopes to see everything.</p>
-        <button className="empty__action secondary" onClick={onClearFilters}>
+        <button
+          type="button"
+          className="empty__action secondary"
+          onClick={onClearFilters}
+        >
           Clear filters
         </button>
       </div>
@@ -313,7 +326,10 @@ export function DepTable({
             aria-sort={ariaSort(column.key)}
           >
             {column.key ? (
-              <button onClick={() => toggleSort(column.key as SortKey)}>
+              <button
+                type="button"
+                onClick={() => toggleSort(column.key as SortKey)}
+              >
                 {column.label}
                 {indicator(column.key)}
               </button>
@@ -333,6 +349,7 @@ export function DepTable({
         onFocus={handleGridFocus}
       >
         <div
+          role="presentation"
           style={{
             height: virtualizer.getTotalSize(),
             position: 'relative',
@@ -344,6 +361,9 @@ export function DepTable({
             return (
               <div
                 key={virtualRow.key}
+                // Presentational: a grid must own its rows directly, and this
+                // element exists only to position one.
+                role="presentation"
                 style={{
                   position: 'absolute',
                   top: 0,
@@ -418,6 +438,7 @@ function GroupHeader({
         <div className="table__group-spacer" />
         {row.outdated > 0 && (
           <button
+            type="button"
             className="secondary"
             onClick={() => onUpdateAll(row.group.manifestPath)}
           >
@@ -515,7 +536,7 @@ function DepRow({
             ▲
           </span>
         )}
-        <span>{dep.name}</span>
+        <span data-package-name>{dep.name}</span>
         {dep.muted && (
           <span
             className="badge badge--muted"
@@ -563,11 +584,20 @@ function DepRow({
         {status.text}
       </div>
 
+      {/*
+       * Every action carries an aria-label naming its package. The visible text
+       * has to stay short to fit the column, but a screen-reader user moving
+       * through a few hundred rows would otherwise hear "Update, Mute, Remove"
+       * repeated with nothing to tell one row from the next. `title` cannot do
+       * this job — it supplies a description, not an accessible name.
+       */}
       <div className="cell cell--actions" role="gridcell">
         {upgradeable && dep.latest && (
           <>
             <button
+              type="button"
               className="ghost"
+              aria-label={`Update ${dep.name} to ${dep.latest}`}
               title={`Update to ${dep.latest}`}
               onClick={(event) => {
                 event.stopPropagation();
@@ -577,7 +607,13 @@ function DepRow({
               Update
             </button>
             <button
+              type="button"
               className="ghost"
+              aria-label={
+                dep.muted
+                  ? `Unmute ${dep.name}`
+                  : `Mute update notifications for ${dep.name}`
+              }
               title={
                 dep.muted
                   ? `Unmute ${dep.name} so it counts as outdated again`
@@ -594,7 +630,9 @@ function DepRow({
           </>
         )}
         <button
+          type="button"
           className="ghost danger"
+          aria-label={`Remove ${dep.name} from this project`}
           title={`Remove ${dep.name} from this project`}
           onClick={(event) => {
             event.stopPropagation();
@@ -606,6 +644,36 @@ function DepRow({
       </div>
     </div>
   );
+}
+
+/**
+ * Orders two version cells using their own ecosystem's rules.
+ *
+ * Collation with `numeric: true` gets simple cases right and the interesting
+ * ones wrong: it ranks `1.0.0-rc1` above `1.0.0`, and it has no idea that Maven
+ * sorts `1.0-SNAPSHOT` below `1.0`. Deferring to `core/versions` is also what
+ * keeps the table's ordering consistent with the "is this outdated" judgement
+ * made from exactly those comparators.
+ *
+ * Rows from two different ecosystems only meet when the table shows several
+ * projects at once; there is no shared ordering to appeal to, so those fall
+ * back to a plain string comparison.
+ */
+function compareVersionCells(
+  ecosystemA: Ecosystem,
+  a: string | undefined,
+  ecosystemB: Ecosystem,
+  b: string | undefined,
+): number {
+  // Missing versions sort last in ascending order.
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+
+  if (ecosystemA !== ecosystemB) {
+    return a.localeCompare(b, undefined, { numeric: true });
+  }
+  return compareVersions(ecosystemA, a, b);
 }
 
 function sortDependencies(
@@ -625,18 +693,20 @@ function sortDependencies(
           a.scope.localeCompare(b.scope) || a.name.localeCompare(b.name);
         break;
       case 'current':
-        comparison = currentVersion(a).localeCompare(
+        comparison = compareVersionCells(
+          a.ecosystem,
+          currentVersion(a),
+          b.ecosystem,
           currentVersion(b),
-          undefined,
-          {
-            numeric: true,
-          },
         );
         break;
       case 'latest':
-        comparison = (a.latest ?? '').localeCompare(b.latest ?? '', undefined, {
-          numeric: true,
-        });
+        comparison = compareVersionCells(
+          a.ecosystem,
+          a.latest,
+          b.ecosystem,
+          b.latest,
+        );
         break;
       case 'size':
         comparison = (a.meta?.sizeBytes ?? -1) - (b.meta?.sizeBytes ?? -1);

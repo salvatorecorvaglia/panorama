@@ -33,8 +33,8 @@ pnpm-debug.log*
 !.env.example
 
 # IDEs & Editors
-.vscode/*
-!.vscode/extensions.json
+# .vscode/ is deliberately tracked: launch.json is how a contributor runs the
+# extension host, so it belongs in the repo rather than in each clone.
 .idea/
 .zed/
 *.swp
