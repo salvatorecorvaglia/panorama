@@ -226,7 +226,11 @@
             "**/vendor/**",
             "**/dist/**",
             "**/build/**",
-            "**/.git/**"
+            "**/.git/**",
+            "**/test/**",
+            "**/tests/**",
+            "**/fixtures/**",
+            "**/__tests__/**"
           ],
           "description": "Glob patterns to skip when scanning for manifest files."
         },
@@ -262,7 +266,7 @@
     "pretest:integration": "pnpm run build && tsc -p tsconfig.integration.json",
     "test:integration": "vscode-test",
     "test:all": "pnpm run test && pnpm run test:integration",
-    "package": "vsce package"
+    "package": "vsce package --no-dependencies"
   },
   "dependencies": {
     "fast-xml-parser": "^5.10.1",
@@ -278,11 +282,11 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.3",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.2.0",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@types/semver": "^7.8.0",
-    "@types/vscode": "^1.125.0",
+    "@types/vscode": "~1.93.0",
     "@vitejs/plugin-react": "^4.7.0",
     "@vitest/coverage-v8": "^3.2.7",
     "@vscode/test-cli": "^0.0.15",
