@@ -13,7 +13,7 @@ import * as assert from 'node:assert/strict';
 import * as vscode from 'vscode';
 import type { PanoramaApi } from '../../src/extension.js';
 
-const EXTENSION_ID = 'panorama.panorama';
+const EXTENSION_ID = 'panorama.panorama-vscode';
 
 async function getApi(): Promise<PanoramaApi> {
   const extension = vscode.extensions.getExtension<PanoramaApi>(EXTENSION_ID);
