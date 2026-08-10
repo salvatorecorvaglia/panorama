@@ -2,7 +2,7 @@
   "name": "panorama",
   "displayName": "Panorama",
   "description": "Universal Visual Package Manager for Visual Studio Code",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "packageManager": "pnpm@11.17.0",
   "publisher": "panorama",
   "license": "MIT",
