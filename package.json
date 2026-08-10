@@ -1,6 +1,6 @@
 {
   "name": "panorama-vscode",
-  "displayName": "Panorama",
+  "displayName": "Panorama - Universal Visual Package Manager",
   "description": "Universal Visual Package Manager for Visual Studio Code",
   "version": "1.0.0",
   "packageManager": "pnpm@11.17.0",
