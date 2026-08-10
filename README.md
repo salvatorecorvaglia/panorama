@@ -2,22 +2,22 @@
 
 **Universal Visual Package Manager for Visual Studio Code**
 
-**Panorama** provides a unified, visual, multi-ecosystem package management experience inside VS Code.
+**Panorama** provides a unified, visual, multi-ecosystem package management experience directly inside VS Code.
 
 ---
 
 ## ✨ Features
 
-- 🌐 **Universal Multi-Ecosystem Support**: Out-of-the-box parsing for `package.json`, `pyproject.toml`, `requirements.txt`, `Cargo.toml`, `go.mod`, `composer.json`, `pom.xml`, `build.gradle`, and `build.gradle.kts`.
+- 🌐 **Universal Multi-Ecosystem Support**: Native parsing for `package.json`, `pyproject.toml`, `requirements.txt`, `Cargo.toml`, `go.mod`, `composer.json`, `pom.xml`, `build.gradle`, and `build.gradle.kts`.
 - ⚡ **Dual UI Interface**:
   - **Activity Bar Tree View** (`panorama.explorer`): Fast, lightweight view of your workspace dependencies with badge indicators for outdated packages.
-  - **React Webview Panel** (`panorama.open`): Interactive, virtualized UI built with React and Vite for deep dependency analysis, search, sorting, and filtering.
-- 🛡️ **Security Vulnerability Audits**: Automated checks powered by [OSV.dev](https://osv.dev) to detect known CVEs and security advisories affecting your dependencies.
+  - **React Webview Panel** (`panorama.open`): Interactive, virtualized UI built with React, Vite, and TanStack Virtual for deep dependency analysis, search, sorting, and filtering.
+- 🛡️ **Security Vulnerability Audits**: Automated security scans powered by [OSV.dev](https://osv.dev) to detect known CVEs and advisories affecting your direct and transitive dependencies.
 - 🔄 **Smart Update Checks & One-Click Upgrades**: Highlights outdated packages with semver diff indicators (`major`, `minor`, `patch`) and updates dependencies directly from the interface.
 - 🔍 **Registry Search & Package Installation**: Search public registries (npm, PyPI, Crates.io, Packagist, Maven Central) and install packages into your manifests without leaving VS Code.
-- 🌲 **"Why Is This Installed?" Dependency Inspector**: Inspect transitive dependencies and view exact dependency resolution paths.
+- 🌲 **"Why Is This Installed?" Dependency Inspector**: Inspect transitive dependencies and trace exact resolution paths.
 - 🔕 **Per-Workspace Package Muting**: Suppress update notifications for specific packages on a per-project basis.
-- 📁 **Monorepo & Multi-Root Support**: Automatically discovers and aggregates nested manifest files across multi-root workspaces.
+- 📁 **Monorepo & Multi-Root Support**: Automatically discovers and aggregates nested manifest files across complex monorepos and multi-root workspaces.
 - ⚙️ **Custom Registries & Proxy Overrides**: Configure private registries and custom `User-Agent` contact headers.
 
 ---
@@ -57,7 +57,7 @@ Panorama contributes the following commands to VS Code (`Panorama` category):
 | `panorama.updateAll` | **Update All Dependencies** | Upgrades all outdated dependencies in workspace manifests. |
 | `panorama.searchInstall` | **Search & Install Package** | Opens the interactive registry search interface to find and add dependencies. |
 | `panorama.showWhy` | **Why Is This Installed?** | Displays the dependency graph path explaining why a package is present. |
-| `panorama.toggleMute` | **Mute/Unmute Updates for Package** | Suppresses or restores update checks for the selected dependency. |
+| `panorama.toggleMute` | **Mute/Unmute Updates for This Package in This Project** | Suppresses or restores update checks for the selected dependency. |
 | `panorama.clearMuted` | **Clear All Muted Packages** | Resets all muted package preferences in the active workspace. |
 | `panorama.revealDependency` | **Reveal Package in Panel** | Focuses and highlights the selected dependency inside the interactive React webview panel. |
 
@@ -82,7 +82,7 @@ Panorama can be customized via VS Code Settings (`settings.json` under the `pano
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and release guidelines.
 
 ## 📜 Changelog
 
