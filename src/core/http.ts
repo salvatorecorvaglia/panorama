@@ -21,6 +21,9 @@ const DEFAULT_TIMEOUT_MS = 15_000;
  */
 const MAX_RETRY_AFTER_MS = 60_000;
 
+/** The first try plus its retries. Also scales the whole-request deadline. */
+const MAX_ATTEMPTS = 4;
+
 /**
  * How many responses the ETag cache retains.
  *
@@ -145,7 +148,18 @@ export class HttpClient {
 
   private async request(url: string, options: HttpOptions): Promise<string> {
     await this.waitForSlot(url);
-    return this.attempt(url, options, 0);
+    /*
+     * The deadline covers the whole retry chain, not each attempt.
+     *
+     * Each attempt already gets its own timeout, but three retries with a
+     * `Retry-After` of up to a minute between them could keep one request
+     * alive for several minutes — with the scan it belongs to still showing a
+     * spinner. Past this point cached data, badged as stale, is a better
+     * answer than a request nobody is still waiting for.
+     */
+    const deadline =
+      Date.now() + (options.timeoutMs ?? DEFAULT_TIMEOUT_MS) * MAX_ATTEMPTS;
+    return this.attempt(url, options, 0, deadline);
   }
 
   /**
@@ -172,6 +186,7 @@ export class HttpClient {
     url: string,
     options: HttpOptions,
     retryCount: number,
+    deadline: number,
   ): Promise<string> {
     const cached = options.noCache ? undefined : this.etagCache.get(url);
 
@@ -215,7 +230,7 @@ export class HttpClient {
       }
 
       if (response.status === 429 || response.status >= 500) {
-        if (retryCount < 3) {
+        if (retryCount < MAX_ATTEMPTS - 1) {
           const retryAfter = Number(response.headers.get('retry-after'));
           const requested =
             Number.isFinite(retryAfter) && retryAfter > 0
@@ -230,9 +245,18 @@ export class HttpClient {
               url,
             );
           }
+          // Sleeping past the deadline and then retrying spends the wait to
+          // learn nothing, so stop here and let the caller fall back.
+          if (Date.now() + requested >= deadline) {
+            throw new HttpError(
+              `${response.status} ${response.statusText} (gave up after ${retryCount + 1} attempts)`,
+              response.status,
+              url,
+            );
+          }
           await sleep(requested, options.signal);
           await this.waitForSlot(url);
-          return this.attempt(url, options, retryCount + 1);
+          return this.attempt(url, options, retryCount + 1, deadline);
         }
       }
 
@@ -316,20 +340,40 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Node 20 has `AbortSignal.any`, but we keep a fallback for older hosts. */
+/**
+ * Node 20 has `AbortSignal.any`, but we keep a fallback for older hosts.
+ *
+ * The fallback detaches its listeners once any signal fires. Without that, a
+ * caller's signal — which outlives a single request, and covers a whole scan —
+ * accumulates one listener per request issued under it.
+ */
 function anySignal(signals: AbortSignal[]): AbortSignal {
   if (typeof AbortSignal.any === 'function') {
     return AbortSignal.any(signals);
   }
   const controller = new AbortController();
+  const listeners: Array<() => void> = [];
+
+  const detach = () => {
+    for (const remove of listeners) remove();
+    listeners.length = 0;
+  };
+
   for (const signal of signals) {
     if (signal.aborted) {
+      detach();
       controller.abort(signal.reason);
-      break;
+      return controller.signal;
     }
-    signal.addEventListener('abort', () => controller.abort(signal.reason), {
-      once: true,
-    });
+    const onAbort = () => {
+      detach();
+      controller.abort(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    listeners.push(() => signal.removeEventListener('abort', onAbort));
   }
+
+  // Nothing else releases them when the request simply succeeds.
+  controller.signal.addEventListener('abort', detach, { once: true });
   return controller.signal;
 }

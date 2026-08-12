@@ -67,6 +67,25 @@ export class MavenProvider implements EcosystemProvider {
     return COORDINATE_PATTERN.test(name);
   }
 
+  /**
+   * Maven versions, including the range syntax `[1.0,2.0)` and `(,1.0]`.
+   *
+   * Narrower than the shared default in two ways that matter here. This is the
+   * one provider that writes versions into a *markup* file, and the shared
+   * grammar permits `<` and `>` — inert on a command line, but enough to
+   * produce a POM that no longer parses. `$` and quotes are excluded for the
+   * usual command-line reasons; nothing Maven calls a version contains any of
+   * them.
+   */
+  isValidVersion(version: string): boolean {
+    // A range opens with `[` or `(`, so the first character cannot be
+    // restricted to alphanumerics the way the shared grammar does.
+    return (
+      version.length <= 256 &&
+      /^[A-Za-z0-9[(][A-Za-z0-9._+\-[\](),]*$/.test(version)
+    );
+  }
+
   async parse(
     absolutePath: string,
     text: string,
@@ -261,7 +280,9 @@ export class MavenProvider implements EcosystemProvider {
       const body = manifestText.slice(block.start, block.end);
       const updated = body.replace(
         /<version>[^<]*<\/version>/,
-        `<version>${edit.version}</version>`,
+        // `$` is meaningful in a replacement string (`$1`, `$&`), so the
+        // version goes in through a function rather than by interpolation.
+        () => `<version>${escapeXml(edit.version)}</version>`,
       );
       return (
         manifestText.slice(0, block.start) +
@@ -282,15 +303,15 @@ export class MavenProvider implements EcosystemProvider {
     const inner = `${indent}    `;
 
     const versionLine = edit.version
-      ? `\n${inner}<version>${edit.version}</version>`
+      ? `\n${inner}<version>${escapeXml(edit.version)}</version>`
       : '';
     const scopeLine =
       edit.scope === 'dev' ? `\n${inner}<scope>test</scope>` : '';
 
     const snippet =
       `${indent}<dependency>\n` +
-      `${inner}<groupId>${groupId}</groupId>\n` +
-      `${inner}<artifactId>${artifactId}</artifactId>` +
+      `${inner}<groupId>${escapeXml(groupId)}</groupId>\n` +
+      `${inner}<artifactId>${escapeXml(artifactId)}</artifactId>` +
       `${versionLine}${scopeLine}\n` +
       `${indent}</dependency>\n`;
 
@@ -425,6 +446,22 @@ function mavenScope(entry: PomDependency): DepScope {
   if (raw === 'test') return 'dev';
   if (raw === 'provided' || raw === 'system') return 'build';
   return normalizeScope(raw);
+}
+
+/**
+ * Escapes text destined for an XML element body.
+ *
+ * The second layer, not the first: `isValidVersion` and `isValidPackageName`
+ * already refuse the characters that matter. This is here because those two
+ * guard the *host's* path into `editManifest`, and a writer that produces
+ * well-formed XML whatever it is handed does not depend on every future caller
+ * having validated first — which is the assumption that tends to lapse.
+ */
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function toArray<T>(value: T | T[] | undefined): T[] {

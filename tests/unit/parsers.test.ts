@@ -732,6 +732,37 @@ describe('Maven provider', () => {
       updated!.lastIndexOf('</dependencies>'),
     );
   });
+
+  /*
+   * This is the one provider that writes a version into markup rather than
+   * onto a command line, so its version grammar has to be narrower than the
+   * shared default — which permits `<` and `>` because they are inert in a
+   * shell.
+   */
+  it('refuses versions carrying characters that would break the POM', () => {
+    expect(provider.isValidVersion?.('33.1.0-jre')).toBe(true);
+    // Maven ranges are legitimate and must still pass.
+    expect(provider.isValidVersion?.('[1.0,2.0)')).toBe(true);
+    expect(provider.isValidVersion?.('(,1.0]')).toBe(true);
+
+    expect(provider.isValidVersion?.('1.0<x>')).toBe(false);
+    expect(provider.isValidVersion?.('1.0</version><scope>system')).toBe(false);
+    expect(provider.isValidVersion?.('1.0"; rm -rf /')).toBe(false);
+  });
+
+  it('escapes what it writes, so a bad version cannot malform the document', () => {
+    // Defence in depth: validation guards the host's path in, and the writer
+    // produces well-formed XML regardless of what reaches it.
+    const added = provider.editManifest(pom, {
+      kind: 'add',
+      name: 'com.example:widget',
+      version: '1.0 & <b>',
+      scope: 'prod',
+    });
+
+    expect(added).toContain('<version>1.0 &amp; &lt;b&gt;</version>');
+    expect(added).not.toContain('<version>1.0 & <b></version>');
+  });
 });
 
 describe('Gradle provider', () => {

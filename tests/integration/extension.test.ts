@@ -75,6 +75,31 @@ describe('scanner discovery', () => {
     }
   });
 
+  /*
+   * Manifests are read a few at a time rather than one after another, so which
+   * read finishes first depends on the disk. Nothing downstream should depend
+   * on that: results are collected by position and the groups are sorted by
+   * label, and this is what says so.
+   */
+  it('returns the same groups in the same order on every scan', async () => {
+    const first = await api.scan({ checkUpdates: false });
+    const firstLabels = first.groups.map((group) => group.label);
+
+    for (let run = 0; run < 3; run++) {
+      const next = await api.scan({ checkUpdates: false });
+      assert.deepEqual(
+        next.groups.map((group) => group.label),
+        firstLabels,
+        'group order varied between scans',
+      );
+      assert.deepEqual(
+        next.groups.map((group) => group.dependencies.length),
+        first.groups.map((group) => group.dependencies.length),
+        'dependency counts varied between scans',
+      );
+    }
+  });
+
   it('parses dependencies with their scopes intact', async () => {
     const result = await api.scan({ checkUpdates: false });
 

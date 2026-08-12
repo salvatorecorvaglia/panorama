@@ -5,7 +5,7 @@
 .vscode-test.mjs
 .github/**
 src/**
-test/**
+tests/**
 node_modules/**
 out/**
 **/*.ts

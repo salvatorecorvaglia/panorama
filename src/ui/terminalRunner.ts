@@ -11,6 +11,7 @@
  */
 
 import * as vscode from 'vscode';
+import { SerialQueue } from '../core/serialQueue.js';
 import type { Command } from '../providers/provider.js';
 import { buildCommandLine, detectShell } from './quoting.js';
 
@@ -19,6 +20,9 @@ const TERMINAL_NAME = 'Panorama';
 export class TerminalRunner implements vscode.Disposable {
   private terminal: vscode.Terminal | undefined;
   private readonly disposables: vscode.Disposable[] = [];
+
+  /** See `SerialQueue`: one terminal cannot run two commands at once. */
+  private readonly queue = new SerialQueue();
 
   constructor() {
     this.disposables.push(
@@ -31,14 +35,20 @@ export class TerminalRunner implements vscode.Disposable {
   }
 
   /**
-   * Runs `command` and resolves once it finishes.
+   * Runs `command` once every command queued before it has finished.
    *
    * With shell integration we get the real exit code. Without it (an unsupported
    * shell, or integration still starting up) we fall back to a bounded wait and
    * report `undefined`, letting the caller refresh from disk instead of trusting
    * a status it cannot know.
    */
-  async run(command: Command): Promise<{ exitCode: number | undefined }> {
+  run(command: Command): Promise<{ exitCode: number | undefined }> {
+    return this.queue.run(() => this.execute(command));
+  }
+
+  private async execute(
+    command: Command,
+  ): Promise<{ exitCode: number | undefined }> {
     const terminal = this.ensureTerminal(command.cwd);
     terminal.show(true);
 

@@ -35,8 +35,32 @@ export type WebviewMessage =
       manifestPath: string;
     }
   | { type: 'update'; depKey: string; toVersion: string }
-  | { type: 'updateAll'; manifestPath: string }
+  /**
+   * Bulk update for one project, or — with no `manifestPath` — for a project
+   * the user has yet to choose.
+   *
+   * The toolbar's global button counts outdated packages across the whole
+   * workspace, so it cannot name a single manifest without picking one
+   * arbitrarily. Omitting the path routes through the same quick-pick the
+   * `panorama.updateAll` command uses.
+   */
+  | { type: 'updateAll'; manifestPath?: string }
   | { type: 'uninstall'; depKey: string }
+  /*
+   * Bulk actions are one message, not one per package.
+   *
+   * The host handles messages concurrently (`void this.handleMessage(...)`), so
+   * a selection of ten packages posted as ten `update` messages produced ten
+   * overlapping handlers: ten modal confirmations stacked on each other, and
+   * ten `TerminalRunner.run` calls interleaving on a terminal that is a single
+   * shared resource. Carrying the whole selection lets the host confirm once
+   * and run the commands in order.
+   */
+  | {
+      type: 'bulkUpdate';
+      targets: Array<{ depKey: string; toVersion: string }>;
+    }
+  | { type: 'bulkUninstall'; depKeys: string[] }
   | { type: 'requestDetails'; depKey: string }
   | { type: 'requestWhy'; depKey: string }
   | { type: 'openExternal'; url: string }

@@ -76,12 +76,6 @@
         "title": "Why Is This Installed?",
         "category": "Panorama",
         "icon": "$(type-hierarchy)"
-      },
-      {
-        "command": "panorama.revealDependency",
-        "title": "Reveal Package in Panel",
-        "category": "Panorama",
-        "icon": "$(package)"
       }
     ],
     "viewsContainers": {
@@ -98,7 +92,7 @@
         {
           "type": "webview",
           "id": "panorama.sidebar",
-          "name": "Panorama Visual Manager",
+          "name": "Panorama",
           "contextualTitle": "Panorama",
           "icon": "resources/panorama.svg"
         }
@@ -130,12 +124,6 @@
           "command": "panorama.updateAll",
           "when": "view == panorama.sidebar",
           "group": "1_modify@1"
-        }
-      ],
-      "commandPalette": [
-        {
-          "command": "panorama.revealDependency",
-          "when": "false"
         }
       ]
     },

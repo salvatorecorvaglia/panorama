@@ -263,3 +263,258 @@ describe('filtering', () => {
     expect(screen.getByText('lodash')).toBeInTheDocument();
   });
 });
+
+/*
+ * Bulk actions used to post one message per selected package. The host handles
+ * messages concurrently, so N messages meant N modal confirmations and N
+ * commands racing on one terminal — the whole selection travels as one message
+ * precisely so the host can confirm once and run them in order.
+ */
+describe('bulk actions', () => {
+  function twoOutdated(): ProjectGroup {
+    const base = group().dependencies[0];
+    return {
+      ...group(),
+      dependencies: [
+        base,
+        { ...base, key: 'lodash', name: 'lodash', latest: '5.0.0' },
+      ],
+    };
+  }
+
+  async function selectAll() {
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: /Select all dependencies/i }),
+    );
+  }
+
+  it('posts one bulkUpdate carrying every selected package', async () => {
+    renderLoaded([twoOutdated()]);
+    await selectAll();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Update Selected/i }),
+    );
+
+    const bulk = posted.filter(
+      (message): message is { type: string; targets: unknown[] } =>
+        (message as { type?: string }).type === 'bulkUpdate',
+    );
+    expect(bulk).toHaveLength(1);
+    expect(bulk[0].targets).toEqual([
+      { depKey: 'react', toVersion: '19.0.0' },
+      { depKey: 'lodash', toVersion: '5.0.0' },
+    ]);
+    // The per-package message is what raced; it must not be sent as well.
+    expect(
+      posted.filter((m) => (m as { type?: string }).type === 'update'),
+    ).toHaveLength(0);
+  });
+
+  it('posts one bulkUninstall carrying every selected package', async () => {
+    renderLoaded([twoOutdated()]);
+    await selectAll();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Remove Selected/i }),
+    );
+
+    const bulk = posted.filter(
+      (message): message is { type: string; depKeys: string[] } =>
+        (message as { type?: string }).type === 'bulkUninstall',
+    );
+    expect(bulk).toHaveLength(1);
+    expect(bulk[0].depKeys.sort()).toEqual(['lodash', 'react']);
+    expect(
+      posted.filter((m) => (m as { type?: string }).type === 'uninstall'),
+    ).toHaveLength(0);
+  });
+
+  it('says nothing when the selection has no upgrade to apply', async () => {
+    // Selected, but already current: there is no version to update to, so the
+    // host should not be asked to confirm an empty batch.
+    const current = group().dependencies[0];
+    renderLoaded([
+      {
+        ...group(),
+        dependencies: [
+          { ...current, latest: undefined, updateKind: 'none' as const },
+        ],
+      },
+    ]);
+    await selectAll();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Update Selected/i }),
+    );
+
+    expect(
+      posted.filter((m) => (m as { type?: string }).type === 'bulkUpdate'),
+    ).toHaveLength(0);
+  });
+});
+
+/*
+ * The toolbar's count is the whole workspace's, so its action has to be too.
+ * It used to pass `groups[0]` regardless, updating one project while the label
+ * promised all of them.
+ */
+describe('global update all', () => {
+  const outdatedSummary = {
+    ...EMPTY_SUMMARY,
+    totalDependencies: 2,
+    outdated: 2,
+  };
+
+  function renderProjects(groups: ProjectGroup[]) {
+    const result = render(<App />);
+    send({ type: 'state', groups, summary: outdatedSummary });
+    return result;
+  }
+
+  it('names the only project when there is just one', async () => {
+    renderProjects([group()]);
+    // The toolbar's button carries the workspace-wide count; the per-group
+    // headers render an "Update all" of their own, which this must not match.
+    await userEvent.click(
+      screen.getByRole('button', { name: /Update All \(/ }),
+    );
+
+    expect(posted).toContainEqual({
+      type: 'updateAll',
+      manifestPath: '/p/package.json',
+    });
+  });
+
+  it('names no project when there are several, so the host asks', async () => {
+    renderProjects([
+      group(),
+      { ...group(), label: 'api', manifestPath: '/q/package.json' },
+    ]);
+    // The toolbar's button carries the workspace-wide count; the per-group
+    // headers render an "Update all" of their own, which this must not match.
+    await userEvent.click(
+      screen.getByRole('button', { name: /Update All \(/ }),
+    );
+
+    const updateAll = posted.filter(
+      (message): message is { type: string; manifestPath?: string } =>
+        (message as { type?: string }).type === 'updateAll',
+    );
+    expect(updateAll).toHaveLength(1);
+    expect(updateAll[0].manifestPath).toBeUndefined();
+  });
+});
+
+/*
+ * Selection has to survive filtering, and not survive a package disappearing.
+ *
+ * The bulk toolbar's accessible name carries the count, so these assert on
+ * that rather than on body text — "Selected 2" and "Update Selected" both
+ * contain the word.
+ */
+describe('selection bookkeeping', () => {
+  function twoPackages(): ProjectGroup {
+    const base = group().dependencies[0];
+    return {
+      ...group(),
+      dependencies: [base, { ...base, key: 'lodash', name: 'lodash' }],
+    };
+  }
+
+  /** The select-all box, whose label changes when a filter is applied. */
+  function selectAllBox(): HTMLInputElement {
+    return screen.getByRole('checkbox', {
+      name: /Select all/i,
+    }) as HTMLInputElement;
+  }
+
+  /** The per-row boxes, i.e. every checkbox that is not the header's. */
+  function rowBoxes(): HTMLElement[] {
+    const header = selectAllBox();
+    return screen.getAllByRole('checkbox').filter((box) => box !== header);
+  }
+
+  function selectedCount(): number {
+    const bar = screen.queryByRole('toolbar', { name: /Actions for/i });
+    if (!bar) return 0;
+    const label = bar.getAttribute('aria-label') ?? '';
+    return Number(/Actions for (\d+)/.exec(label)?.[1] ?? 0);
+  }
+
+  /** The checkbox belonging to a named package's row. */
+  function boxForRow(name: string): HTMLElement {
+    const row = screen.getByText(name).closest('[role="row"]');
+    if (!row) throw new Error(`no row for ${name}`);
+    return within(row as HTMLElement).getByRole('checkbox');
+  }
+
+  it('keeps selections the filter is hiding when select-all is used', async () => {
+    renderLoaded([twoPackages()]);
+
+    // Select react specifically — it is the row the filter below will hide.
+    await userEvent.click(boxForRow('react'));
+    expect(selectedCount()).toBe(1);
+
+    // Narrow to the other package, then select all of what is showing.
+    await userEvent.type(
+      screen.getByRole('searchbox', { name: /Filter installed packages/i }),
+      'loda',
+    );
+    await waitFor(() => expect(screen.queryByText('react')).toBeNull());
+    await userEvent.click(selectAllBox());
+
+    // Both: replacing the set would have discarded the hidden row.
+    await waitFor(() => expect(selectedCount()).toBe(2));
+  });
+
+  it('renames the select-all box when a filter is narrowing the list', async () => {
+    renderLoaded([twoPackages()]);
+    expect(
+      screen.getByRole('checkbox', { name: /Select all dependencies/i }),
+    ).toBeInTheDocument();
+
+    await userEvent.type(
+      screen.getByRole('searchbox', { name: /Filter installed packages/i }),
+      'loda',
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('checkbox', { name: /Select all matching/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('drops selected rows a new scan no longer contains', async () => {
+    renderLoaded([twoPackages()]);
+    await userEvent.click(selectAllBox());
+    expect(selectedCount()).toBe(2);
+
+    // lodash has been uninstalled; its key now names nothing.
+    send({
+      type: 'state',
+      groups: [group()],
+      summary: { ...EMPTY_SUMMARY, totalDependencies: 1 },
+    });
+
+    await waitFor(() => expect(selectedCount()).toBe(1));
+  });
+
+  it('marks the select-all box indeterminate on a partial selection', async () => {
+    renderLoaded([twoPackages()]);
+    expect(selectAllBox().indeterminate).toBe(false);
+
+    const boxes = rowBoxes();
+    await userEvent.click(boxes[0]);
+
+    // Neither all nor none, and the box has to say so rather than rendering
+    // identically to an empty selection.
+    await waitFor(() => expect(selectAllBox().indeterminate).toBe(true));
+    expect(selectAllBox().checked).toBe(false);
+
+    await userEvent.click(boxes[1]);
+    await waitFor(() => expect(selectAllBox().indeterminate).toBe(false));
+    expect(selectAllBox().checked).toBe(true);
+  });
+});

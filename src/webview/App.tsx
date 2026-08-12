@@ -129,31 +129,48 @@ export function App() {
     });
   }, []);
 
+  /*
+   * Select-all acts on the rows it was given — the ones currently visible —
+   * and leaves any selection outside them alone.
+   *
+   * It used to replace the whole set, so ticking the header box while a filter
+   * was applied silently discarded everything selected in the rows the filter
+   * had hidden. An empty list still means "clear everything", which is what the
+   * bulk bar's own Clear button asks for.
+   */
   const handleToggleSelectAll = useCallback((depKeys: string[]) => {
     setSelectedDepKeys((prev) => {
       if (depKeys.length === 0) return new Set();
-      const allSelected = depKeys.every((key) => prev.has(key));
-      if (allSelected) {
-        return new Set();
+      const next = new Set(prev);
+      if (depKeys.every((key) => prev.has(key))) {
+        for (const key of depKeys) next.delete(key);
+      } else {
+        for (const key of depKeys) next.add(key);
       }
-      return new Set(depKeys);
+      return next;
     });
   }, []);
 
+  /*
+   * One message carrying the whole selection, not one per package — see the
+   * `bulkUpdate` comment in `core/protocol.ts` for why N messages raced.
+   */
   const handleBulkUpdateSelected = useCallback(() => {
+    const targets: Array<{ depKey: string; toVersion: string }> = [];
     for (const group of groups) {
       for (const dep of group.dependencies) {
         if (selectedDepKeys.has(dep.key) && hasUpdate(dep) && dep.latest) {
-          post({ type: 'update', depKey: dep.key, toVersion: dep.latest });
+          targets.push({ depKey: dep.key, toVersion: dep.latest });
         }
       }
     }
+    if (targets.length === 0) return;
+    post({ type: 'bulkUpdate', targets });
   }, [groups, selectedDepKeys]);
 
   const handleBulkRemoveSelected = useCallback(() => {
-    for (const key of selectedDepKeys) {
-      post({ type: 'uninstall', depKey: key });
-    }
+    if (selectedDepKeys.size === 0) return;
+    post({ type: 'bulkUninstall', depKeys: [...selectedDepKeys] });
   }, [selectedDepKeys]);
 
   /*
@@ -184,11 +201,31 @@ export function App() {
   useEffect(() => {
     const dispose = onHostMessage((message: HostMessage) => {
       switch (message.type) {
-        case 'state':
+        case 'state': {
           groupsRef.current = message.groups;
           setGroups(message.groups);
           setSummary(message.summary);
           setLoaded(true);
+          /*
+           * Drop selected rows the new scan no longer has.
+           *
+           * A key names a package in a manifest, so uninstalling one — or
+           * removing the manifest — leaves a key behind that matches nothing.
+           * The bulk bar counts the set, so those ghosts kept inflating "3
+           * packages selected" past what the table could show, and the host
+           * silently skipped them.
+           */
+          const live = new Set<string>();
+          for (const group of message.groups) {
+            for (const dep of group.dependencies) live.add(dep.key);
+          }
+          setSelectedDepKeys((prev) => {
+            const next = new Set<string>();
+            for (const key of prev) {
+              if (live.has(key)) next.add(key);
+            }
+            return next.size === prev.size ? prev : next;
+          });
           /*
            * A new scan can have changed the graph — an install, an update, a
            * lockfile written by something else. The cached answers describe the
@@ -198,6 +235,7 @@ export function App() {
            */
           setWhyByKey({});
           break;
+        }
 
         case 'depDetails': {
           /*
@@ -278,6 +316,21 @@ export function App() {
           setSelectedKey(message.depKey);
           setScrollToKey(message.depKey);
           setRevealSection(message.reveal);
+          /*
+           * Clear the filters so the row being revealed is actually in the
+           * table.
+           *
+           * The drawer reads from `groups` and would open regardless, but the
+           * table renders `filteredGroups` — so asking "why is this installed"
+           * about a package the current filters exclude used to open a drawer
+           * beside a table with no matching row, and the scroll request found
+           * nothing to scroll to. The command names a specific package; that
+           * is a clearer statement of intent than a filter left over from
+           * earlier.
+           */
+          setFilters((current) =>
+            isFiltering(current) ? defaultFilters() : current,
+          );
           break;
       }
     });
@@ -514,11 +567,11 @@ export function App() {
         onToggleInstall={() => setInstallOpen((open) => !open)}
         onRefresh={() => post({ type: 'refresh' })}
         onCheckUpdates={() => post({ type: 'checkUpdates' })}
+        // No manifest means "the user has not chosen a project yet"; the host
+        // asks. Substituting `groups[0]` here is what made the global button
+        // update one project while claiming to update them all.
         onUpdateAll={(manifestPath) =>
-          post({
-            type: 'updateAll',
-            manifestPath: manifestPath ?? groups[0]?.manifestPath ?? '',
-          })
+          post({ type: 'updateAll', manifestPath })
         }
       />
 

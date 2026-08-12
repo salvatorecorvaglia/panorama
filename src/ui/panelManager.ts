@@ -8,7 +8,6 @@
  * reach the filesystem or spawn a terminal.
  */
 
-import { randomBytes } from 'node:crypto';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { explainDependency } from '../core/depGraph.js';
@@ -26,6 +25,7 @@ import type { ProviderContext } from '../providers/provider.js';
 import { validateVersion } from '../providers/provider.js';
 import { providerFor, providerForPath } from '../providers/registry.js';
 import { TerminalRunner } from './terminalRunner.js';
+import { createNonce, openExternalUrl } from './webviewSecurity.js';
 
 export class PanelManager implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
@@ -219,7 +219,21 @@ export class PanelManager implements vscode.Disposable {
         return;
 
       case 'updateAll':
-        await this.updateAll(message.manifestPath);
+        // Without a manifest the command owns the choice, because it owns the
+        // quick-pick that makes it.
+        if (message.manifestPath === undefined) {
+          await vscode.commands.executeCommand('panorama.updateAll');
+        } else {
+          await this.updateAll(message.manifestPath);
+        }
+        return;
+
+      case 'bulkUpdate':
+        await this.handleBulkUpdate(message.targets);
+        return;
+
+      case 'bulkUninstall':
+        await this.handleBulkUninstall(message.depKeys);
         return;
 
       case 'uninstall':
@@ -360,6 +374,7 @@ export class PanelManager implements vscode.Disposable {
       if (command.writesManifest === false) {
         await this.applyManifestEdit(provider, manifestPath, edit);
       }
+      await this.refresh();
       return;
     }
 
@@ -376,6 +391,7 @@ export class PanelManager implements vscode.Disposable {
       });
       await this.openManifest(manifestPath);
     }
+    await this.refresh();
   }
 
   private async handleUpdate(depKey: string, toVersion: string): Promise<void> {
@@ -405,6 +421,33 @@ export class PanelManager implements vscode.Disposable {
       if (choice !== 'Update') return;
     }
 
+    const applied = await this.applyUpdate(dep, toVersion);
+
+    if (!applied) {
+      this.post({
+        type: 'error',
+        message:
+          `${dep.name} is declared in a form Panorama cannot rewrite safely ` +
+          `(a computed or inherited version). Opening the file instead.`,
+      });
+      await this.openManifest(dep.manifestPath, dep.name);
+    }
+    await this.refresh();
+  }
+
+  /**
+   * Updates one dependency: the provider's CLI command where it has one, its
+   * manifest edit where it does not. Returns false when neither path applied.
+   *
+   * Deliberately free of confirmation prompts and refreshes. Both belong to the
+   * caller, because a bulk action has to ask once and refresh once rather than
+   * once per package — and a per-package prompt is exactly what made the bulk
+   * path stack ten modal dialogs on top of each other.
+   */
+  private async applyUpdate(
+    dep: Dependency,
+    toVersion: string,
+  ): Promise<boolean> {
     const provider = providerFor(dep.ecosystem);
     const toolchain = await provider.detectToolchain(
       dep.manifestPath,
@@ -423,24 +466,102 @@ export class PanelManager implements vscode.Disposable {
       if (command.writesManifest === false) {
         await this.applyManifestEdit(provider, dep.manifestPath, edit);
       }
-      return;
+      return true;
     }
 
-    const applied = await this.applyManifestEdit(
-      provider,
-      dep.manifestPath,
-      edit,
-    );
+    return this.applyManifestEdit(provider, dep.manifestPath, edit);
+  }
 
-    if (!applied) {
+  /**
+   * Every selected package, confirmed once and run in order.
+   *
+   * Sequential rather than parallel for the same reason `updateAll` is: these
+   * are package-manager writes against a shared lockfile, run through a single
+   * terminal.
+   */
+  private async handleBulkUpdate(
+    targets: Array<{ depKey: string; toVersion: string }>,
+  ): Promise<void> {
+    // Rows the table no longer holds, and versions that do not pass their
+    // provider's grammar, are dropped before anything is confirmed or run —
+    // both arrive from the webview and neither is more trusted here than in
+    // the single-package path.
+    const resolved: Array<{ dep: Dependency; toVersion: string }> = [];
+    for (const target of targets) {
+      const dep = this.findDependency(target.depKey)?.dep;
+      if (!dep) continue;
+      if (!validateVersion(providerFor(dep.ecosystem), target.toVersion)) {
+        continue;
+      }
+      resolved.push({ dep, toVersion: target.toVersion });
+    }
+
+    if (resolved.length === 0) return;
+
+    const majors = resolved.filter((entry) => entry.dep.updateKind === 'major');
+    const detail =
+      majors.length > 0
+        ? `${resolved.length} package(s), including ${majors.length} major upgrade(s) that may contain breaking changes.`
+        : `${resolved.length} package(s), all minor or patch.`;
+
+    const choice = await vscode.window.showWarningMessage(
+      `Update ${resolved.length} selected package(s)?`,
+      { modal: true, detail },
+      'Update',
+    );
+    if (choice !== 'Update') return;
+
+    // Named rather than counted: a package Panorama cannot rewrite is the one
+    // the user has to go and edit by hand, so it has to be identifiable.
+    const skipped: string[] = [];
+    for (const entry of resolved) {
+      if (!(await this.applyUpdate(entry.dep, entry.toVersion))) {
+        skipped.push(entry.dep.name);
+      }
+    }
+
+    if (skipped.length > 0) {
       this.post({
         type: 'error',
         message:
-          `${dep.name} is declared in a form Panorama cannot rewrite safely ` +
-          `(a computed or inherited version). Opening the file instead.`,
+          `Could not update ${skipped.join(', ')} automatically — ` +
+          `declared in a form Panorama cannot rewrite safely.`,
       });
-      await this.openManifest(dep.manifestPath, dep.name);
     }
+    await this.refresh();
+  }
+
+  private async handleBulkUninstall(depKeys: string[]): Promise<void> {
+    const deps = depKeys
+      .map((key) => this.findDependency(key)?.dep)
+      .filter((dep): dep is Dependency => dep !== undefined);
+
+    if (deps.length === 0) return;
+
+    const choice = await vscode.window.showWarningMessage(
+      `Remove ${deps.length} selected package(s)?`,
+      {
+        modal: true,
+        detail: deps.map((dep) => dep.name).join(', '),
+      },
+      'Remove',
+    );
+    if (choice !== 'Remove') return;
+
+    const skipped: string[] = [];
+    for (const dep of deps) {
+      if (!(await this.applyUninstall(dep))) {
+        skipped.push(dep.name);
+      }
+    }
+
+    if (skipped.length > 0) {
+      this.post({
+        type: 'error',
+        message: `Could not remove ${skipped.join(', ')} automatically.`,
+      });
+    }
+    await this.refresh();
   }
 
   /** Also invoked from the `panorama.updateAll` command, not just the webview. */
@@ -485,6 +606,7 @@ export class PanelManager implements vscode.Disposable {
     }
 
     await this.runCommand(command.argv, command.cwd, command.description);
+    await this.refresh();
   }
 
   private async handleUninstall(depKey: string): Promise<void> {
@@ -499,6 +621,20 @@ export class PanelManager implements vscode.Disposable {
     );
     if (choice !== 'Remove') return;
 
+    const applied = await this.applyUninstall(dep);
+
+    if (!applied) {
+      this.post({
+        type: 'error',
+        message: `Panorama could not remove ${dep.name} automatically. Opening the manifest.`,
+      });
+      await this.openManifest(dep.manifestPath, dep.name);
+    }
+    await this.refresh();
+  }
+
+  /** The uninstall counterpart to `applyUpdate`: no prompt, no refresh. */
+  private async applyUninstall(dep: Dependency): Promise<boolean> {
     const provider = providerFor(dep.ecosystem);
     const toolchain = await provider.detectToolchain(
       dep.manifestPath,
@@ -516,22 +652,10 @@ export class PanelManager implements vscode.Disposable {
       if (command.writesManifest === false) {
         await this.applyManifestEdit(provider, dep.manifestPath, edit);
       }
-      return;
+      return true;
     }
 
-    const applied = await this.applyManifestEdit(
-      provider,
-      dep.manifestPath,
-      edit,
-    );
-
-    if (!applied) {
-      this.post({
-        type: 'error',
-        message: `Panorama could not remove ${dep.name} automatically. Opening the manifest.`,
-      });
-      await this.openManifest(dep.manifestPath, dep.name);
-    }
+    return this.applyManifestEdit(provider, dep.manifestPath, edit);
   }
 
   private async handleDetails(depKey: string): Promise<void> {
@@ -592,20 +716,48 @@ export class PanelManager implements vscode.Disposable {
     }
   }
 
-  /** Runs a command and refreshes once it completes. */
+  /**
+   * Runs one command and reports whether it failed.
+   *
+   * Refreshing is the caller's job, not this method's: a bulk action runs many
+   * commands and should rescan the workspace once at the end rather than after
+   * each package.
+   *
+   * A non-zero exit is surfaced. It used to be discarded, so a failed install —
+   * a typo'd version, a private registry needing auth, no network — produced a
+   * refresh that changed nothing and no explanation of why. `undefined` is
+   * different from a failure: it means the shell reported no status at all
+   * (no shell integration), which is not evidence of anything.
+   */
   private async runCommand(
     argv: string[],
     cwd: string,
     description: string,
   ): Promise<void> {
     this.setBusy(true, description);
+    let exitCode: number | undefined;
     try {
-      await this.terminal.run({ argv, cwd, description });
+      ({ exitCode } = await this.terminal.run({ argv, cwd, description }));
     } finally {
       this.setBusy(false);
     }
-    // The watcher usually fires first; this makes the refresh deterministic
-    // even on filesystems where watch events are unreliable.
+
+    if (exitCode !== undefined && exitCode !== 0) {
+      this.post({
+        type: 'error',
+        message: `${argv.join(' ')} failed with exit code ${exitCode}. See the Panorama terminal for details.`,
+      });
+    }
+  }
+
+  /**
+   * Rescans the workspace.
+   *
+   * The watcher usually fires first; going through the command makes the
+   * refresh deterministic even on filesystems where watch events are
+   * unreliable.
+   */
+  private async refresh(): Promise<void> {
     await vscode.commands.executeCommand('panorama.refresh');
   }
 
@@ -635,7 +787,6 @@ export class PanelManager implements vscode.Disposable {
     if (!ok) return false;
 
     await document.save();
-    await vscode.commands.executeCommand('panorama.refresh');
     return true;
   }
 
@@ -653,15 +804,7 @@ export class PanelManager implements vscode.Disposable {
 
   /** Only ever opens http(s) links, so a malformed registry field is inert. */
   private async openExternal(url: string): Promise<void> {
-    try {
-      const parsed = vscode.Uri.parse(url, true);
-      if (parsed.scheme !== 'https' && parsed.scheme !== 'http') {
-        return;
-      }
-      await vscode.env.openExternal(parsed);
-    } catch {
-      // An unparseable URL is simply ignored.
-    }
+    await openExternalUrl(url);
   }
 
   private async openManifest(
@@ -728,15 +871,6 @@ export class PanelManager implements vscode.Disposable {
     this.terminal.dispose();
     this.panel?.dispose();
   }
-}
-
-/**
- * A CSP nonce has to be unguessable to be worth anything, so it comes from the
- * CSPRNG rather than `Math.random`. Base64url keeps it valid inside the
- * `script-src 'nonce-...'` directive without escaping.
- */
-function createNonce(): string {
-  return randomBytes(24).toString('base64url');
 }
 
 function describeError(error: unknown): string {

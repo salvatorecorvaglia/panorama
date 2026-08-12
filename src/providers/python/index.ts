@@ -22,6 +22,7 @@ import type {
   Toolchain,
   ToolchainId,
 } from '../../core/types.js';
+import { maxVersion } from '../../core/versions/index.js';
 import {
   type Command,
   dependencyKey,
@@ -438,7 +439,12 @@ export class PythonProvider implements EcosystemProvider {
       const versions = await this.fetchVersions([query], ctx, signal);
       results.push({
         name: exact.name,
-        version: versions.get(query)?.versions.at(-1) ?? '',
+        // Ordered by PEP 440, not by position. The simple index makes no
+        // promise about the order of `versions`, so taking the last entry
+        // offered — and installed — whatever PyPI happened to list last,
+        // which can be an old patch release or a prerelease.
+        version:
+          maxVersion('python', versions.get(query)?.versions ?? []) ?? '',
         description: exact.description,
         ecosystem: 'python',
         deprecated: exact.deprecated,
@@ -488,6 +494,14 @@ export class PythonProvider implements EcosystemProvider {
         signal,
         headers: { Accept: 'application/vnd.pypi.simple.v1+json' },
         timeoutMs: 60_000,
+        /*
+         * Keeping this out of `globalState` is only half the job: the ETag
+         * cache in `http.ts` retains full response bodies, so revalidating a
+         * tens-of-megabyte document would pin the raw JSON in memory for the
+         * life of the window — undoing `persist: false` one layer down. The
+         * parsed name list above is the copy worth keeping.
+         */
+        noCache: true,
       });
       const names = response.projects.map((entry) => normalizeName(entry.name));
       await ctx.cache.set(key, names, TTL.nameIndex, { persist: false });

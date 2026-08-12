@@ -64,7 +64,8 @@
   --panorama-group-height: 40px;
 
   /*
-   * The severity map, defined once and mirrored by `treeProvider.iconFor()`.
+   * The severity map: the one definition of what each state looks like, built
+   * on the editor's own chart palette so it tracks the active theme.
    * Red is reserved for "vulnerable" so it means one thing; a major update is
    * orange. Deprecation shares yellow with a minor update, which is safe
    * because deprecation is always shown with its own glyph and label rather
@@ -390,6 +391,20 @@ button.danger.ghost {
  * putting it on `.table` alone would slide the rows out from under their own
  * column headings.
  */
+/*
+ * Wraps the bulk bar and the grid.
+ *
+ * The bar cannot live inside the grid — `role="grid"` may only contain rows —
+ * so it is a sibling, and this is the flex column that used to be the grid
+ * itself. It takes the flex sizing; the grid keeps the scrolling.
+ */
+.table__wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .table__grid {
   flex: 1;
   display: flex;
@@ -1035,6 +1050,45 @@ a:hover,
   }
 }
 
+/*
+ * Forced-colours mode (Windows High Contrast) replaces the whole palette with
+ * the user's own, so the theme variables above stop being what is drawn. What
+ * survives is the *structure*: a badge that distinguishes itself only by
+ * colour becomes indistinguishable, and a transparent border becomes invisible.
+ *
+ * The status badges already carry their state as text (MAJOR, VULNERABLE), so
+ * they only need a visible edge to stay legible as badges. `SystemColor`
+ * keywords are the one palette guaranteed to be honoured here.
+ */
+@media (forced-colors: active) {
+  .badge,
+  .badge--none,
+  .env-pill,
+  .chip {
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+    color: CanvasText;
+    background: Canvas;
+  }
+
+  /* A pressed filter chip has to stay distinguishable from an unpressed one. */
+  .chip[aria-pressed="true"] {
+    color: HighlightText;
+    background: Highlight;
+  }
+
+  .row[aria-selected="true"],
+  .row--checked {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /* The severity dot conveys severity by colour alone; give it an edge. */
+  .severity-dot {
+    border: 1px solid CanvasText;
+  }
+}
+
 /* ---------- Narrow layouts ---------- */
 
 /*
@@ -1128,10 +1182,9 @@ a:hover,
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-  color: #ffffff;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
   font-size: 1.15em;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
 }
 
 .toolbar__title-group {
@@ -1160,32 +1213,13 @@ a:hover,
   gap: 4px;
   padding: 1px 7px;
   border-radius: var(--panorama-radius-pill);
-  background-color: var(--vscode-badge-background, rgba(255, 255, 255, 0.08));
-  color: var(--vscode-badge-foreground, var(--vscode-foreground));
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
   font-weight: 500;
 }
 
-.env-pill--status {
-  background-color: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
-  border: 1px solid rgba(34, 197, 94, 0.3);
-}
-
-.env-pill__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: #22c55e;
-}
-
 .env-pill--toolchain {
-  background-color: rgba(14, 165, 233, 0.15);
-  color: #38bdf8;
-  border: 1px solid rgba(14, 165, 233, 0.3);
-}
-
-.env-pill--count {
-  color: var(--vscode-descriptionForeground);
+  color: var(--vscode-textLink-foreground);
   background: transparent;
   border: 1px solid var(--vscode-panel-border);
 }
@@ -1194,19 +1228,16 @@ a:hover,
 
 .btn-update-all-primary,
 .btn-update-primary {
-  background: #0284c7;
-  color: #ffffff;
-  border: none;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: 1px solid var(--vscode-button-border, transparent);
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  transition:
-    background-color 0.15s ease,
-    transform 0.05s ease;
+  transition: background-color 0.15s ease;
 }
 
 .btn-update-all-primary:hover:not(:disabled),
 .btn-update-primary:hover:not(:disabled) {
-  background: #0369a1;
+  background: var(--vscode-button-hoverBackground);
 }
 
 .btn-update-primary {
@@ -1235,11 +1266,11 @@ a:hover,
   width: 15px;
   height: 15px;
   cursor: pointer;
-  accent-color: #0284c7;
+  accent-color: var(--vscode-button-background);
 }
 
 .row--checked {
-  background-color: var(--vscode-list-hoverBackground, rgba(2, 132, 199, 0.1));
+  background-color: var(--vscode-list-inactiveSelectionBackground);
 }
 
 .table__bulk-bar {
@@ -1247,10 +1278,7 @@ a:hover,
   align-items: center;
   justify-content: space-between;
   padding: var(--panorama-space-2) var(--panorama-gap);
-  background-color: var(
-    --vscode-button-secondaryBackground,
-    rgba(14, 165, 233, 0.12)
-  );
+  background-color: var(--vscode-editorWidget-background);
   border-bottom: 1px solid var(--vscode-panel-border);
 }
 
@@ -1267,43 +1295,48 @@ a:hover,
 
 /* Update Type Pills */
 
-.badge--patch {
-  background-color: rgba(16, 185, 129, 0.18);
-  color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.4);
+/*
+ * Status badges take their colour from the severity map at the top of this
+ * file, so the badge, the row icon and the tree all describe a state the same
+ * way — and all of them follow the active theme.
+ *
+ * `currentColor` on the border keeps each badge to one colour decision rather
+ * than a hardcoded rgba() per state. The text sits on the panel background
+ * rather than on a tinted fill, because a fixed-alpha tint of a theme colour
+ * is exactly the kind of contrast a high-contrast theme cannot correct.
+ */
+.badge--patch,
+.badge--minor,
+.badge--major,
+.badge--vuln,
+.badge--deprecated {
+  background: transparent;
+  border: 1px solid currentColor;
   font-weight: 700;
+}
+
+.badge--patch {
+  color: var(--panorama-severity-patch);
 }
 
 .badge--minor {
-  background-color: rgba(245, 158, 11, 0.18);
-  color: #f59e0b;
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  font-weight: 700;
+  color: var(--panorama-severity-minor);
 }
 
 .badge--major {
-  background-color: rgba(239, 68, 68, 0.18);
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  font-weight: 700;
+  color: var(--panorama-severity-major);
 }
 
 .badge--vuln {
-  background-color: rgba(220, 38, 38, 0.25);
-  color: #f87171;
-  border: 1px solid rgba(220, 38, 38, 0.5);
-  font-weight: 700;
+  color: var(--panorama-severity-vuln);
 }
 
 .badge--deprecated {
-  background-color: rgba(234, 179, 8, 0.2);
-  color: #eab308;
-  border: 1px solid rgba(234, 179, 8, 0.4);
-  font-weight: 700;
+  color: var(--panorama-severity-deprecated);
 }
 
 .badge--none {
-  background-color: rgba(156, 163, 175, 0.1);
+  background: transparent;
   color: var(--vscode-descriptionForeground);
   border: 1px solid transparent;
 }
@@ -1311,17 +1344,17 @@ a:hover,
 /* Version & Package Text Highlights */
 
 .version-latest--highlight {
-  color: #22c55e;
+  color: var(--vscode-charts-green);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .package-name-highlight {
-  color: var(--vscode-textLink-foreground, #38bdf8);
+  color: var(--vscode-textLink-foreground);
   font-weight: 500;
 }
 
 .highlight-outdated {
-  color: #f59e0b;
+  color: var(--panorama-severity-major);
   font-weight: 600;
 }

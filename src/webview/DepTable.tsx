@@ -27,8 +27,9 @@ import type { Dependency, Ecosystem, ProjectGroup } from '../core/types.js';
 import { compareVersions } from '../core/versions/index.js';
 import {
   currentVersion,
+  declaredLabel,
   hasUpdate,
-  SCOPE_LABELS,
+  scopeLabel,
   statusRank,
 } from '../core/vocabulary.js';
 import { formatBytes, GROUP_HEADER_HEIGHT, ROW_HEIGHT } from './format.js';
@@ -144,6 +145,17 @@ export function DepTable({
   const allSelected =
     allDepKeys.length > 0 &&
     allDepKeys.every((key) => selectedDepKeys.has(key));
+  /*
+   * Some but not all — a real third state, and the checkbox has to say so.
+   * Without it, a partial selection renders identically to none, so the box
+   * invites a click whose effect ("select the rest" or "clear what I have")
+   * cannot be predicted from what is on screen.
+   *
+   * `indeterminate` is a DOM property with no HTML attribute, so React cannot
+   * set it from JSX; a ref callback is the standard way.
+   */
+  const someSelected =
+    !allSelected && allDepKeys.some((key) => selectedDepKeys.has(key));
 
   // Read from effects that must not re-run when the list is merely rebuilt.
   const rowsRef = useRef(rows);
@@ -324,14 +336,19 @@ export function DepTable({
   );
 
   return (
-    <div
-      className="table__grid"
-      role="grid"
-      aria-label="Dependencies"
-      aria-rowcount={rows.length + 1}
-    >
+    /*
+     * The bulk bar sits outside the grid, not inside it. A `role="grid"` may
+     * only contain rows and rowgroups, so a toolbar as a direct child made the
+     * whole grid's structure invalid — assistive technology counts children to
+     * reconcile them against `aria-rowcount`.
+     */
+    <div className="table__wrapper">
       {selectedDepKeys.size > 0 && (
-        <div className="table__bulk-bar">
+        <div
+          className="table__bulk-bar"
+          role="toolbar"
+          aria-label={`Actions for ${selectedDepKeys.size} selected package(s)`}
+        >
           <span className="table__bulk-info">
             Selected <strong>{selectedDepKeys.size}</strong> package(s)
           </span>
@@ -365,26 +382,59 @@ export function DepTable({
         </div>
       )}
 
-      <div className="table__header" role="row" aria-rowindex={1}>
-        {COLUMNS.map((column) => (
-          <div
-            key={column.cell + column.label}
-            className={`cell ${column.cell}`}
-            role="columnheader"
-            aria-sort={ariaSort(column.key)}
-          >
-            {column.key === 'name' ? (
-              <div className="table__header-name-wrapper">
-                <input
-                  type="checkbox"
-                  className="row-checkbox"
-                  checked={allSelected}
-                  aria-label="Select all dependencies"
-                  onChange={() => onToggleSelectAll?.(allDepKeys)}
-                />
-                <button type="button" onClick={() => toggleSort('name')}>
+      <div
+        className="table__grid"
+        role="grid"
+        aria-label="Dependencies"
+        aria-rowcount={rows.length + 1}
+      >
+        <div className="table__header" role="row" aria-rowindex={1}>
+          {COLUMNS.map((column) => (
+            <div
+              key={column.cell + column.label}
+              className={`cell ${column.cell}`}
+              role="columnheader"
+              aria-sort={ariaSort(column.key)}
+            >
+              {column.key === 'name' ? (
+                <div className="table__header-name-wrapper">
+                  <input
+                    type="checkbox"
+                    className="row-checkbox"
+                    checked={allSelected}
+                    ref={(element) => {
+                      if (element) element.indeterminate = someSelected;
+                    }}
+                    // Names what it actually covers: with a filter applied,
+                    // the rows on screen are not every dependency there is.
+                    aria-label={
+                      filtering
+                        ? 'Select all matching dependencies'
+                        : 'Select all dependencies'
+                    }
+                    onChange={() => onToggleSelectAll?.(allDepKeys)}
+                  />
+                  <button type="button" onClick={() => toggleSort('name')}>
+                    {column.label}
+                    {sort.key === 'name' && (
+                      <Icon
+                        name={
+                          sort.direction === 'asc'
+                            ? 'chevron-up'
+                            : 'chevron-down'
+                        }
+                        className="table__sort"
+                      />
+                    )}
+                  </button>
+                </div>
+              ) : column.key ? (
+                <button
+                  type="button"
+                  onClick={() => toggleSort(column.key as SortKey)}
+                >
                   {column.label}
-                  {sort.key === 'name' && (
+                  {sort.key === column.key && (
                     <Icon
                       name={
                         sort.direction === 'asc' ? 'chevron-up' : 'chevron-down'
@@ -393,84 +443,69 @@ export function DepTable({
                     />
                   )}
                 </button>
-              </div>
-            ) : column.key ? (
-              <button
-                type="button"
-                onClick={() => toggleSort(column.key as SortKey)}
-              >
-                {column.label}
-                {sort.key === column.key && (
-                  <Icon
-                    name={
-                      sort.direction === 'asc' ? 'chevron-up' : 'chevron-down'
-                    }
-                    className="table__sort"
-                  />
-                )}
-              </button>
-            ) : (
-              <span className="table__header-label">{column.label}</span>
-            )}
-          </div>
-        ))}
-      </div>
+              ) : (
+                <span className="table__header-label">{column.label}</span>
+              )}
+            </div>
+          ))}
+        </div>
 
-      <div
-        className="table"
-        ref={parentRef}
-        role="rowgroup"
-        tabIndex={focusedRendered ? -1 : 0}
-        onKeyDown={handleGridKeyDown}
-        onFocus={handleGridFocus}
-      >
         <div
-          role="presentation"
-          style={{
-            height: virtualizer.getTotalSize(),
-            position: 'relative',
-            width: '100%',
-          }}
+          className="table"
+          ref={parentRef}
+          role="rowgroup"
+          tabIndex={focusedRendered ? -1 : 0}
+          onKeyDown={handleGridKeyDown}
+          onFocus={handleGridFocus}
         >
-          {virtualItems.map((virtualRow) => {
-            const row = rows[virtualRow.index];
-            return (
-              <div
-                key={virtualRow.key}
-                role="presentation"
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: virtualRow.size,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                {row.kind === 'group' ? (
-                  <GroupHeader
-                    row={row}
-                    rowIndex={virtualRow.index + 2}
-                    onUpdateAll={onUpdateAll}
-                  />
-                ) : (
-                  <DepRow
-                    dep={row.dep}
-                    index={virtualRow.index}
-                    rowIndex={virtualRow.index + 2}
-                    tabbable={virtualRow.index === focusedIndex}
-                    selected={row.dep.key === selectedKey}
-                    checked={selectedDepKeys.has(row.dep.key)}
-                    onToggleSelect={() => onToggleSelectDep?.(row.dep.key)}
-                    onSelect={onSelect}
-                    onUpdate={onUpdate}
-                    onUninstall={onUninstall}
-                    onFocusRow={setFocusedIndex}
-                  />
-                )}
-              </div>
-            );
-          })}
+          <div
+            role="presentation"
+            style={{
+              height: virtualizer.getTotalSize(),
+              position: 'relative',
+              width: '100%',
+            }}
+          >
+            {virtualItems.map((virtualRow) => {
+              const row = rows[virtualRow.index];
+              return (
+                <div
+                  key={virtualRow.key}
+                  role="presentation"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: virtualRow.size,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  {row.kind === 'group' ? (
+                    <GroupHeader
+                      row={row}
+                      rowIndex={virtualRow.index + 2}
+                      onUpdateAll={onUpdateAll}
+                    />
+                  ) : (
+                    <DepRow
+                      dep={row.dep}
+                      index={virtualRow.index}
+                      rowIndex={virtualRow.index + 2}
+                      tabbable={virtualRow.index === focusedIndex}
+                      selected={row.dep.key === selectedKey}
+                      checked={selectedDepKeys.has(row.dep.key)}
+                      onToggleSelect={() => onToggleSelectDep?.(row.dep.key)}
+                      onSelect={onSelect}
+                      onUpdate={onUpdate}
+                      onUninstall={onUninstall}
+                      onFocusRow={setFocusedIndex}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -620,15 +655,13 @@ function DepRow({
       </div>
 
       <div className="cell cell--scope" role="gridcell">
-        <span className={`badge badge--${dep.scope}`}>
-          {SCOPE_LABELS[dep.scope].short}
-        </span>
+        <span className={`badge badge--${dep.scope}`}>{scopeLabel(dep)}</span>
       </div>
 
       <div
         className="cell cell--version"
         role="gridcell"
-        title={`Declared as ${dep.declared}`}
+        title={`Declared as ${declaredLabel(dep)}`}
       >
         {currentVersion(dep)}
       </div>

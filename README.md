@@ -9,9 +9,9 @@
 ## ✨ Features
 
 - 🌐 **Universal Multi-Ecosystem Support**: Native parsing for `package.json`, `pyproject.toml`, `requirements.txt`, `Cargo.toml`, `go.mod`, `composer.json`, `pom.xml`, `build.gradle`, and `build.gradle.kts`.
-- ⚡ **Dual UI Interface**:
-  - **Activity Bar Sidebar View** (`panorama.sidebar`): Fast, lightweight webview sidebar embedded in VS Code for rapid workspace dependency inspection.
-  - **React Webview Panel** (`panorama.open`): Interactive, virtualized UI built with React, Vite, and TanStack Virtual for deep dependency analysis, search, sorting, and filtering.
+- ⚡ **Panel-First Interface**:
+  - **React Webview Panel** (`panorama.open`): Interactive, virtualized UI built with React, Vite, and TanStack Virtual for deep dependency analysis, search, sorting, and filtering. This is where dependencies are read and acted on.
+  - **Activity Bar View** (`panorama.sidebar`): A compact launcher for the panel. Its title bar carries the toolbar actions — open, search, check updates, refresh and update all — so they are one click away without the panel being open.
 - 🛡️ **Security Vulnerability Audits**: Automated security scans powered by [OSV.dev](https://osv.dev) to detect known CVEs and advisories affecting your direct and transitive dependencies.
 - 🔄 **Smart Update Checks & One-Click Upgrades**: Highlights outdated packages with semver diff indicators (`major`, `minor`, `patch`) and updates dependencies directly from the interface.
 - 🔍 **Registry Search & Package Installation**: Search public registries (npm, PyPI, Crates.io, Packagist, Maven Central) and install packages into your manifests without leaving VS Code.
@@ -53,12 +53,11 @@ Panorama contributes the following commands to VS Code (`Panorama` category):
 | Command | Title | Description |
 | :--- | :--- | :--- |
 | `panorama.open` | **Open Dependency Panel** | Opens the interactive React Webview dependency management panel. |
-| `panorama.refresh` | **Refresh Dependencies** | Rescans workspace manifest files and updates the dependency tree. |
+| `panorama.refresh` | **Refresh Dependencies** | Rescans workspace manifest files and updates the dependency panel. |
 | `panorama.checkUpdates` | **Check for Updates** | Queries package registries for newer dependency versions. |
 | `panorama.updateAll` | **Update All Dependencies** | Upgrades all outdated dependencies in workspace manifests. |
 | `panorama.searchInstall` | **Search & Install Package** | Opens the interactive registry search interface to find and add dependencies. |
-| `panorama.showWhy` | **Why Is This Installed?** | Displays the dependency graph path explaining why a package is present. |
-| `panorama.revealDependency` | **Reveal Package in Panel** | Focuses and highlights the selected dependency inside the interactive React webview panel. |
+| `panorama.showWhy` | **Why Is This Installed?** | Displays the dependency graph path explaining why a package is present. Acts on the package currently open in the detail drawer. |
 
 ---
 

@@ -1,11 +1,11 @@
 /**
  * A codicon — the icon font VS Code draws its own UI with.
  *
- * The panel and the Activity Bar tree describe the same states, and the tree
- * has always used real codicons (`treeProvider.iconFor`). The panel used text
- * glyphs picked to approximate them, so a vulnerable package was a `shield` in
- * one surface and a `⬤` in the other while `theme.css` claimed the two mirrored
- * each other. They mirror now.
+ * The panel once used text glyphs picked to approximate codicons, so a
+ * vulnerable package was a `shield` in one surface and a `⬤` in another while
+ * `theme.css` claimed the two mirrored each other. Using the real font is what
+ * makes the panel look like part of the editor rather than like a web page
+ * embedded in one.
  *
  * Naming is the whole reason this is a component rather than a bare className:
  * an icon either carries meaning on its own — in which case it needs a name

@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
+import { PythonProvider } from '../../src/providers/python/index.js';
 import {
   fetchMavenVersions,
   searchMavenCentral,
@@ -186,5 +187,78 @@ describe('changelogUrlFor', () => {
     expect(changelogUrlFor('https://bitbucket.org/foo/bar')).toBeUndefined();
     expect(changelogUrlFor(undefined)).toBeUndefined();
     expect(changelogUrlFor('not a url')).toBeUndefined();
+  });
+});
+
+/**
+ * PyPI's simple index makes no promise about the order of `versions`, so the
+ * version offered for install has to be chosen by PEP 440 rather than by
+ * position. Taking the last entry offered whatever PyPI happened to list last.
+ */
+describe('PythonProvider.search', () => {
+  /** Routes each of the three calls `search` makes to its own scripted body. */
+  function withPyPi(versions: string[]) {
+    const ctx = makeContext();
+    const getJson = vi.fn((url: string) => {
+      if (url.endsWith('/json')) {
+        return Promise.resolve({
+          info: { name: 'requests', summary: 'HTTP for Humans' },
+          urls: [],
+        });
+      }
+      if (/\/simple\/[^/]+\/$/.test(url)) {
+        return Promise.resolve({ versions });
+      }
+      // The full project index, used for the substring-match fallback.
+      return Promise.resolve({ projects: [] });
+    });
+    return { ...ctx, http: { ...ctx.http, getJson } as never };
+  }
+
+  it('offers the highest version, not the last one listed', async () => {
+    const provider = new PythonProvider();
+    // Deliberately unsorted, with the newest release in the middle and an
+    // older patch last — the shape that made the previous implementation wrong.
+    const results = await provider.search(
+      'requests',
+      withPyPi(['2.28.0', '2.32.3', '2.31.0', '2.9.1']),
+    );
+
+    expect(results[0].name).toBe('requests');
+    expect(results[0].version).toBe('2.32.3');
+  });
+
+  it('prefers a stable release over a later prerelease', async () => {
+    const provider = new PythonProvider();
+    const results = await provider.search(
+      'requests',
+      withPyPi(['2.31.0', '3.0.0rc1']),
+    );
+
+    expect(results[0].version).toBe('2.31.0');
+  });
+
+  it('offers no version rather than a wrong one when nothing is published', async () => {
+    const provider = new PythonProvider();
+    const results = await provider.search('requests', withPyPi([]));
+
+    expect(results[0].version).toBe('');
+  });
+});
+
+describe('searchMavenCentral encoding', () => {
+  it('encodes both halves of a typed coordinate', async () => {
+    // The query is a text box. An unencoded `&` would end the `q` parameter
+    // early and change what Solr was actually asked.
+    const { ctx, getJson } = withResponse({
+      response: { numFound: 0, docs: [] },
+    });
+
+    await searchMavenCentral('com.example&x:widget#y', 'maven', ctx);
+
+    const url = getJson.mock.calls[0][0];
+    expect(url).toContain('g:com.example%26x');
+    expect(url).toContain('a:widget%23y');
+    expect(url).not.toContain('&x:');
   });
 });

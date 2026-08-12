@@ -39,6 +39,42 @@ export function currentVersion(dep: Dependency): string {
 }
 
 /**
+ * What to call a dependency's scope, in the ecosystem's own words.
+ *
+ * The five buckets are an internal simplification, and two ecosystems map onto
+ * them in ways whose *label* then misleads. Go has no optional dependencies at
+ * all: a `// indirect` requirement lands in the optional bucket because it is
+ * not a direct one, and a row reading "optional" invites a reader to remove
+ * something the build requires. The bucket is right; the word is not.
+ *
+ * Corrected here rather than at either display site, for the same reason
+ * `statusRank` lives in this file.
+ */
+export function scopeLabel(
+  dep: Dependency,
+  form: 'short' | 'long' = 'short',
+): string {
+  if (dep.ecosystem === 'golang' && dep.scope === 'optional') {
+    return form === 'short' ? 'indirect' : 'Indirect (transitive)';
+  }
+  return SCOPE_LABELS[dep.scope][form];
+}
+
+/**
+ * What to show in the "declared" column.
+ *
+ * Cargo's `workspace = true` means "whatever the workspace root says", which
+ * the parser records verbatim as the constraint `workspace` — accurate, and
+ * unreadable as a version. Maven's equivalent is already spelled `managed`.
+ */
+export function declaredLabel(dep: Dependency): string {
+  if (dep.ecosystem === 'cargo' && dep.declared === 'workspace') {
+    return 'inherited from workspace';
+  }
+  return dep.declared;
+}
+
+/**
  * The single definition of "outdated".
  *
  * `unknown` is deliberately excluded: a failed lookup is not evidence that an

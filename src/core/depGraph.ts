@@ -9,6 +9,10 @@
 
 import * as path from 'node:path';
 import type { ProviderContext } from '../providers/provider.js';
+// The one PEP 503 implementation. A second copy lived here to avoid depending
+// on a provider, but this file already imports the provider registry, and two
+// normalisers that must agree exactly are two that can silently stop agreeing.
+import { normalizeName as normalizePythonName } from '../providers/python/index.js';
 import { providerFor } from '../providers/registry.js';
 import type { Dependency, DepNode, Ecosystem } from './types.js';
 
@@ -345,11 +349,6 @@ async function buildPythonGraph(
   }
 
   return undefined;
-}
-
-/** PEP 503 normalisation, kept local so depGraph does not depend on a provider. */
-function normalizePythonName(name: string): string {
-  return name.toLowerCase().replace(/[-_.]+/g, '-');
 }
 
 /**

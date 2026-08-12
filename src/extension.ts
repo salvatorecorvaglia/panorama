@@ -184,20 +184,6 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       panel.revealSearch();
     }),
 
-    // Fired by clicking a package in the tree, so the panel opens focused on
-    // that package instead of merely opening.
-    vscode.commands.registerCommand(
-      'panorama.revealDependency',
-      (item?: unknown) => {
-        const dep = dependencyFromTreeItem(item);
-        if (!dep) {
-          panel.reveal();
-          return;
-        }
-        panel.revealDependency(dep.key, 'details');
-      },
-    ),
-
     vscode.commands.registerCommand('panorama.updateAll', async () => {
       const groups = panel.currentResult.groups;
       if (groups.length === 0) {
@@ -213,12 +199,10 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       await panel.updateAll(target.manifestPath);
     }),
 
-    // Invoked from the tree view's inline action (which passes the item) or
-    // from the command palette (which does not, so we fall back to selection).
-    vscode.commands.registerCommand('panorama.showWhy', (item?: unknown) => {
-      const dep =
-        dependencyFromTreeItem(item) ??
-        findByKey(panel.currentResult, panel.lastSelectedKey);
+    // Invoked from the command palette, which carries no argument — the row
+    // the user last opened in the drawer is the selection it acts on.
+    vscode.commands.registerCommand('panorama.showWhy', () => {
+      const dep = findByKey(panel.currentResult, panel.lastSelectedKey);
       if (!dep) {
         void vscode.window.showInformationMessage(NO_SELECTION_MESSAGE);
         return;
@@ -343,17 +327,6 @@ function updateStatusBar(item: vscode.StatusBarItem, result: ScanResult): void {
       ? new vscode.ThemeColor('statusBarItem.warningBackground')
       : undefined;
   item.show();
-}
-
-/**
- * Tree view commands receive the node that was clicked. Only dependency nodes
- * carry one, so anything else resolves to undefined and the caller falls back.
- */
-function dependencyFromTreeItem(item: unknown): Dependency | undefined {
-  if (!item || typeof item !== 'object') return undefined;
-  const node = item as { kind?: unknown; dep?: unknown };
-  if (node.kind !== 'dependency' || !node.dep) return undefined;
-  return node.dep as Dependency;
 }
 
 function findByKey(

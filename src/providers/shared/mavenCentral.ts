@@ -9,6 +9,7 @@ import { cacheKey, TTL } from '../../core/cache.js';
 import type { Ecosystem, PackageMeta, SearchResult } from '../../core/types.js';
 import { maxMaven } from '../../core/versions/maven.js';
 import type { ProviderContext, VersionInfo } from '../provider.js';
+import { mapWithConcurrency } from './concurrency.js';
 
 const SOLR = 'https://search.maven.org/solrsearch/select';
 
@@ -42,15 +43,22 @@ export async function fetchMavenVersions(
 ): Promise<Map<string, VersionInfo>> {
   const result = new Map<string, VersionInfo>();
 
-  for (const name of names) {
+  /*
+   * Five at a time, matching the per-host limit `core/http.ts` applies to
+   * search.maven.org. One request per artifact is unavoidable — Solr has no
+   * batch form for this — but issuing them strictly one after another left the
+   * rate limiter idle and made a Maven project's scan take as many round-trips
+   * in series as it has dependencies.
+   */
+  await mapWithConcurrency(names, 5, async (name) => {
     const coordinate = splitCoordinate(name);
-    if (!coordinate) continue;
+    if (!coordinate) return;
 
     const key = cacheKey('maven', 'versions', name);
     const cached = ctx.cache.get<VersionInfo>(key);
     if (cached) {
       result.set(name, cached);
-      continue;
+      return;
     }
 
     try {
@@ -63,7 +71,7 @@ export async function fetchMavenVersions(
       const versions = response.response.docs
         .map((doc) => doc.v)
         .filter((version): version is string => Boolean(version));
-      if (versions.length === 0) continue;
+      if (versions.length === 0) return;
 
       const info: VersionInfo = { versions, latest: maxMaven(versions) };
       result.set(name, info);
@@ -72,7 +80,7 @@ export async function fetchMavenVersions(
       const stale = ctx.cache.getStale<VersionInfo>(key);
       if (stale) result.set(name, stale);
     }
-  }
+  });
 
   return result;
 }
@@ -112,9 +120,12 @@ export async function searchMavenCentral(
   signal?: AbortSignal,
 ): Promise<SearchResult[]> {
   // A colon means the user typed a full coordinate; query the fields directly.
+  // Both halves are encoded, as they are in `fetchMavenVersions` — the query
+  // comes from a text box, and a `&` or `#` in it would otherwise end the
+  // parameter early and change what was asked.
   const coordinate = query.includes(':') ? splitCoordinate(query) : null;
   const q = coordinate
-    ? `g:${coordinate.groupId}+AND+a:${coordinate.artifactId}`
+    ? `g:${encodeURIComponent(coordinate.groupId)}+AND+a:${encodeURIComponent(coordinate.artifactId)}`
     : encodeURIComponent(query);
 
   const response = await ctx.http.getJson<SolrResponse>(

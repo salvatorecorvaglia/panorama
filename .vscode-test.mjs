@@ -1,7 +1,11 @@
 import { defineConfig } from '@vscode/test-cli';
 
 export default defineConfig({
-  files: 'out/test/integration/**/*.test.js',
+  // Must match what `tsconfig.integration.json` actually emits: it compiles
+  // with `rootDir: "."`, so `tests/integration/*.ts` lands in
+  // `out/tests/integration/`. A glob that matches nothing makes Mocha report
+  // "0 passing" and exit 0 — a green CI job that ran no tests at all.
+  files: 'out/tests/integration/**/*.test.js',
   mocha: {
     ui: 'bdd',
     /*
@@ -12,5 +16,5 @@ export default defineConfig({
      */
     timeout: 30_000,
   },
-  workspaceFolder: 'test/fixtures',
+  workspaceFolder: 'tests/fixtures',
 });

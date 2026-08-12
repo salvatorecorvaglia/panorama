@@ -11,8 +11,10 @@ import type { Dependency, UpdateKind } from '../../src/core/types.js';
 import {
   ALL_SCOPES,
   currentVersion,
+  declaredLabel,
   hasUpdate,
   SCOPE_LABELS,
+  scopeLabel,
   sortByStatus,
   statusRank,
 } from '../../src/core/vocabulary.js';
@@ -124,5 +126,50 @@ describe('sortByStatus', () => {
       'zed',
     ]);
     expect(input).toEqual(original);
+  });
+});
+
+/*
+ * The five scope buckets are an internal simplification, and the word shown to
+ * the user is not always the bucket's own name.
+ */
+describe('scopeLabel', () => {
+  it('calls a Go indirect requirement indirect, not optional', () => {
+    // Go has no optional dependencies. A `// indirect` requirement lands in
+    // that bucket because it is not direct, and "optional" invites a reader to
+    // remove something the build requires.
+    const indirect = dep({ ecosystem: 'golang', scope: 'optional' });
+    expect(scopeLabel(indirect)).toBe('indirect');
+    expect(scopeLabel(indirect, 'long')).toBe('Indirect (transitive)');
+  });
+
+  it('leaves every other ecosystem on the shared vocabulary', () => {
+    expect(scopeLabel(dep({ ecosystem: 'node', scope: 'optional' }))).toBe(
+      'optional',
+    );
+    expect(scopeLabel(dep({ ecosystem: 'node', scope: 'dev' }))).toBe('dev');
+    expect(scopeLabel(dep({ ecosystem: 'golang', scope: 'prod' }))).toBe(
+      'prod',
+    );
+    expect(scopeLabel(dep({ ecosystem: 'node', scope: 'dev' }), 'long')).toBe(
+      'Development',
+    );
+  });
+});
+
+describe('declaredLabel', () => {
+  it('spells out a Cargo workspace inheritance', () => {
+    expect(
+      declaredLabel(dep({ ecosystem: 'cargo', declared: 'workspace' })),
+    ).toBe('inherited from workspace');
+  });
+
+  it('passes a real constraint through untouched', () => {
+    expect(declaredLabel(dep({ ecosystem: 'cargo', declared: '1.0' }))).toBe(
+      '1.0',
+    );
+    expect(
+      declaredLabel(dep({ ecosystem: 'node', declared: 'workspace' })),
+    ).toBe('workspace');
   });
 });

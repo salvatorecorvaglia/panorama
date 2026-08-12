@@ -63,6 +63,16 @@ export function Toolbar({
     [],
   );
 
+  /*
+   * A toolbar is one tab stop; arrow keys move within it.
+   *
+   * Assigning `tabIndex` imperatively rather than in JSX because the buttons
+   * are conditional — "Update All" appears only when something is outdated —
+   * so their count and order change, and the index that holds the stop has to
+   * be clamped against whatever is on screen now. The dependency list is what
+   * actually changes that: which buttons render is a function of these.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     const buttons = toolbarButtons();
     if (buttons.length === 0) return;
@@ -70,7 +80,7 @@ export function Toolbar({
     buttons.forEach((button, index) => {
       button.tabIndex = index === active ? 0 : -1;
     });
-  });
+  }, [activeIndex, toolbarButtons, installOpen, summary.outdated, busy]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
@@ -102,10 +112,16 @@ export function Toolbar({
     return Array.from(set);
   }, [groups]);
 
+  /*
+   * The count next to this button is the whole workspace's, so the action has
+   * to be the whole workspace's too. With one project that is unambiguous;
+   * with several, naming none of them lets the host ask which — it used to
+   * silently pass `groups[0]`, promising to update everything and updating
+   * whichever project happened to sort first.
+   */
   const handleGlobalUpdateAll = () => {
-    if (onUpdateAll && groups.length > 0) {
-      onUpdateAll(groups[0].manifestPath);
-    }
+    if (!onUpdateAll || groups.length === 0) return;
+    onUpdateAll(groups.length === 1 ? groups[0].manifestPath : undefined);
   };
 
   return (
@@ -124,19 +140,19 @@ export function Toolbar({
             <Icon name="package" />
           </div>
           <div className="toolbar__title-group">
-            <span className="toolbar__title">Panorama Visual Manager</span>
+            <span className="toolbar__title">Panorama</span>
+            {/*
+              The toolchains in play, and nothing else. An "active" pill said
+              only that the panel was rendering, and the package count is in
+              the summary at the end of the filter row — two counts of the same
+              thing in one toolbar invite the reader to look for the difference.
+            */}
             <div className="toolbar__env-pills">
-              <span className="env-pill env-pill--status">
-                <span className="env-pill__dot" /> active
-              </span>
               {activeToolchains.map((tc) => (
                 <span key={tc} className="env-pill env-pill--toolchain">
                   {tc}
                 </span>
               ))}
-              <span className="env-pill env-pill--count">
-                {summary.totalDependencies} packages
-              </span>
             </div>
           </div>
         </div>
@@ -265,11 +281,13 @@ export function Toolbar({
 
         <div className="toolbar__spacer" />
 
-        {busy && busyLabel && (
-          <span className="muted" aria-hidden="true">
-            {busyLabel}
-          </span>
-        )}
+        {/*
+          Readable, not hidden. This was `aria-hidden`, which left the only
+          statement of *what* is happening ("Checking registries…") available
+          to sighted users alone — the progress bar below announces that
+          something is happening, not what.
+        */}
+        {busy && busyLabel && <span className="muted">{busyLabel}</span>}
 
         <div className="toolbar__summary" role="status">
           <span>{summary.totalDependencies} packages</span>
@@ -294,10 +312,18 @@ export function Toolbar({
         </div>
       </div>
 
+      {/*
+        Indeterminate on purpose: a scan reports no percentage, and a
+        progressbar with no `aria-valuenow` is exactly how that is expressed.
+        Stating the bounds without a value would claim a measurement we do not
+        have.
+      */}
       {busy && (
         <div
           className="progress"
           role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
           aria-label={busyLabel ?? 'Scanning'}
         />
       )}

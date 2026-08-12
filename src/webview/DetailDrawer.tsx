@@ -6,7 +6,11 @@
 import type { KeyboardEvent } from 'react';
 import { useEffect, useRef } from 'react';
 import type { Dependency, DepNode } from '../core/types.js';
-import { currentVersion } from '../core/vocabulary.js';
+import {
+  currentVersion,
+  declaredLabel,
+  scopeLabel,
+} from '../core/vocabulary.js';
 import { ECOSYSTEM_LABELS, formatBytes } from './format.js';
 import { Icon } from './Icon.js';
 import { post } from './vscodeApi.js';
@@ -127,8 +131,10 @@ export function DetailDrawer({
         <dl>
           <dt>Declared</dt>
           <dd>
-            <code>{dep.declared}</code>
+            <code>{declaredLabel(dep)}</code>
           </dd>
+          <dt>Scope</dt>
+          <dd>{scopeLabel(dep, 'long')}</dd>
           <dt>Installed</dt>
           <dd>
             <code>{currentVersion(dep)}</code>

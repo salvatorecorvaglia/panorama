@@ -50,13 +50,13 @@ export default defineConfig({
         'src/core/watcher.ts',
         'src/core/workspace.ts',
         'src/ui/panelManager.ts',
+        'src/ui/sidebarProvider.ts',
         'src/ui/terminalRunner.ts',
-        'src/ui/treeProvider.ts',
         'src/webview/main.tsx',
       ],
       /*
-       * Set just under what the suite currently achieves (74% lines, 78%
-       * branches, 68% functions), so the gate catches regressions without
+       * Set just under what the suite currently achieves (78.2% lines, 78.4%
+       * branches, 70.3% functions), so the gate catches regressions without
        * failing on the next honest refactor.
        *
        * Raise these when coverage rises; do not lower them to make a red build
@@ -66,10 +66,10 @@ export default defineConfig({
        * worth closing next.
        */
       thresholds: {
-        lines: 72,
-        functions: 65,
-        branches: 76,
-        statements: 72,
+        lines: 77,
+        functions: 69,
+        branches: 77,
+        statements: 77,
       },
     },
   },

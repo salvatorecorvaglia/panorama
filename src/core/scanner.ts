@@ -15,6 +15,7 @@ import {
   providerFor,
   providerForPath,
 } from '../providers/registry.js';
+import { mapWithConcurrency } from '../providers/shared/concurrency.js';
 import { auditDependencies } from './audit.js';
 import type {
   Dependency,
@@ -45,6 +46,24 @@ export interface ScanResult {
  * scanner reports when it truncates and the panel says so.
  */
 const MAX_MANIFESTS = 2000;
+
+/**
+ * How many manifests are read and parsed at once.
+ *
+ * These are local filesystem reads, not registry calls, so the ceiling is the
+ * extension host's own I/O rather than anyone's rate limit. Eight is enough to
+ * keep the disk busy without flooding the event loop of a process that is also
+ * drawing the editor.
+ */
+const MANIFEST_CONCURRENCY = 8;
+
+/** What one manifest contributes to a scan. */
+interface ManifestScan {
+  manifest: ParsedManifest;
+  members: string[];
+  /** Absent when the manifest declares no dependencies of its own. */
+  group?: ProjectGroup;
+}
 
 export class Scanner {
   /** Guards against overlapping scans when several files change at once. */
@@ -84,7 +103,7 @@ export class Scanner {
     this.inFlight = controller;
     const signal = controller.signal;
 
-    const groups = await this.collectGroups();
+    const groups = await this.collectGroups(signal);
 
     const partial: ScanResult = { groups, summary: summarize(groups, false) };
     onPartial?.(partial);
@@ -115,7 +134,7 @@ export class Scanner {
   }
 
   /** Finds and parses every manifest in the workspace. */
-  private async collectGroups(): Promise<ProjectGroup[]> {
+  private async collectGroups(signal: AbortSignal): Promise<ProjectGroup[]> {
     const excludes = [
       ...vscode.workspace
         .getConfiguration('panorama')
@@ -132,89 +151,136 @@ export class Scanner {
     );
     this.truncated = uris.length >= MAX_MANIFESTS;
 
+    /*
+     * Read and parse manifests a few at a time rather than strictly one after
+     * another.
+     *
+     * Each manifest costs several awaited filesystem round-trips — the file,
+     * a sidecar workspace file, the toolchain probes, a lockfile — and a
+     * monorepo can hold hundreds. Done sequentially that is thousands of
+     * serialised reads before the table paints anything.
+     *
+     * Results are written into a slot rather than pushed, so the output order
+     * is the order `findFiles` returned regardless of which read finishes
+     * first. Nothing downstream depends on that order — `assignWorkspaces`
+     * keys by path and the groups are sorted by label below — but a scan whose
+     * result varies with disk timing is not one anybody can reason about.
+     */
+    const slots = new Array<ManifestScan | undefined>(uris.length);
+
+    await mapWithConcurrency(
+      uris.map((uri, index) => ({ uri, index })),
+      MANIFEST_CONCURRENCY,
+      async ({ uri, index }) => {
+        // A superseded scan stops here rather than walking the rest of the
+        // workspace to produce a result the caller has already discarded.
+        if (signal.aborted) return;
+        slots[index] = await this.scanManifest(uri.fsPath);
+      },
+    );
+
     const groups: ProjectGroup[] = [];
     // Collected alongside the groups so workspace membership can be resolved
     // once every manifest is known.
     const parsed: Array<{ manifest: ParsedManifest; members: string[] }> = [];
 
-    for (const uri of uris) {
-      const provider = providerForPath(uri.fsPath);
-      if (!provider) continue;
-
-      const text = await this.ctx.readFile(uri.fsPath);
-      if (text === null) continue;
-
-      let manifest: ParsedManifest;
-      try {
-        manifest = await provider.parse(uri.fsPath, text, this.ctx);
-      } catch {
-        // One unparseable manifest must not sink the whole scan.
-        continue;
-      }
-
-      // Members declared in the manifest, plus any from a sidecar file
-      // (pnpm-workspace.yaml, go.work, settings.gradle) the manifest never
-      // mentions. Recorded even for dependency-free roots, since a root's whole
-      // job may be to declare members.
-      const sidecar = await readSidecarMembers(manifest, this.ctx);
-      const members = [...(manifest.workspaceMembers ?? []), ...sidecar];
-      parsed.push({ manifest, members });
-
-      if (manifest.dependencies.length === 0) continue;
-
-      const toolchain = await provider.detectToolchain(uri.fsPath, this.ctx);
-
-      // Fill in resolved versions from the lockfile where the provider has one.
-      if (provider.readLockfile) {
-        try {
-          const resolved = await provider.readLockfile(
-            path.dirname(uri.fsPath),
-            this.ctx,
-          );
-          if (resolved.size > 0) {
-            // Providers normalise their lockfile keys to whatever their
-            // ecosystem considers canonical, so the manifest name has to go
-            // through the same normalisation to find them. Without this, PEP
-            // 503 alone loses every Python resolution: `typing_extensions` in
-            // pyproject.toml never matches `typing-extensions` in uv.lock.
-            const normalize =
-              provider.normalizeName ?? ((name: string) => name);
-            for (const dep of manifest.dependencies) {
-              dep.installed ??=
-                resolved.get(dep.name) ??
-                resolved.get(dep.name.toLowerCase()) ??
-                resolved.get(normalize(dep.name));
-            }
-          }
-        } catch {
-          // Lockfile parsing is an optimisation, never a hard requirement.
-        }
-      }
-
-      // Without a lockfile, approximate from the constraint so the table still
-      // shows a number rather than a blank cell — but record that it is a
-      // guess, because the audit matches advisories against this value.
-      for (const dep of manifest.dependencies) {
-        if (dep.installed !== undefined) continue;
-        const approximate = constraintToApproxVersion(dep.declared);
-        if (approximate === undefined) continue;
-        dep.installed = approximate;
-        dep.installedIsApproximate = true;
-      }
-
-      groups.push({
-        label: relativeLabel(uri.fsPath, manifest.name),
-        manifestPath: uri.fsPath,
-        ecosystem: manifest.ecosystem,
-        toolchain: toolchain.id,
-        dependencies: manifest.dependencies,
-      });
+    for (const slot of slots) {
+      if (!slot) continue;
+      parsed.push({ manifest: slot.manifest, members: slot.members });
+      if (slot.group) groups.push(slot.group);
     }
 
     this.applyWorkspaceInfo(groups, parsed);
 
     groups.sort((a, b) => a.label.localeCompare(b.label));
     return groups;
+  }
+
+  /**
+   * Everything one manifest contributes: its parsed form, the workspace members
+   * it declares, and — when it has dependencies of its own — the group the
+   * table shows.
+   *
+   * Returns undefined when the file is unreadable or unparseable. One bad
+   * manifest must not sink the scan.
+   */
+  private async scanManifest(
+    manifestPath: string,
+  ): Promise<ManifestScan | undefined> {
+    const provider = providerForPath(manifestPath);
+    if (!provider) return undefined;
+
+    const text = await this.ctx.readFile(manifestPath);
+    if (text === null) return undefined;
+
+    let manifest: ParsedManifest;
+    try {
+      manifest = await provider.parse(manifestPath, text, this.ctx);
+    } catch {
+      return undefined;
+    }
+
+    // Members declared in the manifest, plus any from a sidecar file
+    // (pnpm-workspace.yaml, go.work, settings.gradle) the manifest never
+    // mentions. Recorded even for dependency-free roots, since a root's whole
+    // job may be to declare members.
+    const sidecar = await readSidecarMembers(manifest, this.ctx);
+    const members = [...(manifest.workspaceMembers ?? []), ...sidecar];
+
+    if (manifest.dependencies.length === 0) {
+      return { manifest, members };
+    }
+
+    const toolchain = await provider.detectToolchain(manifestPath, this.ctx);
+
+    // Fill in resolved versions from the lockfile where the provider has one.
+    if (provider.readLockfile) {
+      try {
+        const resolved = await provider.readLockfile(
+          path.dirname(manifestPath),
+          this.ctx,
+        );
+        if (resolved.size > 0) {
+          // Providers normalise their lockfile keys to whatever their
+          // ecosystem considers canonical, so the manifest name has to go
+          // through the same normalisation to find them. Without this, PEP
+          // 503 alone loses every Python resolution: `typing_extensions` in
+          // pyproject.toml never matches `typing-extensions` in uv.lock.
+          const normalize = provider.normalizeName ?? ((name: string) => name);
+          for (const dep of manifest.dependencies) {
+            dep.installed ??=
+              resolved.get(dep.name) ??
+              resolved.get(dep.name.toLowerCase()) ??
+              resolved.get(normalize(dep.name));
+          }
+        }
+      } catch {
+        // Lockfile parsing is an optimisation, never a hard requirement.
+      }
+    }
+
+    // Without a lockfile, approximate from the constraint so the table still
+    // shows a number rather than a blank cell — but record that it is a
+    // guess, because the audit matches advisories against this value.
+    for (const dep of manifest.dependencies) {
+      if (dep.installed !== undefined) continue;
+      const approximate = constraintToApproxVersion(dep.declared);
+      if (approximate === undefined) continue;
+      dep.installed = approximate;
+      dep.installedIsApproximate = true;
+    }
+
+    return {
+      manifest,
+      members,
+      group: {
+        label: relativeLabel(manifestPath, manifest.name),
+        manifestPath,
+        ecosystem: manifest.ecosystem,
+        toolchain: toolchain.id,
+        dependencies: manifest.dependencies,
+      },
+    };
   }
 
   /**
@@ -299,36 +365,42 @@ export class Scanner {
     groups: ProjectGroup[],
     signal: AbortSignal,
   ): Promise<boolean> {
-    const byEcosystem = new Map<Ecosystem, Set<string>>();
+    /*
+     * Index the dependencies by ecosystem once, and hand each merge step only
+     * the rows it can act on.
+     *
+     * Both merge steps used to re-walk every group and every dependency and
+     * skip what did not match, so the cost was the number of ecosystems times
+     * the size of the whole workspace rather than the size of the workspace.
+     */
+    const byEcosystem = new Map<Ecosystem, Dependency[]>();
     for (const group of groups) {
       for (const dep of group.dependencies) {
-        let names = byEcosystem.get(dep.ecosystem);
-        if (!names) {
-          names = new Set();
-          byEcosystem.set(dep.ecosystem, names);
-        }
-        names.add(dep.name);
+        const existing = byEcosystem.get(dep.ecosystem);
+        if (existing) existing.push(dep);
+        else byEcosystem.set(dep.ecosystem, [dep]);
       }
     }
 
     if (byEcosystem.size === 0) return false;
 
     const outcomes = await Promise.all(
-      [...byEcosystem.entries()].map(async ([ecosystem, names]) => {
+      [...byEcosystem.entries()].map(async ([ecosystem, dependencies]) => {
         const provider = providerFor(ecosystem);
+        const names = [...new Set(dependencies.map((dep) => dep.name))];
 
         let versions: Map<string, VersionInfo>;
         try {
-          versions = await provider.fetchVersions([...names], this.ctx, signal);
+          versions = await provider.fetchVersions(names, this.ctx, signal);
         } catch (error) {
           // An abort is the caller's decision, not a registry failure, so it
           // propagates rather than being reported as an unreachable ecosystem.
           if (signal.aborted) throw error;
-          this.markLookupFailed(groups, ecosystem);
+          markLookupFailed(dependencies);
           return false;
         }
 
-        this.applyVersions(groups, ecosystem, versions);
+        this.applyVersions(dependencies, ecosystem, versions);
         return true;
       }),
     );
@@ -336,50 +408,34 @@ export class Scanner {
     return outcomes.every((succeeded) => !succeeded);
   }
 
-  private markLookupFailed(groups: ProjectGroup[], ecosystem: Ecosystem): void {
-    for (const group of groups) {
-      for (const dep of group.dependencies) {
-        if (dep.ecosystem !== ecosystem) continue;
-        dep.lookupFailed = true;
-        dep.updateKind = 'unknown';
-      }
-    }
-  }
-
   private applyVersions(
-    groups: ProjectGroup[],
+    dependencies: Dependency[],
     ecosystem: Ecosystem,
     versions: Map<string, VersionInfo>,
   ): void {
-    for (const group of groups) {
-      for (const dep of group.dependencies) {
-        if (dep.ecosystem !== ecosystem) continue;
-
-        const info = versions.get(dep.name);
-        if (!info || info.versions.length === 0) {
-          dep.lookupFailed = true;
-          dep.updateKind = 'unknown';
-          continue;
-        }
-
-        dep.latest = info.latest ?? maxVersion(ecosystem, info.versions);
-        dep.wanted =
-          maxSatisfying(ecosystem, info.versions, dep.declared) ??
-          dep.installed;
-
-        if (info.deprecated) {
-          dep.meta = {
-            ...(dep.meta ?? { name: dep.name }),
-            deprecated: info.deprecated,
-          };
-        }
-
-        // Compare against what is actually resolved, falling back to the
-        // constraint's lower bound when nothing pins an exact version.
-        const current =
-          dep.installed ?? constraintToApproxVersion(dep.declared);
-        dep.updateKind = classifyUpdate(ecosystem, current, dep.latest);
+    for (const dep of dependencies) {
+      const info = versions.get(dep.name);
+      if (!info || info.versions.length === 0) {
+        dep.lookupFailed = true;
+        dep.updateKind = 'unknown';
+        continue;
       }
+
+      dep.latest = info.latest ?? maxVersion(ecosystem, info.versions);
+      dep.wanted =
+        maxSatisfying(ecosystem, info.versions, dep.declared) ?? dep.installed;
+
+      if (info.deprecated) {
+        dep.meta = {
+          ...(dep.meta ?? { name: dep.name }),
+          deprecated: info.deprecated,
+        };
+      }
+
+      // Compare against what is actually resolved, falling back to the
+      // constraint's lower bound when nothing pins an exact version.
+      const current = dep.installed ?? constraintToApproxVersion(dep.declared);
+      dep.updateKind = classifyUpdate(ecosystem, current, dep.latest);
     }
   }
 
@@ -417,6 +473,14 @@ export class Scanner {
     });
 
     return { results, failed };
+  }
+}
+
+/** An unreachable registry greys out its own rows and asserts nothing else. */
+function markLookupFailed(dependencies: Dependency[]): void {
+  for (const dep of dependencies) {
+    dep.lookupFailed = true;
+    dep.updateKind = 'unknown';
   }
 }
 
