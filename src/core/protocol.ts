@@ -39,7 +39,6 @@ export type WebviewMessage =
   | { type: 'uninstall'; depKey: string }
   | { type: 'requestDetails'; depKey: string }
   | { type: 'requestWhy'; depKey: string }
-  | { type: 'toggleMute'; depKey: string }
   | { type: 'openExternal'; url: string }
   | { type: 'openManifest'; manifestPath: string; packageName?: string };
 

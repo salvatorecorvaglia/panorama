@@ -14,7 +14,6 @@ const ALL: Filters = {
   onlyOutdated: false,
   onlyVulnerable: false,
   onlyDeprecated: false,
-  hideMuted: false,
 };
 
 const SUMMARY: ScanSummary = {
@@ -22,7 +21,6 @@ const SUMMARY: ScanSummary = {
   outdated: 3,
   vulnerable: 1,
   deprecated: 2,
-  muted: 0,
   stale: false,
 };
 
@@ -83,16 +81,6 @@ describe('filters', () => {
     expect(
       within(scope).queryByRole('button', { name: 'outdated' }),
     ).toBeNull();
-  });
-
-  it('offers "hide muted" only once something is muted', () => {
-    const { rerender, props } = renderToolbar();
-    expect(screen.queryByRole('button', { name: /hide muted/i })).toBeNull();
-
-    rerender(<Toolbar {...props} summary={{ ...SUMMARY, muted: 2 }} />);
-    expect(
-      screen.getByRole('button', { name: /hide muted/i }),
-    ).toBeInTheDocument();
   });
 });
 
@@ -217,12 +205,7 @@ describe('keyboard navigation', () => {
     expect(buttons[0].tabIndex).toBe(-1);
   });
 
-  it('keeps exactly one tab stop when a conditional chip appears', () => {
-    const { rerender, props } = renderToolbar();
-    rerender(<Toolbar {...props} summary={{ ...SUMMARY, muted: 2 }} />);
 
-    expect(toolbarButtons().filter((b) => b.tabIndex === 0)).toHaveLength(1);
-  });
 
   it('adopts a button that is focused directly, so re-entry returns there', async () => {
     renderToolbar();

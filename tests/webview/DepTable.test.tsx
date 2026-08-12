@@ -67,7 +67,6 @@ function renderTable(
       onUpdate={noop}
       onUninstall={noop}
       onUpdateAll={noop}
-      onToggleMute={noop}
       loading={false}
       filtering={false}
       onClearFilters={noop}
@@ -335,13 +334,12 @@ describe('row actions', () => {
     ).toBeInTheDocument();
   });
 
-  it('offers update and mute only where an update exists', () => {
+  it('offers update only where an update exists', () => {
     renderTable([
       group([dep({ name: 'current', key: 'c', updateKind: 'none' })]),
     ]);
 
     expect(screen.queryByRole('button', { name: /Update/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Mute/i })).toBeNull();
     expect(
       screen.getByRole('button', { name: /Remove current/i }),
     ).toBeInTheDocument();
@@ -363,22 +361,7 @@ describe('row actions', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('reflects mute state on the toggle', () => {
-    renderTable([
-      group([
-        dep({
-          name: 'react',
-          key: 'react',
-          updateKind: 'major',
-          latest: '19.0.0',
-          muted: true,
-        }),
-      ]),
-    ]);
 
-    const toggle = screen.getByRole('button', { name: /Unmute react/i });
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
-  });
 });
 
 describe('empty and loading states', () => {
@@ -400,7 +383,6 @@ describe('empty and loading states', () => {
         onUpdate={noop}
         onUninstall={noop}
         onUpdateAll={noop}
-        onToggleMute={noop}
         loading={false}
         filtering={false}
         onClearFilters={onClearFilters}

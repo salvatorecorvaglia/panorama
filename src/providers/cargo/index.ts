@@ -47,7 +47,6 @@ interface CrateResponse {
     num: string;
     yanked: boolean;
     crate_size?: number;
-    license?: string;
   }>;
 }
 
@@ -210,7 +209,6 @@ export class CargoProvider implements EcosystemProvider {
       const meta: PackageMeta = {
         name: response.crate.name,
         description: response.crate.description,
-        license: newest?.license,
         homepage: response.crate.homepage ?? response.crate.documentation,
         repository,
         changelogUrl: changelogUrlFor(repository),

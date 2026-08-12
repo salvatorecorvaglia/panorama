@@ -9,7 +9,6 @@
 import * as vscode from 'vscode';
 import { TtlCache } from './core/cache.js';
 import { HttpClient } from './core/http.js';
-import { MuteList } from './core/muteList.js';
 import { Scanner, type ScanResult } from './core/scanner.js';
 import { ScanQueue } from './core/scanQueue.js';
 import type { Dependency } from './core/types.js';
@@ -32,7 +31,6 @@ export interface PanoramaApi {
   }): Promise<ScanResult>;
   /** The most recent result, without triggering new work. */
   getResult(): ScanResult;
-  muteList: MuteList;
   /**
    * Total network requests issued since activation.
    *
@@ -75,10 +73,7 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
   // awaited: nothing below depends on it, and activation stays cheap.
   void cache.prune();
   const providerContext = createProviderContext(http, cache);
-  // Muting is a per-project decision, so it lives in workspaceState rather than
-  // leaking across every project the user opens.
-  const muteList = new MuteList(context.workspaceState);
-  const scanner = new Scanner(providerContext, muteList);
+  const scanner = new Scanner(providerContext);
 
   const statusBar = vscode.window.createStatusBarItem(
     'panorama.status',
@@ -95,7 +90,6 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     (result) => {
       updateStatusBar(statusBar, result);
     },
-    muteList,
   );
 
   /** The single path through which every refresh flows. */
@@ -204,47 +198,6 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       },
     ),
 
-    vscode.commands.registerCommand(
-      'panorama.toggleMute',
-      async (item?: unknown) => {
-        const dep =
-          dependencyFromTreeItem(item) ??
-          findByKey(panel.currentResult, panel.lastSelectedKey);
-        if (!dep) {
-          void vscode.window.showInformationMessage(NO_SELECTION_MESSAGE);
-          return;
-        }
-        const nowMuted = await muteList.toggle(dep);
-        panel.setResult(
-          scanner.resummarize(
-            panel.currentResult.groups,
-            panel.currentResult.summary.stale,
-          ),
-        );
-        void vscode.window.showInformationMessage(
-          nowMuted ? `Muted updates for ${dep.name}.` : `Unmuted ${dep.name}.`,
-        );
-      },
-    ),
-
-    vscode.commands.registerCommand('panorama.clearMuted', async () => {
-      if (muteList.size === 0) {
-        void vscode.window.showInformationMessage(
-          'No muted packages in this workspace.',
-        );
-        return;
-      }
-      const count = muteList.size;
-      await muteList.clear();
-      panel.setResult(
-        scanner.resummarize(
-          panel.currentResult.groups,
-          panel.currentResult.summary.stale,
-        ),
-      );
-      void vscode.window.showInformationMessage(`Unmuted ${count} package(s).`);
-    }),
-
     vscode.commands.registerCommand('panorama.updateAll', async () => {
       const groups = panel.currentResult.groups;
       if (groups.length === 0) {
@@ -339,7 +292,6 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       return result ?? panel.currentResult;
     },
     getResult: () => panel.currentResult,
-    muteList,
     requestCount: () => http.requestCount,
   };
 }

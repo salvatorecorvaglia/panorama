@@ -65,7 +65,6 @@ interface P2Response {
       name: string;
       version: string;
       description?: string;
-      license?: string[];
       homepage?: string;
       source?: { url?: string };
       abandoned?: boolean | string;
@@ -236,7 +235,6 @@ export class ComposerProvider implements EcosystemProvider {
       const meta: PackageMeta = {
         name,
         description: latest.description,
-        license: latest.license?.join(', '),
         homepage: latest.homepage,
         repository,
         changelogUrl: changelogUrlFor(repository),

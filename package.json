@@ -78,18 +78,6 @@
         "icon": "$(type-hierarchy)"
       },
       {
-        "command": "panorama.toggleMute",
-        "title": "Mute/Unmute Updates",
-        "category": "Panorama",
-        "icon": "$(bell-slash)"
-      },
-      {
-        "command": "panorama.clearMuted",
-        "title": "Clear All Muted Packages",
-        "category": "Panorama",
-        "icon": "$(bell)"
-      },
-      {
         "command": "panorama.revealDependency",
         "title": "Reveal Package in Panel",
         "category": "Panorama",
@@ -142,11 +130,6 @@
           "command": "panorama.updateAll",
           "when": "view == panorama.sidebar",
           "group": "1_modify@1"
-        },
-        {
-          "command": "panorama.clearMuted",
-          "when": "view == panorama.sidebar",
-          "group": "1_modify@2"
         }
       ],
       "commandPalette": [
@@ -257,7 +240,7 @@
     "fast-xml-parser": "^5.10.1",
     "jsonc-parser": "^3.3.1",
     "semver": "^7.8.5",
-    "smol-toml": "^1.7.1",
+    "smol-toml": "^1.8.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

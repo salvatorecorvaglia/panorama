@@ -10,7 +10,6 @@ export interface Filters {
   onlyOutdated: boolean;
   onlyVulnerable: boolean;
   onlyDeprecated: boolean;
-  hideMuted: boolean;
 }
 
 interface Props {
@@ -261,19 +260,6 @@ export function Toolbar({
             >
               deprecated
             </button>
-            {summary.muted > 0 && (
-              <button
-                type="button"
-                className="chip"
-                aria-pressed={filters.hideMuted}
-                title={`Hide the ${summary.muted} package(s) whose updates you have muted`}
-                onClick={() =>
-                  onFiltersChange({ ...filters, hideMuted: !filters.hideMuted })
-                }
-              >
-                hide muted
-              </button>
-            )}
           </div>
         </fieldset>
 
@@ -300,11 +286,6 @@ export function Toolbar({
           {summary.deprecated > 0 && (
             <span className="severity--deprecated">
               {summary.deprecated} deprecated
-            </span>
-          )}
-          {summary.muted > 0 && (
-            <span title="Excluded from the outdated count">
-              {summary.muted} muted
             </span>
           )}
           {summary.stale && (

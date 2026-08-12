@@ -43,18 +43,18 @@
   --panorama-search-min-width: 180px;
   --panorama-name-min-width: 140px;
 
-  /* Wide enough for "Update Unmute Remove"; see `.cell--actions`. */
+  /* Wide enough for "Update Remove"; see `.cell--actions`. */
   --panorama-actions-width: 18em;
 
   /*
-   * The narrowest the eight columns can be and still show their content: the
+   * The narrowest the seven columns can be and still show their content: the
    * name column's floor plus every other fixed column (140 + 90 + 110 + 130 +
-   * 90 + 100 + 96), then the actions column on top. None of them shrink, so
+   * 90 + 96), then the actions column on top. None of them shrink, so
    * anything smaller is a number the layout would ignore. The narrow
    * breakpoints below drop columns and lower this to match, which is the whole
    * reason it is a variable.
    */
-  --panorama-table-min-width: calc(756px + var(--panorama-actions-width));
+  --panorama-table-min-width: calc(656px + var(--panorama-actions-width));
   /* Pill radius: large enough that any control height rounds to a capsule. */
   --panorama-radius-pill: 999px;
 
@@ -569,11 +569,6 @@ button.danger.ghost {
   color: var(--vscode-descriptionForeground);
 }
 
-.cell--license {
-  flex: 0 0 100px;
-  color: var(--vscode-descriptionForeground);
-}
-
 /*
  * The Status column exists so the sort key of the same name has something to
  * point at, and so severity has a text equivalent rather than resting on the
@@ -587,7 +582,7 @@ button.danger.ghost {
  * Sized in em, unlike every other column, because this is the only one whose
  * content is button labels rather than a data value.
  *
- * At 180px it could not hold "Update Unmute Remove" — which needs 226px at the
+ * At 180px it could not hold "Update Remove" — which needs 226px at the
  * default editor font — so the cell's `overflow: hidden` ate the left edge of
  * the first button and the primary action on every outdated row read "pdate".
  * A data cell degrades to an ellipsis when it runs out of room; a button just
@@ -666,16 +661,6 @@ button.danger.ghost {
   color: var(--vscode-textLink-foreground);
   border: 1px solid var(--vscode-textLink-foreground);
   font-weight: normal;
-}
-
-/*
- * Muted rows stay legible rather than being hidden: the point is to remember
- * what you chose to skip, not to make it disappear. Recede by colour, not by
- * opacity, so high-contrast themes keep it readable.
- */
-.row--muted .cell--name > span:not(.badge),
-.row--muted .cell--latest {
-  color: var(--vscode-descriptionForeground);
 }
 
 .severity--deprecated {
@@ -1065,19 +1050,18 @@ a:hover,
  */
 
 /*
- * Size and License go first. Both are single values with no bearing on whether
- * a package needs attention, and both are repeated in the drawer, so nothing
+ * Size goes first. It is a single value with no bearing on whether
+ * a package needs attention, and is repeated in the drawer, so nothing
  * becomes unreachable — it just stops competing for space with the version
  * columns. Header and body are hidden together so the columns stay aligned.
  */
 @media (max-width: 1000px) {
   :root {
-    /* Less the 90px Size column and the 100px License column. */
+    /* Less the 90px Size column. */
     --panorama-table-min-width: calc(566px + var(--panorama-actions-width));
   }
 
-  .cell--size,
-  .cell--license {
+  .cell--size {
     display: none;
   }
 }

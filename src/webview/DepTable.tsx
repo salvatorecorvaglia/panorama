@@ -55,13 +55,11 @@ interface Props {
   onUpdate: (dep: Dependency) => void;
   onUninstall: (dep: Dependency) => void;
   onUpdateAll: (manifestPath: string) => void;
-  onToggleMute: (dep: Dependency) => void;
   selectedDepKeys?: Set<string>;
   onToggleSelectDep?: (depKey: string) => void;
   onToggleSelectAll?: (depKeys: string[]) => void;
   onBulkUpdateSelected?: () => void;
   onBulkRemoveSelected?: () => void;
-  onBulkMuteSelected?: () => void;
   /** Set when a command asked to scroll a specific row into view. */
   scrollToKey?: string;
   /** Called once that scroll has happened, so the request is not repeated. */
@@ -84,7 +82,6 @@ const COLUMNS: Array<{ key: SortKey | null; label: string; cell: string }> = [
   { key: 'current', label: 'Current', cell: 'cell--version' },
   { key: 'latest', label: 'Latest', cell: 'cell--latest' },
   { key: 'size', label: 'Size', cell: 'cell--size' },
-  { key: null, label: 'License', cell: 'cell--license' },
   { key: 'status', label: 'Status', cell: 'cell--status' },
   { key: null, label: 'Actions', cell: 'cell--actions' },
 ];
@@ -98,13 +95,11 @@ export function DepTable({
   onUpdate,
   onUninstall,
   onUpdateAll,
-  onToggleMute,
   selectedDepKeys = new Set(),
   onToggleSelectDep,
   onToggleSelectAll,
   onBulkUpdateSelected,
   onBulkRemoveSelected,
-  onBulkMuteSelected,
   scrollToKey,
   onScrollHandled,
   loading,
@@ -350,15 +345,6 @@ export function DepTable({
                 Update Selected
               </button>
             )}
-            {onBulkMuteSelected && (
-              <button
-                type="button"
-                className="secondary"
-                onClick={onBulkMuteSelected}
-              >
-                Mute Selected
-              </button>
-            )}
             {onBulkRemoveSelected && (
               <button
                 type="button"
@@ -479,7 +465,6 @@ export function DepTable({
                     onSelect={onSelect}
                     onUpdate={onUpdate}
                     onUninstall={onUninstall}
-                    onToggleMute={onToggleMute}
                     onFocusRow={setFocusedIndex}
                   />
                 )}
@@ -572,7 +557,6 @@ function DepRow({
   onSelect,
   onUpdate,
   onUninstall,
-  onToggleMute,
   onFocusRow,
 }: {
   dep: Dependency;
@@ -585,14 +569,13 @@ function DepRow({
   onSelect: (dep: Dependency) => void;
   onUpdate: (dep: Dependency) => void;
   onUninstall: (dep: Dependency) => void;
-  onToggleMute: (dep: Dependency) => void;
   onFocusRow: (index: number) => void;
 }) {
   const upgradeable = hasUpdate(dep);
 
   return (
     <div
-      className={`row ${dep.muted ? 'row--muted' : ''} ${checked ? 'row--checked' : ''}`}
+      className={`row ${checked ? 'row--checked' : ''}`}
       role="row"
       aria-rowindex={rowIndex}
       aria-selected={selected}
@@ -634,14 +617,6 @@ function DepRow({
         <span data-package-name className="package-name-highlight">
           {dep.name}
         </span>
-        {dep.muted && (
-          <span
-            className="badge badge--muted"
-            title="Updates muted — not counted as outdated"
-          >
-            muted
-          </span>
-        )}
       </div>
 
       <div className="cell cell--scope" role="gridcell">
@@ -680,41 +655,18 @@ function DepRow({
 
       <div className="cell cell--actions" role="gridcell">
         {upgradeable && dep.latest && (
-          <>
-            <button
-              type="button"
-              className="btn-update-primary"
-              aria-label={`Update ${dep.name} to ${dep.latest}`}
-              title={`Update to ${dep.latest}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onUpdate(dep);
-              }}
-            >
-              Update
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              aria-label={
-                dep.muted
-                  ? `Unmute ${dep.name}`
-                  : `Mute update notifications for ${dep.name}`
-              }
-              title={
-                dep.muted
-                  ? `Unmute ${dep.name} so it counts as outdated again`
-                  : `Mute ${dep.name} — keeps it listed but out of the outdated count`
-              }
-              aria-pressed={dep.muted ?? false}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleMute(dep);
-              }}
-            >
-              {dep.muted ? 'Unmute' : 'Mute'}
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn-update-primary"
+            aria-label={`Update ${dep.name} to ${dep.latest}`}
+            title={`Update to ${dep.latest}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onUpdate(dep);
+            }}
+          >
+            Update
+          </button>
         )}
         <button
           type="button"

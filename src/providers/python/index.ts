@@ -46,7 +46,6 @@ interface PyPiResponse {
     name: string;
     version: string;
     summary?: string;
-    license?: string;
     home_page?: string;
     yanked?: boolean;
     yanked_reason?: string;
@@ -402,7 +401,6 @@ export class PythonProvider implements EcosystemProvider {
       const meta: PackageMeta = {
         name: response.info.name,
         description: response.info.summary,
-        license: response.info.license,
         homepage: response.info.home_page,
         repository,
         changelogUrl:

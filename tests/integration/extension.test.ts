@@ -42,8 +42,6 @@ describe('activation', () => {
       'panorama.updateAll',
       'panorama.searchInstall',
       'panorama.showWhy',
-      'panorama.toggleMute',
-      'panorama.clearMuted',
     ]) {
       assert.ok(registered.includes(command), `${command} was not registered`);
     }
@@ -186,35 +184,7 @@ describe('scanner discovery', () => {
   });
 });
 
-describe('mute list', () => {
-  let api: PanoramaApi;
 
-  before(async () => {
-    api = await getApi();
-    await api.muteList.clear();
-  });
-
-  after(async () => {
-    await api.muteList.clear();
-  });
-
-  it('round-trips through workspaceState and affects the summary', async () => {
-    const result = await api.scan({ checkUpdates: false });
-    const node = result.groups.find((group) => group.ecosystem === 'node');
-    assert.ok(node);
-
-    const target = node.dependencies[0];
-    assert.ok(target, 'no dependency to mute');
-
-    assert.equal(api.muteList.isMuted(target), false);
-    await api.muteList.mute(target);
-    assert.equal(api.muteList.isMuted(target), true);
-    assert.equal(api.muteList.size, 1);
-
-    await api.muteList.unmute(target);
-    assert.equal(api.muteList.isMuted(target), false);
-  });
-});
 
 describe('tree view', () => {
   it('contributes the explorer view without throwing', async () => {
@@ -273,7 +243,5 @@ describe('commands are safe to invoke', () => {
     await vscode.commands.executeCommand('panorama.showWhy');
   });
 
-  it('clearMuted with an empty list does not throw', async () => {
-    await vscode.commands.executeCommand('panorama.clearMuted');
-  });
+
 });

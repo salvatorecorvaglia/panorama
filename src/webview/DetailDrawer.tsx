@@ -19,7 +19,6 @@ interface Props {
   onClose: () => void;
   /** `toVersion` defaults to `latest` when the caller does not name one. */
   onUpdate: (dep: Dependency, toVersion?: string) => void;
-  onToggleMute: (dep: Dependency) => void;
   onUninstall: (dep: Dependency) => void;
 }
 
@@ -29,7 +28,6 @@ export function DetailDrawer({
   reveal,
   onClose,
   onUpdate,
-  onToggleMute,
   onUninstall,
 }: Props) {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -189,8 +187,6 @@ export function DetailDrawer({
       <section>
         <h3>Package</h3>
         <dl>
-          <dt>License</dt>
-          <dd>{dep.meta?.license ?? '—'}</dd>
           <dt>Size</dt>
           <dd>{formatBytes(dep.meta?.sizeBytes)}</dd>
           {dep.meta?.author && (
@@ -306,8 +302,8 @@ export function DetailDrawer({
       {/*
        * The same actions the row offers, in the same words.
        *
-       * The row has Update, Mute and Remove; the drawer had only Update, so
-       * reading about a package and then deciding to mute or remove it meant
+       * The row has Update and Remove; the drawer had only Update, so
+       * reading about a package and then deciding to remove it meant
        * closing the drawer and finding the row again — in a list the drawer may
        * have scrolled away from. These post the identical messages the row
        * does, including the host's confirmation prompt before an uninstall.
@@ -319,19 +315,6 @@ export function DetailDrawer({
       <section>
         <h3>Manage</h3>
         <div className="drawer__actions">
-          <button
-            type="button"
-            className="secondary"
-            aria-pressed={dep.muted ?? false}
-            title={
-              dep.muted
-                ? `Unmute ${dep.name} so it counts as outdated again`
-                : `Mute ${dep.name} — keeps it listed but out of the outdated count`
-            }
-            onClick={() => onToggleMute(dep)}
-          >
-            {dep.muted ? 'Unmute' : 'Mute'}
-          </button>
           <button
             type="button"
             className="danger"

@@ -13,7 +13,6 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { explainDependency } from '../core/depGraph.js';
 import { findDeclaration } from '../core/findDeclaration.js';
-import type { MuteList } from '../core/muteList.js';
 import type { HostMessage, WebviewMessage } from '../core/protocol.js';
 import type { Scanner, ScanResult } from '../core/scanner.js';
 import type {
@@ -37,7 +36,6 @@ export class PanelManager implements vscode.Disposable {
       outdated: 0,
       vulnerable: 0,
       deprecated: 0,
-      muted: 0,
       stale: false,
     },
   };
@@ -63,7 +61,6 @@ export class PanelManager implements vscode.Disposable {
     private readonly scanner: Scanner,
     private readonly ctx: ProviderContext,
     private readonly onStateChanged: (result: ScanResult) => void,
-    private readonly muteList?: MuteList,
   ) {}
 
   get currentResult(): ScanResult {
@@ -153,23 +150,6 @@ export class PanelManager implements vscode.Disposable {
 
   private selectedKey: string | undefined;
 
-  private async toggleMute(depKey: string): Promise<void> {
-    const found = this.findDependency(depKey);
-    if (!found || !this.muteList) return;
-
-    const nowMuted = await this.muteList.toggle(found.dep);
-    // Recomputing the summary keeps the badge honest without a network round-trip.
-    this.setResult(
-      this.scanner.resummarize(this.latest.groups, this.latest.summary.stale),
-    );
-    this.post({
-      type: 'notice',
-      message: nowMuted
-        ? `Muted updates for ${found.dep.name}. It stays listed but no longer counts as outdated.`
-        : `Unmuted ${found.dep.name}.`,
-    });
-  }
-
   private post(message: HostMessage): void {
     void this.panel?.webview.postMessage(message);
   }
@@ -252,10 +232,6 @@ export class PanelManager implements vscode.Disposable {
 
       case 'requestWhy':
         await this.handleWhy(message.depKey);
-        return;
-
-      case 'toggleMute':
-        await this.toggleMute(message.depKey);
         return;
 
       case 'openExternal':

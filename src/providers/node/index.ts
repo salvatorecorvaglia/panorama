@@ -67,7 +67,6 @@ interface PackumentVersion {
   version: string;
   deprecated?: string;
   dist?: { unpackedSize?: number; tarball?: string };
-  license?: string | { type?: string };
   description?: string;
   homepage?: string;
   repository?: string | { url?: string };
@@ -306,7 +305,7 @@ export class NodeProvider implements EcosystemProvider {
     try {
       // The full version document, not the abbreviated packument: the
       // abbreviated form is install-oriented and carries none of the fields we
-      // need here (license, repository, homepage, description).
+      // need here (repository, homepage, description).
       const version = await ctx.http.getJson<PackumentVersion>(
         `${registry}/${encodeName(name)}/latest`,
         { signal },
@@ -322,10 +321,6 @@ export class NodeProvider implements EcosystemProvider {
       const meta: PackageMeta = {
         name,
         description: version.description,
-        license:
-          typeof version.license === 'string'
-            ? version.license
-            : version.license?.type,
         homepage: version.homepage,
         repository,
         changelogUrl: changelogUrlFor(repository),

@@ -19,7 +19,6 @@ const EMPTY_SUMMARY: ScanSummary = {
   outdated: 0,
   vulnerable: 0,
   deprecated: 0,
-  muted: 0,
   stale: false,
 };
 
@@ -202,11 +201,11 @@ describe('detail metadata', () => {
     send({
       type: 'depDetails',
       depKey: 'react',
-      meta: { name: 'react', license: 'MIT', sizeBytes: 1024 },
+      meta: { name: 'react', sizeBytes: 1024 },
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText('MIT').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('1.0 KB').length).toBeGreaterThan(0);
     });
   });
 });

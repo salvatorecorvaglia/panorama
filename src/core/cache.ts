@@ -35,7 +35,7 @@ const DEFAULT_MAX_ENTRIES = 5000;
 export const TTL = {
   /** Latest-version lookups: fresh enough to be useful, cheap enough to redo. */
   version: 60 * 60 * 1000,
-  /** Descriptions, licenses, sizes — these barely move. */
+  /** Descriptions, sizes — these barely move. */
   metadata: 24 * 60 * 60 * 1000,
   /** Advisories: worth re-checking a few times a day. */
   audit: 6 * 60 * 60 * 1000,

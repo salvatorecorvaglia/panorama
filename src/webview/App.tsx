@@ -34,7 +34,6 @@ const EMPTY_SUMMARY: ScanSummary = {
   outdated: 0,
   vulnerable: 0,
   deprecated: 0,
-  muted: 0,
   stale: false,
 };
 
@@ -47,7 +46,6 @@ function defaultFilters(scopes?: DepScope[]): Filters {
     onlyOutdated: false,
     onlyVulnerable: false,
     onlyDeprecated: false,
-    hideMuted: false,
   };
 }
 
@@ -58,8 +56,7 @@ function isFiltering(filters: Filters): boolean {
     filters.scopes.size !== ALL_SCOPES.length ||
     filters.onlyOutdated ||
     filters.onlyVulnerable ||
-    filters.onlyDeprecated ||
-    filters.hideMuted
+    filters.onlyDeprecated
   );
 }
 
@@ -156,12 +153,6 @@ export function App() {
   const handleBulkRemoveSelected = useCallback(() => {
     for (const key of selectedDepKeys) {
       post({ type: 'uninstall', depKey: key });
-    }
-  }, [selectedDepKeys]);
-
-  const handleBulkMuteSelected = useCallback(() => {
-    for (const key of selectedDepKeys) {
-      post({ type: 'toggleMute', depKey: key });
     }
   }, [selectedDepKeys]);
 
@@ -320,9 +311,6 @@ export function App() {
           if (filters.onlyVulnerable && dep.vulnerabilities.length === 0)
             return false;
           if (filters.onlyDeprecated && !dep.meta?.deprecated) return false;
-          // Muted rows stay visible by default — hiding them would make it hard
-          // to remember what you muted — but can be filtered out deliberately.
-          if (filters.hideMuted && dep.muted) return false;
           return true;
         }),
       }))
@@ -551,15 +539,11 @@ export function App() {
             onUpdateAll={(manifestPath) =>
               post({ type: 'updateAll', manifestPath })
             }
-            onToggleMute={(dep) =>
-              post({ type: 'toggleMute', depKey: dep.key })
-            }
             selectedDepKeys={selectedDepKeys}
             onToggleSelectDep={handleToggleSelectDep}
             onToggleSelectAll={handleToggleSelectAll}
             onBulkUpdateSelected={handleBulkUpdateSelected}
             onBulkRemoveSelected={handleBulkRemoveSelected}
-            onBulkMuteSelected={handleBulkMuteSelected}
             scrollToKey={scrollToKey}
             onScrollHandled={handleScrollHandled}
             loading={!loaded || (busy && groups.length === 0)}
@@ -575,9 +559,6 @@ export function App() {
             reveal={revealSection}
             onClose={() => setSelectedKey(undefined)}
             onUpdate={handleUpdate}
-            onToggleMute={(target) =>
-              post({ type: 'toggleMute', depKey: target.key })
-            }
             onUninstall={handleUninstall}
           />
         )}

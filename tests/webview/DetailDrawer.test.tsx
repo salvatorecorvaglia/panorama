@@ -36,7 +36,6 @@ function renderDrawer(
       reveal="details"
       onClose={() => {}}
       onUpdate={() => {}}
-      onToggleMute={() => {}}
       onUninstall={() => {}}
       {...overrides}
     />,
@@ -66,7 +65,6 @@ describe('versions', () => {
         reveal="details"
         onClose={() => {}}
         onUpdate={() => {}}
-        onToggleMute={() => {}}
         onUninstall={() => {}}
       />,
     );
@@ -178,26 +176,12 @@ describe('advisories', () => {
 });
 
 describe('managing the package', () => {
-  /*
-   * The row offers Update, Mute and Remove. The drawer offered only Update, so
-   * acting on what you had just read meant closing it and finding the row again.
-   */
-  it('offers the same mute and remove the row does', async () => {
-    const onToggleMute = vi.fn();
+  it('offers the same remove the row does', async () => {
     const onUninstall = vi.fn();
-    renderDrawer({ onToggleMute, onUninstall });
-
-    await userEvent.click(screen.getByRole('button', { name: 'Mute' }));
-    expect(onToggleMute).toHaveBeenCalledOnce();
+    renderDrawer({ onUninstall });
 
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     expect(onUninstall).toHaveBeenCalledOnce();
-  });
-
-  it('reflects mute state on the toggle, as the row does', () => {
-    renderDrawer({ dep: dep({ muted: true }) });
-    const toggle = screen.getByRole('button', { name: 'Unmute' });
-    expect(toggle).toHaveAttribute('aria-pressed', 'true');
   });
 });
 
@@ -246,7 +230,6 @@ describe('the why tree', () => {
         reveal="details"
         onClose={() => {}}
         onUpdate={() => {}}
-        onToggleMute={() => {}}
         onUninstall={() => {}}
       />,
     );
@@ -269,7 +252,6 @@ describe('the why tree', () => {
         reveal="details"
         onClose={() => {}}
         onUpdate={() => {}}
-        onToggleMute={() => {}}
         onUninstall={() => {}}
       />,
     );

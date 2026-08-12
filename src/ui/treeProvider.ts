@@ -35,7 +35,6 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Node> {
       outdated: 0,
       vulnerable: 0,
       deprecated: 0,
-      muted: 0,
       stale: false,
     },
   };
@@ -181,7 +180,6 @@ function buildTooltip(dep: Dependency): vscode.MarkdownString {
   lines.push(`- Declared: \`${dep.declared}\``);
   if (dep.installed) lines.push(`- Installed: \`${dep.installed}\``);
   if (dep.latest) lines.push(`- Latest: \`${dep.latest}\``);
-  if (dep.meta?.license) lines.push(`- License: ${dep.meta.license}`);
 
   if (dep.meta?.deprecated) {
     lines.push('', `⚠️ **Deprecated** — ${dep.meta.deprecated}`);

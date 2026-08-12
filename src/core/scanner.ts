@@ -16,7 +16,6 @@ import {
   providerForPath,
 } from '../providers/registry.js';
 import { auditDependencies } from './audit.js';
-import type { MuteList } from './muteList.js';
 import type {
   Dependency,
   Ecosystem,
@@ -65,23 +64,7 @@ export class Scanner {
   /** The cap, so the message the host shows and the limit cannot disagree. */
   static readonly manifestLimit = MAX_MANIFESTS;
 
-  constructor(
-    private readonly ctx: ProviderContext,
-    private readonly muteList?: MuteList,
-  ) {}
-
-  /** Re-stamps `muted` and recomputes the summary without a full rescan. */
-  resummarize(groups: ProjectGroup[], stale: boolean): ScanResult {
-    this.applyMutes(groups);
-    return { groups, summary: summarize(groups, stale) };
-  }
-
-  private applyMutes(groups: ProjectGroup[]): void {
-    if (!this.muteList) return;
-    for (const group of groups) {
-      this.muteList.applyTo(group.dependencies);
-    }
-  }
+  constructor(private readonly ctx: ProviderContext) {}
 
   cancel(): void {
     this.inFlight?.abort();
@@ -102,7 +85,6 @@ export class Scanner {
     const signal = controller.signal;
 
     const groups = await this.collectGroups();
-    this.applyMutes(groups);
 
     const partial: ScanResult = { groups, summary: summarize(groups, false) };
     onPartial?.(partial);
@@ -129,9 +111,6 @@ export class Scanner {
       stale = true;
     }
 
-    // Re-applied after enrichment: a mute is scoped to the version it was taken
-    // against, which is only known once `latest` has been resolved.
-    this.applyMutes(groups);
     return { groups, summary: summarize(groups, stale) };
   }
 
@@ -446,7 +425,6 @@ function summarize(groups: ProjectGroup[], stale: boolean): ScanSummary {
   let outdated = 0;
   let vulnerable = 0;
   let deprecated = 0;
-  let muted = 0;
 
   for (const group of groups) {
     for (const dep of group.dependencies) {
@@ -456,13 +434,8 @@ function summarize(groups: ProjectGroup[], stale: boolean): ScanSummary {
         dep.updateKind === 'minor' ||
         dep.updateKind === 'major';
       if (isOutdated) {
-        // Muted updates are counted separately so the badge keeps meaning
-        // "things I still need to look at".
-        if (dep.muted) muted++;
-        else outdated++;
+        outdated++;
       }
-      // A vulnerability is never silenced by a mute — that decision was about
-      // an upgrade being inconvenient, not about the risk going away.
       if (dep.vulnerabilities.length > 0) vulnerable++;
       if (dep.meta?.deprecated) deprecated++;
     }
@@ -473,7 +446,6 @@ function summarize(groups: ProjectGroup[], stale: boolean): ScanSummary {
     outdated,
     vulnerable,
     deprecated,
-    muted,
     stale,
   };
 }

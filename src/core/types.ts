@@ -88,7 +88,6 @@ export interface Vulnerability {
 export interface PackageMeta {
   name: string;
   description?: string;
-  license?: string;
   homepage?: string;
   repository?: string;
   changelogUrl?: string;
@@ -133,11 +132,6 @@ export interface Dependency {
   projectLabel: string;
   /** True when the registry lookup failed; the row renders in a muted state. */
   lookupFailed?: boolean;
-  /**
-   * True when the user has deliberately muted this update. Muted packages stay
-   * visible but are excluded from the outdated counts.
-   */
-  muted?: boolean;
 }
 
 export interface ParsedManifest {
@@ -198,8 +192,6 @@ export interface ScanSummary {
   outdated: number;
   vulnerable: number;
   deprecated: number;
-  /** How many outdated packages are muted, and so excluded from `outdated`. */
-  muted: number;
   /** True when results came from cache because the network was unreachable. */
   stale: boolean;
 }
