@@ -18,6 +18,8 @@
 - 🌲 **"Why Is This Installed?" Dependency Inspector**: Inspect transitive dependencies and trace exact resolution paths.
 - 🔕 **Per-Workspace Package Muting**: Suppress update notifications for specific packages on a per-project basis.
 - 📁 **Monorepo & Multi-Root Support**: Automatically discovers and aggregates nested manifest files across complex monorepos and multi-root workspaces.
+- ♿ **Accessible & Keyboard-First UI**: Roving `tabindex` table navigation, global `Ctrl+F` / `Cmd+F` search shortcut, ARIA live progress indicators, and high-contrast theme focus rings.
+- 🔔 **Error Notification Queue**: Queued toast notification system for managing host and registry errors without silent dropping.
 - ⚙️ **Custom Registries & Proxy Overrides**: Configure private registries and custom `User-Agent` contact headers.
 
 ---

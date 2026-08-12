@@ -19,7 +19,7 @@ Before you start, ensure you have the following installed on your system:
 Panorama is structured as a VS Code extension with a dual-layer architecture:
 
 - **Extension Host (`src/`)**: Written in TypeScript and compiled with `esbuild`. Responsible for scanning manifest files, workspace file watching, package manager CLI execution, registry API queries, OSV.dev vulnerability auditing, tree view data provider (`panorama.explorer`), and webview panel message handling.
-- **Webview UI (`src/webview/`)**: React application built with TypeScript, Vite, and TanStack Virtual (`@tanstack/react-virtual`). Rendered inside a VS Code Webview panel (`panorama.open`) for deep, interactive dependency management.
+- **Webview UI (`src/webview/`)**: React application built with TypeScript, Vite, and TanStack Virtual (`@tanstack/react-virtual`). Rendered inside a VS Code Webview panel (`panorama.open`) for deep, interactive dependency management with full accessibility support (roving `tabindex` table focus, global keyboard shortcuts, error queuing toast alerts, and ARIA live progress indicators).
 
 ---
 
@@ -82,6 +82,8 @@ This starts concurrent watch processes for both the Extension Host (`esbuild`) a
 
 ## 🧪 Testing & Verification Guidelines
 
+Panorama includes comprehensive unit tests (`test/unit/`), React webview component tests (`test/webview/` using Testing Library & JSDOM), and extension host integration tests (`test/integration/`).
+
 Before submitting a pull request, verify that all quality and test checks pass cleanly:
 
 ```bash
@@ -94,7 +96,7 @@ pnpm run lint
 # 3. Format code automatically (if needed)
 pnpm run format
 
-# 4. Run unit test suite
+# 4. Run unit & webview component test suite
 pnpm run test
 
 # 5. Run integration tests (optional locally, mandatory in CI)
