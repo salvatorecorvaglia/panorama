@@ -10,7 +10,7 @@
  * it in.
  */
 
-import type { Dependency, DepScope } from './types.js';
+import type { Dependency, DepScope, Severity, Vulnerability } from './types.js';
 
 /** Declaration order everywhere a scope list is shown, most-used first. */
 export const ALL_SCOPES: DepScope[] = [
@@ -69,5 +69,34 @@ export function statusRank(dep: Dependency): number {
 export function sortByStatus(dependencies: Dependency[]): Dependency[] {
   return [...dependencies].sort(
     (a, b) => statusRank(a) - statusRank(b) || a.name.localeCompare(b.name),
+  );
+}
+
+/** Advisory severity, worst first. The counterpart to `statusRank`. */
+const SEVERITY_RANK: Record<Severity, number> = {
+  critical: 0,
+  high: 1,
+  moderate: 2,
+  low: 3,
+};
+
+export function severityRank(vulnerability: Vulnerability): number {
+  return SEVERITY_RANK[vulnerability.severity];
+}
+
+/**
+ * Advisories worst-first, then by id so the order is stable between scans.
+ *
+ * OSV answers in its own order, which is neither severity nor anything else the
+ * reader can use: a `critical` could sit below a `low` in the drawer, and the
+ * tree's tooltip — which shows the first three — could omit the one advisory
+ * that mattered. Sorting here rather than at either display site is what makes
+ * both surfaces agree, the same reason `statusRank` lives in this file.
+ */
+export function sortBySeverity(
+  vulnerabilities: Vulnerability[],
+): Vulnerability[] {
+  return [...vulnerabilities].sort(
+    (a, b) => severityRank(a) - severityRank(b) || a.id.localeCompare(b.id),
   );
 }

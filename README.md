@@ -57,7 +57,7 @@ Panorama contributes the following commands to VS Code (`Panorama` category):
 | `panorama.updateAll` | **Update All Dependencies** | Upgrades all outdated dependencies in workspace manifests. |
 | `panorama.searchInstall` | **Search & Install Package** | Opens the interactive registry search interface to find and add dependencies. |
 | `panorama.showWhy` | **Why Is This Installed?** | Displays the dependency graph path explaining why a package is present. |
-| `panorama.toggleMute` | **Mute/Unmute Updates for This Package in This Project** | Suppresses or restores update checks for the selected dependency. |
+| `panorama.toggleMute` | **Mute/Unmute Updates** | Suppresses or restores update checks for the selected dependency, in this project only. |
 | `panorama.clearMuted` | **Clear All Muted Packages** | Resets all muted package preferences in the active workspace. |
 | `panorama.revealDependency` | **Reveal Package in Panel** | Focuses and highlights the selected dependency inside the interactive React webview panel. |
 

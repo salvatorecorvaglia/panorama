@@ -9,6 +9,7 @@
  * install into, so the target selector is what goes empty, not the panel.
  */
 
+import type { KeyboardEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   DepScope,
@@ -18,6 +19,7 @@ import type {
 } from '../core/types.js';
 import { SCOPE_LABELS } from '../core/vocabulary.js';
 import { ECOSYSTEM_LABELS, formatDownloads } from './format.js';
+import { Icon } from './Icon.js';
 
 interface Props {
   groups: ProjectGroup[];
@@ -64,6 +66,8 @@ export function SearchInstall({
     groups[0]?.manifestPath ?? '',
   );
   const inputRef = useRef<HTMLInputElement>(null);
+  /** The element that had focus when the panel opened, to restore on close. */
+  const returnFocusRef = useRef<Element | null>(null);
 
   // Ecosystems actually present in this workspace — offering PyPI in a pure Go
   // project would just be noise.
@@ -72,8 +76,17 @@ export function SearchInstall({
     [groups],
   );
 
+  // Focus lands in the search box on open and goes back where it came from on
+  // close — the same contract as the detail drawer.
   useEffect(() => {
+    returnFocusRef.current = document.activeElement;
     inputRef.current?.focus();
+    return () => {
+      const target = returnFocusRef.current;
+      if (target instanceof HTMLElement && document.contains(target)) {
+        target.focus();
+      }
+    };
   }, []);
 
   // Keep the install target valid as the workspace changes underneath us.
@@ -91,12 +104,52 @@ export function SearchInstall({
     return () => clearTimeout(timer);
   }, [query, ecosystem, onSearch]);
 
+  /*
+   * Enter searches now.
+   *
+   * The debounce is right for someone still typing and wrong for someone who
+   * has finished: pressing Enter in a search box and having nothing happen for
+   * a third of a second reads as the box being broken. Re-setting the query to
+   * itself cannot restart the debounce, so this calls through directly.
+   */
+  const handleQueryKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    const trimmed = query.trim();
+    if (trimmed.length < 2) return;
+    event.preventDefault();
+    onSearch(trimmed, ecosystem);
+  };
+
+  /*
+   * Escape closes the panel, and closing returns focus to whatever opened it.
+   *
+   * Both are what the drawer already does. Two dismissable overlays in one
+   * webview that disagree about Escape is the kind of inconsistency you only
+   * notice by having your keystroke ignored.
+   */
+  const handlePanelKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape') return;
+    event.stopPropagation();
+    onClose();
+  };
+
   const selectedGroup = groups.find(
     (group) => group.manifestPath === targetManifest,
   );
 
+  /*
+   * A named <section>, since the toolbar's toggle points at this with
+   * aria-controls and the target of that pointer should be findable. A section
+   * with an accessible name is a region natively — same reasoning as the
+   * fieldset around the filter chips.
+   */
   return (
-    <div className="search-panel" id="panorama-search-panel">
+    <section
+      className="search-panel"
+      id="panorama-search-panel"
+      aria-label="Package search"
+      onKeyDown={handlePanelKeyDown}
+    >
       <div className="toolbar">
         <div className="toolbar__row">
           <div className="toolbar__search">
@@ -107,52 +160,68 @@ export function SearchInstall({
               value={query}
               aria-label="Search registries"
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={handleQueryKeyDown}
             />
           </div>
 
-          <select
-            value={ecosystem}
-            aria-label="Registry"
-            onChange={(event) =>
-              setEcosystem(event.target.value as Ecosystem | 'all')
-            }
-          >
-            <option value="all">All registries</option>
-            {availableEcosystems.map((id) => (
-              <option key={id} value={id}>
-                {ECOSYSTEM_LABELS[id]}
-              </option>
-            ))}
-          </select>
+          {/*
+            Visible labels, not just aria-labels.
 
-          <select
-            value={targetManifest}
-            aria-label="Install into"
-            disabled={groups.length === 0}
-            onChange={(event) => setTargetManifest(event.target.value)}
-          >
-            {groups.length === 0 && (
-              <option value="">No project to install into</option>
-            )}
-            {groups.map((group) => (
-              <option key={group.manifestPath} value={group.manifestPath}>
-                {group.label}
-              </option>
-            ))}
-          </select>
+            These three selects decide *where* and *how* a package gets
+            installed, and unlabelled they read as "All registries | my-app |
+            prod" — three bare values with nothing saying which is the target
+            project and which is the scope. The name of a control that changes
+            what a write does should not be discoverable only by screen reader.
+          */}
+          <label className="field">
+            <span className="field__label">Registry</span>
+            <select
+              value={ecosystem}
+              onChange={(event) =>
+                setEcosystem(event.target.value as Ecosystem | 'all')
+              }
+            >
+              <option value="all">All registries</option>
+              {availableEcosystems.map((id) => (
+                <option key={id} value={id}>
+                  {ECOSYSTEM_LABELS[id]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span className="field__label">Install into</span>
+            <select
+              value={targetManifest}
+              disabled={groups.length === 0}
+              onChange={(event) => setTargetManifest(event.target.value)}
+            >
+              {groups.length === 0 && (
+                <option value="">No project to install into</option>
+              )}
+              {groups.map((group) => (
+                <option key={group.manifestPath} value={group.manifestPath}>
+                  {group.label}
+                </option>
+              ))}
+            </select>
+          </label>
 
           {/* The same four words the table, the chips and the tree use. */}
-          <select
-            value={scope}
-            aria-label="Dependency scope"
-            onChange={(event) => setScope(event.target.value as DepScope)}
-          >
-            {INSTALLABLE_SCOPES.map((id) => (
-              <option key={id} value={id}>
-                {SCOPE_LABELS[id].short}
-              </option>
-            ))}
-          </select>
+          <label className="field">
+            <span className="field__label">Scope</span>
+            <select
+              value={scope}
+              onChange={(event) => setScope(event.target.value as DepScope)}
+            >
+              {INSTALLABLE_SCOPES.map((id) => (
+                <option key={id} value={id}>
+                  {SCOPE_LABELS[id].short}
+                </option>
+              ))}
+            </select>
+          </label>
 
           {/* The toolbar's toggle is not on screen in the empty workspace
               state, so the panel carries its own way out. */}
@@ -162,7 +231,7 @@ export function SearchInstall({
             onClick={onClose}
             aria-label="Close package search"
           >
-            ✕
+            <Icon name="close" />
           </button>
         </div>
 
@@ -203,7 +272,7 @@ export function SearchInstall({
       )}
 
       {searching && results.length === 0 && (
-        <div className="empty">Searching…</div>
+        <div className="empty empty--inline">Searching…</div>
       )}
 
       {!searching &&
@@ -245,7 +314,9 @@ export function SearchInstall({
                   {ECOSYSTEM_LABELS[result.ecosystem]}
                 </span>
                 {result.deprecated && (
-                  <span className="severity--deprecated">▲ deprecated</span>
+                  <span className="severity--deprecated">
+                    <Icon name="warning" /> deprecated
+                  </span>
                 )}
                 {result.downloads !== undefined && (
                   <span className="muted">
@@ -308,6 +379,6 @@ export function SearchInstall({
           </div>
         );
       })}
-    </div>
+    </section>
   );
 }

@@ -2,7 +2,7 @@
  * The toolbar: filters, the summary line, and its keyboard contract.
  */
 
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ScanSummary } from '../../src/core/types.js';
@@ -65,6 +65,24 @@ describe('filters', () => {
       'aria-pressed',
       'false',
     );
+  });
+
+  it('separates the two chip families, which pull in opposite directions', () => {
+    renderToolbar();
+
+    // Named by their legends, so the grouping is available to a screen reader
+    // and not only to the eye.
+    expect(screen.getByRole('group', { name: 'Scope' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('group', { name: 'Show only' }),
+    ).toBeInTheDocument();
+
+    // And each chip lands in the group it belongs to.
+    const scope = screen.getByRole('group', { name: 'Scope' });
+    expect(within(scope).getByRole('button', { name: 'dev' })).toBeVisible();
+    expect(
+      within(scope).queryByRole('button', { name: 'outdated' }),
+    ).toBeNull();
   });
 
   it('offers "hide muted" only once something is muted', () => {
@@ -138,19 +156,37 @@ describe('actions', () => {
 
   it('announces progress as a progressbar rather than a bare div', () => {
     renderToolbar({ busy: true, busyLabel: 'Checking registries…' });
-    expect(screen.getByRole('progressbar')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Checking registries');
+    // The label names the progressbar rather than joining the summary's live
+    // region, so progress is announced once and as progress.
+    expect(screen.getByRole('progressbar')).toHaveAccessibleName(
+      'Checking registries…',
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent(
+      'Checking registries',
+    );
+  });
+
+  it('keeps the busy label visible even though it is not announced twice', () => {
+    renderToolbar({ busy: true, busyLabel: 'Checking registries…' });
+    expect(screen.getByText('Checking registries…')).toBeInTheDocument();
   });
 });
 
 describe('keyboard navigation', () => {
+  /** Every button the roving tabindex covers, in DOM order. */
+  const toolbarButtons = () =>
+    [
+      ...screen.getByRole('toolbar').querySelectorAll('button'),
+    ] as HTMLElement[];
+
   it('moves between controls with arrow keys, as role=toolbar implies', async () => {
     // A toolbar is one tab stop; arrows move within it. Declaring the role
     // without implementing that leaves a promise the widget does not keep.
     renderToolbar();
 
     const chips = screen.getAllByRole('button', { name: /prod|dev|build/ });
-    chips[0].focus();
+    // Focusing a toolbar button moves the tab stop, which is a state update.
+    await act(async () => chips[0].focus());
     expect(document.activeElement).toBe(chips[0]);
 
     await userEvent.keyboard('{ArrowRight}');
@@ -158,5 +194,45 @@ describe('keyboard navigation', () => {
 
     await userEvent.keyboard('{ArrowLeft}');
     expect(document.activeElement).toBe(chips[0]);
+  });
+
+  it('is a single tab stop — the other half of the same promise', () => {
+    renderToolbar();
+
+    const tabbable = toolbarButtons().filter((button) => button.tabIndex === 0);
+    expect(tabbable).toHaveLength(1);
+    expect(toolbarButtons().length).toBeGreaterThan(1);
+  });
+
+  it('moves the tab stop along with the arrow keys', async () => {
+    renderToolbar();
+
+    const buttons = toolbarButtons();
+    await act(async () => buttons[0].focus());
+    await userEvent.keyboard('{ArrowRight}');
+
+    expect(toolbarButtons().filter((b) => b.tabIndex === 0)).toEqual([
+      buttons[1],
+    ]);
+    expect(buttons[0].tabIndex).toBe(-1);
+  });
+
+  it('keeps exactly one tab stop when a conditional chip appears', () => {
+    const { rerender, props } = renderToolbar();
+    rerender(<Toolbar {...props} summary={{ ...SUMMARY, muted: 2 }} />);
+
+    expect(toolbarButtons().filter((b) => b.tabIndex === 0)).toHaveLength(1);
+  });
+
+  it('adopts a button that is focused directly, so re-entry returns there', async () => {
+    renderToolbar();
+
+    const refresh = screen.getByRole('button', { name: /^Refresh/i });
+    // Wrapped so the render the focus handler schedules has flushed before the
+    // assertion reads tabIndex back out of the DOM.
+    await act(async () => refresh.focus());
+
+    expect(refresh.tabIndex).toBe(0);
+    expect(toolbarButtons().filter((b) => b.tabIndex === 0)).toEqual([refresh]);
   });
 });

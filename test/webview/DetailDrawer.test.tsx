@@ -36,6 +36,8 @@ function renderDrawer(
       reveal="details"
       onClose={() => {}}
       onUpdate={() => {}}
+      onToggleMute={() => {}}
+      onUninstall={() => {}}
       {...overrides}
     />,
   );
@@ -64,6 +66,8 @@ describe('versions', () => {
         reveal="details"
         onClose={() => {}}
         onUpdate={() => {}}
+        onToggleMute={() => {}}
+        onUninstall={() => {}}
       />,
     );
     expect(screen.getByText('Wanted')).toBeInTheDocument();
@@ -141,6 +145,60 @@ describe('advisories', () => {
     renderDrawer({ dep: vulnerable });
     expect(screen.queryByText(/No lockfile pins a version/i)).toBeNull();
   });
+
+  it('distinguishes severities by more than one uppercase word', () => {
+    // Every advisory shared the same red callout, so a critical and a low were
+    // told apart only by the text.
+    renderDrawer({
+      dep: dep({
+        vulnerabilities: [
+          {
+            id: 'GHSA-crit',
+            summary: 'bad',
+            severity: 'critical',
+            aliases: [],
+            url: 'https://osv.dev/a',
+          },
+          {
+            id: 'GHSA-low',
+            summary: 'minor',
+            severity: 'low',
+            aliases: [],
+            url: 'https://osv.dev/b',
+          },
+        ],
+      }),
+    });
+
+    const critical = screen.getByText('CRITICAL').closest('.callout');
+    const low = screen.getByText('LOW').closest('.callout');
+    expect(critical).toHaveClass('severity-critical');
+    expect(low).toHaveClass('severity-low');
+  });
+});
+
+describe('managing the package', () => {
+  /*
+   * The row offers Update, Mute and Remove. The drawer offered only Update, so
+   * acting on what you had just read meant closing it and finding the row again.
+   */
+  it('offers the same mute and remove the row does', async () => {
+    const onToggleMute = vi.fn();
+    const onUninstall = vi.fn();
+    renderDrawer({ onToggleMute, onUninstall });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Mute' }));
+    expect(onToggleMute).toHaveBeenCalledOnce();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(onUninstall).toHaveBeenCalledOnce();
+  });
+
+  it('reflects mute state on the toggle, as the row does', () => {
+    renderDrawer({ dep: dep({ muted: true }) });
+    const toggle = screen.getByRole('button', { name: 'Unmute' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  });
 });
 
 describe('links', () => {
@@ -188,6 +246,8 @@ describe('the why tree', () => {
         reveal="details"
         onClose={() => {}}
         onUpdate={() => {}}
+        onToggleMute={() => {}}
+        onUninstall={() => {}}
       />,
     );
     expect(
@@ -209,6 +269,8 @@ describe('the why tree', () => {
         reveal="details"
         onClose={() => {}}
         onUpdate={() => {}}
+        onToggleMute={() => {}}
+        onUninstall={() => {}}
       />,
     );
     expect(screen.getByText(/Resolved from the registry/i)).toBeInTheDocument();

@@ -85,10 +85,18 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     treeDataProvider: tree,
   });
 
+  /*
+   * The id and `name` are what VS Code shows in the status bar's own
+   * right-click menu, where a user hides individual items. Without them the
+   * entry there is unnamed, so the only way to hide Panorama's counter is to
+   * guess which nameless row it is.
+   */
   const statusBar = vscode.window.createStatusBarItem(
+    'panorama.status',
     vscode.StatusBarAlignment.Right,
     100,
   );
+  statusBar.name = 'Panorama Dependencies';
   statusBar.command = 'panorama.open';
 
   const panel = new PanelManager(
@@ -382,6 +390,15 @@ function updateStatusBar(item: vscode.StatusBarItem, result: ScanResult): void {
       ? `$(package) ${parts.join(' ')}`
       : `$(package) ${totalDependencies}`;
   item.tooltip = `Panorama — ${totalDependencies} dependencies, ${outdated} outdated, ${vulnerable} vulnerable`;
+  /*
+   * `text` is icons and bare numbers ("$(shield) 1 $(arrow-up) 6"), which a
+   * screen reader reads as two unexplained digits. The label spells out what
+   * they count.
+   */
+  item.accessibilityInformation = {
+    label: `Panorama: ${totalDependencies} dependencies, ${outdated} outdated, ${vulnerable} vulnerable`,
+    role: 'button',
+  };
   item.backgroundColor =
     vulnerable > 0
       ? new vscode.ThemeColor('statusBarItem.warningBackground')

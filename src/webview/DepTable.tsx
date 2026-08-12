@@ -37,6 +37,7 @@ import {
   ROW_HEIGHT,
   updateClass,
 } from './format.js';
+import { Icon } from './Icon.js';
 
 export type SortKey =
   | 'name'
@@ -264,9 +265,6 @@ export function DepTable({
     );
   };
 
-  const indicator = (key: SortKey) =>
-    sort.key === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : '';
-
   const ariaSort = (
     key: SortKey | null,
   ): 'none' | 'ascending' | 'descending' | undefined => {
@@ -331,7 +329,20 @@ export function DepTable({
                 onClick={() => toggleSort(column.key as SortKey)}
               >
                 {column.label}
-                {indicator(column.key)}
+                {/*
+                 * Decorative: `aria-sort` on the columnheader already states
+                 * the sort programmatically, and as a text arrow this became
+                 * part of the button's accessible name ("Package ↑") — the
+                 * same fact announced twice, once in a form nobody chose.
+                 */}
+                {sort.key === column.key && (
+                  <Icon
+                    name={
+                      sort.direction === 'asc' ? 'chevron-up' : 'chevron-down'
+                    }
+                    className="table__sort"
+                  />
+                )}
               </button>
             ) : (
               <span className="table__header-label">{column.label}</span>
@@ -516,25 +527,22 @@ function DepRow({
       }}
     >
       <div className="cell cell--name" role="gridcell" title={dep.name}>
+        {/* The same two codicons `treeProvider.iconFor` uses for these states. */}
         {dep.vulnerabilities.length > 0 && (
-          <span
+          <Icon
+            name="shield"
             className="severity--vuln"
-            role="img"
+            label="Vulnerable"
             title={`${dep.vulnerabilities.length} known vulnerability(ies)`}
-            aria-label="Vulnerable"
-          >
-            ⬤
-          </span>
+          />
         )}
         {dep.meta?.deprecated && (
-          <span
+          <Icon
+            name="warning"
             className="severity--deprecated"
-            role="img"
+            label="Deprecated"
             title={dep.meta.deprecated}
-            aria-label="Deprecated"
-          >
-            ▲
-          </span>
+          />
         )}
         <span data-package-name>{dep.name}</span>
         {dep.muted && (

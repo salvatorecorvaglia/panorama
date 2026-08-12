@@ -75,6 +75,48 @@ describe('searching', () => {
     expect(onSearch).toHaveBeenCalledWith('react', 'all');
   });
 
+  it('searches immediately on Enter rather than waiting out the debounce', async () => {
+    // The debounce is right for someone mid-word and wrong for someone who has
+    // finished: pressing Enter and getting nothing reads as a broken box.
+    const onSearch = vi.fn();
+    renderPanel({ onSearch });
+
+    const box = screen.getByRole('searchbox', { name: /Search registries/i });
+    await userEvent.type(box, 'react{Enter}');
+
+    expect(onSearch).toHaveBeenCalledWith('react', 'all');
+  });
+
+  it('ignores Enter below the two-character floor', async () => {
+    const onSearch = vi.fn();
+    renderPanel({ onSearch });
+
+    await userEvent.type(
+      screen.getByRole('searchbox', { name: /Search registries/i }),
+      'r{Enter}',
+    );
+
+    expect(onSearch).not.toHaveBeenCalled();
+  });
+
+  it('closes on Escape, the same as the detail drawer', async () => {
+    // Two dismissable overlays in one webview that disagree about Escape is
+    // the kind of inconsistency you find by having a keystroke ignored.
+    const onClose = vi.fn();
+    renderPanel({ onClose });
+
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('names its controls visibly, not only to assistive technology', () => {
+    renderPanel();
+    // These three decide where and how a package is written to a manifest.
+    for (const label of ['Registry', 'Install into', 'Scope']) {
+      expect(screen.getByText(label)).toBeVisible();
+    }
+  });
+
   it('offers only the ecosystems present in the workspace', () => {
     renderPanel({
       groups: [
@@ -97,7 +139,8 @@ describe('install and remove', () => {
     renderPanel({ results: [reactResult], onInstall });
 
     await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: /Dependency scope/i }),
+      // Named "Scope", the word the table column and the filter chips use.
+      screen.getByRole('combobox', { name: /^Scope$/i }),
       'dev',
     );
     await userEvent.click(screen.getByRole('button', { name: 'Install' }));

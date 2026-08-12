@@ -10,6 +10,14 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   plugins: [react()],
   root: resolve(__dirname, 'src/webview'),
+  /*
+   * Relative asset URLs. The default of '/' would emit the codicon font as
+   * `/index.ttf`, which resolves against the `vscode-webview://` origin root
+   * rather than against `localResourceRoots` — the font 404s and every icon
+   * silently renders as a blank box. The JS entry is unaffected either way:
+   * `panelManager.buildHtml` references it through `asWebviewUri`.
+   */
+  base: './',
   build: {
     outDir: resolve(__dirname, 'dist/webview'),
     emptyOutDir: true,

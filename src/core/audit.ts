@@ -11,6 +11,7 @@ import type { ProviderContext } from '../providers/provider.js';
 import { providerFor } from '../providers/registry.js';
 import { cacheKey, TTL } from './cache.js';
 import type { ProjectGroup, Severity, Vulnerability } from './types.js';
+import { sortBySeverity } from './vocabulary.js';
 
 const OSV_API = 'https://api.osv.dev';
 const MAX_BATCH = 500;
@@ -115,9 +116,14 @@ export async function auditDependencies(
 
   idsPerQuery.forEach((ids, queryIndex) => {
     if (ids.length === 0) return;
-    const resolved = ids
-      .map((id) => details.get(id))
-      .filter((vuln): vuln is Vulnerability => vuln !== undefined);
+    // Sorted at the source, so the drawer, the tree tooltip and anything added
+    // later all present the worst advisory first without each deciding for
+    // itself.
+    const resolved = sortBySeverity(
+      ids
+        .map((id) => details.get(id))
+        .filter((vuln): vuln is Vulnerability => vuln !== undefined),
+    );
     if (resolved.length === 0) return;
 
     for (const owner of owners[queryIndex]) {

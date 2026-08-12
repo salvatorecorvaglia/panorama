@@ -19,6 +19,7 @@ import type {
 import { ALL_SCOPES, hasUpdate } from '../core/vocabulary.js';
 import { DepTable, type SortState } from './DepTable.js';
 import { DetailDrawer } from './DetailDrawer.js';
+import { Icon } from './Icon.js';
 import { SearchInstall } from './SearchInstall.js';
 import { type Filters, Toolbar } from './Toolbar.js';
 import { loadState, onHostMessage, post, saveState } from './vscodeApi.js';
@@ -70,7 +71,16 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState<string | undefined>();
   const [notice, setNotice] = useState<string | undefined>();
-  const [error, setError] = useState<string | undefined>();
+  /*
+   * Errors queue rather than overwrite.
+   *
+   * This was a single slot, so a second failure replaced the first without a
+   * trace — and failures arrive in clusters: "Update all" against a broken
+   * registry produces one per package. The newest is shown, with a count of
+   * what is behind it, so nothing is silently dropped.
+   */
+  const [errors, setErrors] = useState<string[]>([]);
+  const error = errors[errors.length - 1];
   /** True once the host has sent at least one scan result. */
   const [loaded, setLoaded] = useState(false);
 
@@ -104,6 +114,27 @@ export function App() {
    */
   const [, setDetailsVersion] = useState(0);
   const groupsRef = useRef<ProjectGroup[]>([]);
+  const filterRef = useRef<HTMLInputElement>(null);
+
+  /*
+   * Ctrl/Cmd+F focuses the filter box.
+   *
+   * The panel is a webview, so the editor's own Find does not reach it and the
+   * keystroke would otherwise do nothing at all. Filtering a few hundred rows
+   * is the most common thing anyone does here and it had no keyboard route.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'f' || !(event.ctrlKey || event.metaKey)) return;
+      const input = filterRef.current;
+      if (!input) return;
+      event.preventDefault();
+      input.focus();
+      input.select();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // Persist the bits of UI state worth surviving a reload.
   useEffect(() => {
@@ -118,6 +149,14 @@ export function App() {
           setGroups(message.groups);
           setSummary(message.summary);
           setLoaded(true);
+          /*
+           * A new scan can have changed the graph — an install, an update, a
+           * lockfile written by something else. The cached answers describe the
+           * old one, and a "why is this installed" tree that is quietly one
+           * scan out of date is worse than no answer, because nothing about it
+           * looks stale. The drawer re-requests on demand.
+           */
+          setWhyByKey({});
           break;
 
         case 'depDetails': {
@@ -179,7 +218,12 @@ export function App() {
           break;
 
         case 'error':
-          setError(message.message);
+          setErrors((current) =>
+            // A repeat of the message already on screen is not new information.
+            current[current.length - 1] === message.message
+              ? current
+              : [...current, message.message],
+          );
           break;
 
         case 'notice':
@@ -330,14 +374,29 @@ export function App() {
     <div className="banners">
       {error && (
         <div className="callout callout--error banner" role="alert">
-          <div className="banner__text">{error}</div>
+          <div className="banner__text">
+            {error}
+            {errors.length > 1 && (
+              <span className="muted banner__count">
+                {' '}
+                and {errors.length - 1} earlier{' '}
+                {errors.length === 2 ? 'error' : 'errors'}
+              </span>
+            )}
+          </div>
           <button
             type="button"
             className="ghost"
-            aria-label="Dismiss error"
-            onClick={() => setError(undefined)}
+            // Dismissing shows the one behind it rather than clearing the lot,
+            // so a queued error still gets read.
+            aria-label={
+              errors.length > 1
+                ? 'Dismiss error and show the previous one'
+                : 'Dismiss error'
+            }
+            onClick={() => setErrors((current) => current.slice(0, -1))}
           >
-            ✕
+            <Icon name="close" />
           </button>
         </div>
       )}
@@ -350,7 +409,7 @@ export function App() {
             aria-label="Dismiss notice"
             onClick={() => setNotice(undefined)}
           >
-            ✕
+            <Icon name="close" />
           </button>
         </div>
       )}
@@ -368,9 +427,12 @@ export function App() {
    */
   if (groups.length === 0 && loaded && !busy) {
     return (
+      // Banners above the search panel, as in the main branch below. They used
+      // to swap places between the two, so an error moved down the screen when
+      // the workspace happened to have no manifests.
       <div className="app">
-        {searchPanel}
         {banners}
+        {searchPanel}
         <div className="empty">
           <h2>No dependency manifests found</h2>
           <p>
@@ -404,6 +466,7 @@ export function App() {
   return (
     <div className="app">
       <Toolbar
+        filterRef={filterRef}
         filters={filters}
         onFiltersChange={setFilters}
         summary={summary}
@@ -450,6 +513,10 @@ export function App() {
             reveal={revealSection}
             onClose={() => setSelectedKey(undefined)}
             onUpdate={handleUpdate}
+            onToggleMute={(target) =>
+              post({ type: 'toggleMute', depKey: target.key })
+            }
+            onUninstall={handleUninstall}
           />
         )}
       </div>

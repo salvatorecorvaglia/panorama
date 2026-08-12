@@ -6,7 +6,11 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import type { Dependency, ProjectGroup } from '../../src/core/types.js';
+import type {
+  Dependency,
+  ProjectGroup,
+  Vulnerability,
+} from '../../src/core/types.js';
 import { DepTable, type SortState } from '../../src/webview/DepTable.js';
 
 function dep(overrides: Partial<Dependency> = {}): Dependency {
@@ -21,6 +25,17 @@ function dep(overrides: Partial<Dependency> = {}): Dependency {
     vulnerabilities: [],
     manifestPath: '/p/package.json',
     projectLabel: 'app',
+    ...overrides,
+  };
+}
+
+function vuln(overrides: Partial<Vulnerability> = {}): Vulnerability {
+  return {
+    id: 'GHSA-1',
+    summary: 's',
+    severity: 'high',
+    aliases: [],
+    url: 'https://osv.dev/x',
     ...overrides,
   };
 }
@@ -163,15 +178,7 @@ describe('sorting', () => {
             name: 'vulnerable',
             key: '3',
             updateKind: 'none',
-            vulnerabilities: [
-              {
-                id: 'GHSA-1',
-                summary: 's',
-                severity: 'high',
-                aliases: [],
-                url: 'https://osv.dev/x',
-              },
-            ],
+            vulnerabilities: [vuln()],
           }),
           dep({
             name: 'deprecated',
@@ -261,6 +268,44 @@ describe('the ARIA grid contract', () => {
       key: 'name',
       direction: 'desc',
     });
+  });
+
+  it('leaves the sort direction to aria-sort rather than the button name', () => {
+    // The direction used to be a text arrow inside the label, so the accessible
+    // name read "Package ↑" — the same fact aria-sort already carries, in a
+    // form nobody chose to hear.
+    renderTable([group([dep()])], { key: 'name', direction: 'desc' });
+
+    const header = screen.getByRole('columnheader', { name: /Package/ });
+    expect(header).toHaveAttribute('aria-sort', 'descending');
+    expect(within(header).getByRole('button').textContent?.trim()).toBe(
+      'Package',
+    );
+  });
+});
+
+describe('severity markers', () => {
+  it('names the icons, which are the only signal in their cell', () => {
+    // They are icons, not text: without a name a screen reader reaches a row
+    // that looks identical to a healthy one.
+    renderTable([
+      group([
+        dep({ name: 'vulnerable-pkg', key: 'v', vulnerabilities: [vuln()] }),
+        dep({
+          name: 'old-pkg',
+          key: 'd',
+          meta: { name: 'old-pkg', deprecated: 'Use something else' },
+        }),
+      ]),
+    ]);
+
+    expect(screen.getByRole('img', { name: 'Vulnerable' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Deprecated' })).toBeInTheDocument();
+  });
+
+  it('shows no marker on a healthy package', () => {
+    renderTable([group([dep({ name: 'fine', key: 'f' })])]);
+    expect(screen.queryByRole('img')).toBeNull();
   });
 });
 

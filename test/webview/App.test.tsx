@@ -121,6 +121,75 @@ describe('notices and errors', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('the error');
     expect(screen.getByText('the notice')).toBeInTheDocument();
   });
+
+  /*
+   * Errors used to occupy one slot, so the second silently replaced the first.
+   * "Update all" against an unreachable registry produces one per package.
+   */
+  it('queues errors instead of letting a later one erase an earlier one', async () => {
+    renderLoaded();
+    send({ type: 'error', message: 'first failure' });
+    send({ type: 'error', message: 'second failure' });
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('second failure');
+    expect(alert).toHaveTextContent('and 1 earlier error');
+
+    // Dismissing reveals the one behind it rather than discarding the queue.
+    await userEvent.click(
+      within(alert).getByRole('button', { name: /Dismiss/i }),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('first failure');
+
+    await userEvent.click(
+      within(screen.getByRole('alert')).getByRole('button', {
+        name: /Dismiss/i,
+      }),
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('does not queue a repeat of the message already on screen', () => {
+    renderLoaded();
+    send({ type: 'error', message: 'same failure' });
+    send({ type: 'error', message: 'same failure' });
+
+    expect(screen.getByRole('alert')).not.toHaveTextContent('earlier');
+  });
+});
+
+describe('keyboard shortcuts', () => {
+  it('sends Ctrl/Cmd+F to the filter box, which the editor Find cannot reach', async () => {
+    renderLoaded();
+    const filter = screen.getByRole('searchbox', {
+      name: /Filter installed packages/i,
+    });
+    expect(document.activeElement).not.toBe(filter);
+
+    await userEvent.keyboard('{Control>}f{/Control}');
+    expect(document.activeElement).toBe(filter);
+  });
+});
+
+describe('the why tree cache', () => {
+  it('drops cached answers when a new scan arrives', async () => {
+    // The graph can have changed under it, and a tree that is quietly one scan
+    // stale looks exactly like a current one.
+    renderLoaded();
+    await userEvent.click(screen.getByText('react'));
+    send({
+      type: 'whyTree',
+      depKey: 'react',
+      source: 'lockfile',
+      roots: [{ name: 'webpack', children: [] }],
+    });
+    expect(screen.getByText('webpack')).toBeInTheDocument();
+
+    send({ type: 'state', groups: [group()], summary: EMPTY_SUMMARY });
+
+    expect(screen.queryByText('webpack')).toBeNull();
+    expect(screen.getByText(/Resolving/i)).toBeInTheDocument();
+  });
 });
 
 describe('detail metadata', () => {

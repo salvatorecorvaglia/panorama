@@ -8,6 +8,7 @@ import { useEffect, useRef } from 'react';
 import type { Dependency, DepNode } from '../core/types.js';
 import { currentVersion } from '../core/vocabulary.js';
 import { ECOSYSTEM_LABELS, formatBytes } from './format.js';
+import { Icon } from './Icon.js';
 import { post } from './vscodeApi.js';
 
 interface Props {
@@ -18,9 +19,19 @@ interface Props {
   onClose: () => void;
   /** `toVersion` defaults to `latest` when the caller does not name one. */
   onUpdate: (dep: Dependency, toVersion?: string) => void;
+  onToggleMute: (dep: Dependency) => void;
+  onUninstall: (dep: Dependency) => void;
 }
 
-export function DetailDrawer({ dep, why, reveal, onClose, onUpdate }: Props) {
+export function DetailDrawer({
+  dep,
+  why,
+  reveal,
+  onClose,
+  onUpdate,
+  onToggleMute,
+  onUninstall,
+}: Props) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const whyRef = useRef<HTMLElement>(null);
   /** The element that had focus when the drawer opened, to restore on close. */
@@ -88,7 +99,7 @@ export function DetailDrawer({ dep, why, reveal, onClose, onUpdate }: Props) {
           onClick={onClose}
           aria-label="Close details"
         >
-          ✕
+          <Icon name="close" />
         </button>
       </div>
 
@@ -251,9 +262,22 @@ export function DetailDrawer({ dep, why, reveal, onClose, onUpdate }: Props) {
               against what you actually have.
             </div>
           )}
+          {/*
+           * Ordered worst-first by `core/audit`, so the advisory that decides
+           * what you do about this package is the one you read first.
+           */}
           {dep.vulnerabilities.map((vuln) => (
-            <div key={vuln.id} className="callout callout--error">
+            <div
+              key={vuln.id}
+              className={`callout callout--error severity-${vuln.severity}`}
+            >
               <div>
+                {/*
+                 * A dot carrying the severity colour. Every advisory used the
+                 * same red callout, so `critical` and `low` were told apart by
+                 * one word of uppercase text and nothing else.
+                 */}
+                <span className="severity-dot" aria-hidden="true" />
                 <strong>{vuln.severity.toUpperCase()}</strong> ·{' '}
                 <button
                   type="button"
@@ -278,6 +302,46 @@ export function DetailDrawer({ dep, why, reveal, onClose, onUpdate }: Props) {
           ))}
         </section>
       )}
+
+      {/*
+       * The same actions the row offers, in the same words.
+       *
+       * The row has Update, Mute and Remove; the drawer had only Update, so
+       * reading about a package and then deciding to mute or remove it meant
+       * closing the drawer and finding the row again — in a list the drawer may
+       * have scrolled away from. These post the identical messages the row
+       * does, including the host's confirmation prompt before an uninstall.
+       *
+       * Placed after Security and before the Why tree: you should have read any
+       * advisory before you are offered Remove, and the tree can run long
+       * enough to push these off the screen.
+       */}
+      <section>
+        <h3>Manage</h3>
+        <div className="drawer__actions">
+          <button
+            type="button"
+            className="secondary"
+            aria-pressed={dep.muted ?? false}
+            title={
+              dep.muted
+                ? `Unmute ${dep.name} so it counts as outdated again`
+                : `Mute ${dep.name} — keeps it listed but out of the outdated count`
+            }
+            onClick={() => onToggleMute(dep)}
+          >
+            {dep.muted ? 'Unmute' : 'Mute'}
+          </button>
+          <button
+            type="button"
+            className="danger"
+            title={`Remove ${dep.name} from this project`}
+            onClick={() => onUninstall(dep)}
+          >
+            Remove
+          </button>
+        </div>
+      </section>
 
       <section ref={whyRef}>
         <h3>Why is this installed?</h3>

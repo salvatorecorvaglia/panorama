@@ -11,11 +11,14 @@
 
 :root {
   /* Spacing scale. Use these rather than fresh pixel values. */
+  --panorama-space-0: 2px;
   --panorama-space-1: 4px;
   --panorama-space-2: 6px;
   --panorama-space-3: 8px;
   --panorama-space-4: 12px;
   --panorama-space-5: 16px;
+  --panorama-space-6: 24px;
+  --panorama-space-7: 40px;
 
   /* Type scale, relative to the editor font size the user chose. */
   --panorama-text-xs: 0.8em;
@@ -25,8 +28,35 @@
 
   --panorama-gap: var(--panorama-space-4);
   --panorama-radius: 4px;
+  /*
+   * Control metrics rather than spacing-scale steps: these are tuned so inputs,
+   * selects and buttons land on the same height as VS Code's own controls, and
+   * that height is not a multiple of the layout rhythm. Named so they are still
+   * changed in one place.
+   */
   --panorama-cell-pad: 10px;
+  --panorama-control-pad-y: 5px;
+  --panorama-control-pad-y-sm: 3px;
   --panorama-drawer-width: 380px;
+
+  /* Control widths, so the values the layout depends on are named once. */
+  --panorama-search-min-width: 180px;
+  --panorama-name-min-width: 140px;
+
+  /* Wide enough for "Update Unmute Remove"; see `.cell--actions`. */
+  --panorama-actions-width: 18em;
+
+  /*
+   * The narrowest the eight columns can be and still show their content: the
+   * name column's floor plus every other fixed column (140 + 90 + 110 + 130 +
+   * 90 + 100 + 96), then the actions column on top. None of them shrink, so
+   * anything smaller is a number the layout would ignore. The narrow
+   * breakpoints below drop columns and lower this to match, which is the whole
+   * reason it is a variable.
+   */
+  --panorama-table-min-width: calc(756px + var(--panorama-actions-width));
+  /* Pill radius: large enough that any control height rounds to a capsule. */
+  --panorama-radius-pill: 999px;
 
   /* Overwritten from main.tsx so the virtualizer and the stylesheet cannot
      disagree about row geometry. The values here are the fallback. */
@@ -79,6 +109,9 @@ body {
   flex: 1;
   display: flex;
   min-height: 0;
+  /* The containing block the drawer becomes absolute against when the panel is
+     too narrow to give it a column of its own. See "Narrow layouts" below. */
+  position: relative;
 }
 
 .app__main {
@@ -102,6 +135,31 @@ body {
   border: 0;
 }
 
+/* ---------- Icons ---------- */
+
+/*
+ * Codicons are the icon font VS Code draws its own UI with, so the panel and
+ * the Activity Bar tree now show the same symbol for the same state rather than
+ * a codicon on one side and an approximating text glyph on the other.
+ *
+ * Only alignment is adjusted. The font's own 16px sizing is left alone — that
+ * is the size the glyphs are hinted for, and it is what the tree beside us
+ * renders at.
+ */
+.codicon[class*="codicon-"] {
+  vertical-align: middle;
+  flex: 0 0 auto;
+}
+
+/*
+ * The sort chevron sits inside a small uppercase column heading, where a
+ * full-size icon would tower over the label it belongs to.
+ */
+.codicon.table__sort {
+  font-size: var(--panorama-text-md);
+  margin-left: var(--panorama-space-1);
+}
+
 /* ---------- Toolbar ---------- */
 
 .toolbar {
@@ -122,7 +180,7 @@ body {
 
 .toolbar__search {
   flex: 1;
-  min-width: 180px;
+  min-width: var(--panorama-search-min-width);
 }
 
 /* A labelled cluster of related filter chips. */
@@ -133,18 +191,53 @@ body {
  * shrinking in a flex row — all has to be cleared.
  */
 .toolbar__group {
-  display: flex;
-  align-items: center;
-  gap: var(--panorama-space-2);
   border: 0;
   margin: 0;
   padding: 0;
   min-width: 0;
 }
 
+/*
+ * The chips flex, the fieldset does not.
+ *
+ * `display: flex` on a fieldset applies the flex formatting to an anonymous box
+ * that excludes the rendered legend, so the label's position would depend on
+ * how a given engine handles that. One extra element buys layout that is simply
+ * described.
+ */
+.toolbar__chips {
+  display: flex;
+  align-items: center;
+  gap: var(--panorama-space-2);
+  flex-wrap: wrap;
+}
+
+/*
+ * Same treatment as the drawer's section headings, so "a small uppercase label
+ * introduces a group" means one thing across the whole panel.
+ */
+.toolbar__legend {
+  padding: 0;
+  margin-bottom: var(--panorama-space-0);
+  font-size: var(--panorama-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+
+/*
+ * The two chip families read as one undifferentiated row of pills without this,
+ * which matters because they work in opposite directions: scope chips subtract
+ * from everything, status chips narrow to one thing.
+ */
+.toolbar__group--divided {
+  border-left: 1px solid var(--vscode-panel-border);
+  padding-left: var(--panorama-gap);
+}
+
 .toolbar__summary {
   display: flex;
-  gap: 14px;
+  gap: var(--panorama-space-4);
   font-size: var(--panorama-text-md);
   color: var(--vscode-descriptionForeground);
   align-items: center;
@@ -152,6 +245,24 @@ body {
 
 .toolbar__spacer {
   flex: 1;
+}
+
+/*
+ * A labelled control. Same small-uppercase treatment as the chip group legends
+ * and the drawer's section headings, so one visual idea covers every "this
+ * label introduces that thing" in the panel.
+ */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--panorama-space-0);
+}
+
+.field__label {
+  font-size: var(--panorama-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
 }
 
 /* ---------- Controls ---------- */
@@ -165,7 +276,7 @@ select {
   background-color: var(--vscode-input-background);
   border: 1px solid var(--vscode-input-border, transparent);
   border-radius: var(--panorama-radius);
-  padding: 5px var(--panorama-space-3);
+  padding: var(--panorama-control-pad-y) var(--panorama-space-3);
   width: 100%;
 }
 
@@ -193,7 +304,7 @@ button {
   background-color: var(--vscode-button-background);
   border: 1px solid var(--vscode-button-border, transparent);
   border-radius: var(--panorama-radius);
-  padding: 5px var(--panorama-space-4);
+  padding: var(--panorama-control-pad-y) var(--panorama-space-4);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -221,7 +332,7 @@ button.ghost {
   background: transparent;
   color: var(--vscode-foreground);
   border-color: transparent;
-  padding: 3px var(--panorama-space-3);
+  padding: var(--panorama-control-pad-y-sm) var(--panorama-space-3);
 }
 
 button.ghost:hover:not(:disabled) {
@@ -243,7 +354,7 @@ button.danger:hover:not(:disabled) {
 button.danger.ghost {
   border-color: transparent;
   color: var(--vscode-errorForeground);
-  padding: 3px var(--panorama-space-3);
+  padding: var(--panorama-control-pad-y-sm) var(--panorama-space-3);
 }
 
 /* ---------- Filter chips ---------- */
@@ -252,8 +363,8 @@ button.danger.ghost {
   border: 1px solid var(--vscode-panel-border);
   background-color: transparent;
   color: var(--vscode-descriptionForeground);
-  border-radius: 999px;
-  padding: 3px var(--panorama-space-3);
+  border-radius: var(--panorama-radius-pill);
+  padding: var(--panorama-space-0) var(--panorama-space-3);
   font-size: var(--panorama-text-sm);
   cursor: pointer;
 }
@@ -290,7 +401,7 @@ button.danger.ghost {
 .table__header,
 .table__group,
 .row {
-  min-width: var(--panorama-table-min-width, 760px);
+  min-width: var(--panorama-table-min-width);
 }
 
 .table {
@@ -386,7 +497,18 @@ button.danger.ghost {
   outline-offset: -1px;
 }
 
+/*
+ * Selection follows VS Code's own convention: the strong "active" treatment
+ * belongs to a list that has focus. A drawer open beside an unfocused table
+ * used to paint the row as brightly as the editor's focused list, which reads
+ * as "this is where your keyboard is" when it is not.
+ */
 .row[aria-selected="true"] {
+  background-color: var(--vscode-list-inactiveSelectionBackground);
+  color: var(--vscode-list-inactiveSelectionForeground, inherit);
+}
+
+.table:focus-within .row[aria-selected="true"] {
   background-color: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
 }
@@ -409,7 +531,7 @@ button.danger.ghost {
 
 .cell--name {
   flex: 3;
-  min-width: 140px;
+  min-width: var(--panorama-name-min-width);
   display: flex;
   align-items: center;
   gap: var(--panorama-space-2);
@@ -461,8 +583,19 @@ button.danger.ghost {
   flex: 0 0 96px;
 }
 
+/*
+ * Sized in em, unlike every other column, because this is the only one whose
+ * content is button labels rather than a data value.
+ *
+ * At 180px it could not hold "Update Unmute Remove" — which needs 226px at the
+ * default editor font — so the cell's `overflow: hidden` ate the left edge of
+ * the first button and the primary action on every outdated row read "pdate".
+ * A data cell degrades to an ellipsis when it runs out of room; a button just
+ * loses its label. And because the labels scale with `--vscode-font-size`, any
+ * pixel value that fits at 13px clips again at 16px.
+ */
 .cell--actions {
-  flex: 0 0 180px;
+  flex: 0 0 var(--panorama-actions-width);
   display: flex;
   gap: var(--panorama-space-2);
   justify-content: flex-end;
@@ -494,21 +627,30 @@ button.danger.ghost {
 
 .badge {
   display: inline-block;
-  padding: 1px 7px;
-  border-radius: 999px;
+  padding: var(--panorama-space-0) var(--panorama-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--panorama-radius-pill);
   font-size: var(--panorama-text-xs);
   background-color: var(--vscode-badge-background);
   color: var(--vscode-badge-foreground);
 }
 
+/*
+ * Scope badges differentiate by border, not by fill.
+ *
+ * `charts.*` are calibrated as foreground strokes against the editor
+ * background. Used the other way round — as a fill with editor-background text
+ * on top — nothing guarantees the pair contrasts, and in light and
+ * high-contrast themes it frequently does not. The badge colours are the ones
+ * VS Code guarantees to be legible together, so the fill stays constant and the
+ * accent moves to the border, which carries no contrast requirement.
+ */
 .badge--dev {
-  background-color: var(--vscode-charts-purple);
-  color: var(--vscode-editor-background);
+  border-color: var(--vscode-charts-purple);
 }
 
 .badge--build {
-  background-color: var(--vscode-charts-orange);
-  color: var(--vscode-editor-background);
+  border-color: var(--vscode-charts-orange);
 }
 
 .badge--optional,
@@ -516,7 +658,7 @@ button.danger.ghost {
 .badge--muted {
   background-color: transparent;
   color: var(--vscode-descriptionForeground);
-  border: 1px solid var(--vscode-panel-border);
+  border-color: var(--vscode-panel-border);
 }
 
 .badge--workspace {
@@ -698,6 +840,57 @@ a:hover,
   background-color: var(--vscode-textBlockQuote-background);
 }
 
+/*
+ * Advisory severity.
+ *
+ * Every advisory shared one red callout, so a `critical` and a `low` were
+ * distinguished by a single uppercase word. The accent bar now carries the
+ * severity — reusing the existing severity map rather than inventing colours —
+ * and a dot repeats it inline, because the bar alone is easy to miss on a
+ * callout that is already coloured.
+ */
+.severity-critical {
+  border-color: var(--panorama-severity-vuln);
+}
+
+.severity-high {
+  border-color: var(--panorama-severity-major);
+}
+
+.severity-moderate {
+  border-color: var(--panorama-severity-deprecated);
+}
+
+.severity-low {
+  border-color: var(--panorama-severity-patch);
+}
+
+.severity-dot {
+  display: inline-block;
+  width: var(--panorama-space-3);
+  height: var(--panorama-space-3);
+  border-radius: var(--panorama-radius-pill);
+  margin-right: var(--panorama-space-2);
+  vertical-align: baseline;
+  background-color: currentcolor;
+}
+
+.severity-critical .severity-dot {
+  color: var(--panorama-severity-vuln);
+}
+
+.severity-high .severity-dot {
+  color: var(--panorama-severity-major);
+}
+
+.severity-moderate .severity-dot {
+  color: var(--panorama-severity-deprecated);
+}
+
+.severity-low .severity-dot {
+  color: var(--panorama-severity-patch);
+}
+
 /* App-level banners: a callout plus a dismiss control. */
 .banners {
   padding: var(--panorama-gap) var(--panorama-gap) 0;
@@ -788,14 +981,23 @@ a:hover,
 /* ---------- Empty & loading states ---------- */
 
 .empty {
-  padding: 40px 20px;
+  padding: var(--panorama-space-7) var(--panorama-space-6);
   text-align: center;
   color: var(--vscode-descriptionForeground);
 }
 
+/*
+ * The one-line variant ("Searching…"). The block form below carries a heading
+ * and a paragraph and earns the full padding; a single line of status text in
+ * the same box reads as a layout bug.
+ */
+.empty--inline {
+  padding: var(--panorama-space-5) var(--panorama-space-6);
+}
+
 .empty h2 {
   color: var(--vscode-foreground);
-  font-size: 1.1em;
+  font-size: var(--panorama-text-lg);
   margin-bottom: var(--panorama-space-2);
 }
 
@@ -843,5 +1045,75 @@ a:hover,
   .progress {
     animation: none;
     opacity: 0.8;
+  }
+}
+
+/* ---------- Narrow layouts ---------- */
+
+/*
+ * The panel was designed for a full-width editor and behaved badly anywhere
+ * else — which is most places. A split editor, or the panel dragged into the
+ * secondary sidebar, is the common case, not the edge case.
+ *
+ * Two things go wrong as the width drops, and they compound: eight columns need
+ * ~936px, and the drawer takes a further 380px out of the same row, so opening
+ * a package to read about it pushed the table it came from into horizontal
+ * scrolling. Media queries are the right tool here — a webview is a real
+ * iframe, so the viewport width *is* the panel width.
+ */
+
+/*
+ * Size and License go first. Both are single values with no bearing on whether
+ * a package needs attention, and both are repeated in the drawer, so nothing
+ * becomes unreachable — it just stops competing for space with the version
+ * columns. Header and body are hidden together so the columns stay aligned.
+ */
+@media (max-width: 1000px) {
+  :root {
+    /* Less the 90px Size column and the 100px License column. */
+    --panorama-table-min-width: calc(566px + var(--panorama-actions-width));
+  }
+
+  .cell--size,
+  .cell--license {
+    display: none;
+  }
+}
+
+/*
+ * Below this the drawer stops being a column and becomes an overlay.
+ *
+ * The threshold is derived rather than chosen: as a flex sibling the drawer
+ * subtracts its full width from the table, so a column layout only works where
+ * both fit — the table's ~990px floor at the default font plus the drawer's
+ * 380px, so about 1370px. Rounded up for margin. Anywhere narrower, opening a
+ * row to read about it was what pushed the table it came from into horizontal
+ * scrolling.
+ *
+ * Floating the drawer leaves the table its whole width. The drawer covers part
+ * of it, which is the honest trade at this size and is undone by closing it.
+ */
+@media (max-width: 1400px) {
+  .drawer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    /* Never wider than the panel itself. */
+    width: min(var(--panorama-drawer-width), 100%);
+    z-index: 1;
+    box-shadow: 0 0 8px 2px var(--vscode-widget-shadow, transparent);
+  }
+}
+
+/*
+ * A short panel — the editor split horizontally, or a laptop screen with a
+ * terminal open — plus a toolbar that has wrapped to three rows could leave the
+ * table with almost nothing. The search panel yields first, since it is the
+ * transient one.
+ */
+@media (max-height: 600px) {
+  .search-panel {
+    max-height: 35vh;
   }
 }

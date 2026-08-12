@@ -2,6 +2,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
 import { GROUP_HEADER_HEIGHT, ROW_HEIGHT } from './format.js';
+// Imported before theme.css so our overrides win the ties: the codicon base
+// rule is `.codicon[class*='codicon-']`, which is as specific as the class
+// selectors that adjust it.
+import '@vscode/codicons/dist/codicon.css';
 import './theme.css';
 
 const container = document.getElementById('root');

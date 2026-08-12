@@ -112,6 +112,38 @@ function auditContext(responses: {
 }
 
 describe('auditDependencies', () => {
+  it('orders advisories worst-first, whatever order OSV answered in', async () => {
+    /*
+     * OSV returns advisories in its own order. Sorting here rather than in the
+     * drawer is what also fixes the tree tooltip, which shows the first three —
+     * and used to mean the first three OSV happened to list, not the worst.
+     */
+    const groups = [groupWith([{ name: 'lodash' }])];
+    const advisory = (id: string, severity: string) => ({
+      id,
+      summary: `${severity} issue`,
+      database_specific: { severity },
+    });
+    const { ctx } = auditContext({
+      batch: {
+        results: [
+          { vulns: [{ id: 'LOW-1' }, { id: 'CRIT-1' }, { id: 'MOD-1' }] },
+        ],
+      },
+      vulns: {
+        'LOW-1': advisory('LOW-1', 'LOW'),
+        'CRIT-1': advisory('CRIT-1', 'CRITICAL'),
+        'MOD-1': advisory('MOD-1', 'MODERATE'),
+      },
+    });
+
+    await auditDependencies(groups, ctx);
+
+    expect(
+      groups[0].dependencies[0].vulnerabilities.map((v) => v.severity),
+    ).toEqual(['critical', 'moderate', 'low']);
+  });
+
   it('decorates the dependency an advisory matches', async () => {
     const groups = [groupWith([{ name: 'lodash' }])];
     const { ctx } = auditContext({
