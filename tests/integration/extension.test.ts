@@ -184,8 +184,6 @@ describe('scanner discovery', () => {
   });
 });
 
-
-
 describe('tree view', () => {
   it('contributes the explorer view without throwing', async () => {
     await getApi();
@@ -242,6 +240,4 @@ describe('commands are safe to invoke', () => {
     // Falls back to an informational message rather than failing.
     await vscode.commands.executeCommand('panorama.showWhy');
   });
-
-
 });

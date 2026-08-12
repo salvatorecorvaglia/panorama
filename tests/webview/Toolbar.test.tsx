@@ -205,8 +205,6 @@ describe('keyboard navigation', () => {
     expect(buttons[0].tabIndex).toBe(-1);
   });
 
-
-
   it('adopts a button that is focused directly, so re-entry returns there', async () => {
     renderToolbar();
 

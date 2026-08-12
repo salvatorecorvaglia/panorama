@@ -360,8 +360,6 @@ describe('row actions', () => {
     expect(onUninstall).toHaveBeenCalledOnce();
     expect(onSelect).not.toHaveBeenCalled();
   });
-
-
 });
 
 describe('empty and loading states', () => {
