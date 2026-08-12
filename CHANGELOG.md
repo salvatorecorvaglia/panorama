@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-13
+
 ### Fixed
 
 - **Bulk actions no longer race**: "Update Selected" and "Remove Selected" sent one message per package, and the host handles messages concurrently — so a selection of ten stacked ten modal confirmations and ran ten package-manager commands at once through a single shared terminal. The selection now travels as one message (`bulkUpdate` / `bulkUninstall`), confirmed once and run in order, and `TerminalRunner` serialises commands regardless of caller.
