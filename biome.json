@@ -11,7 +11,7 @@
       "!!**/dist",
       "!!**/out",
       "!!**/node_modules",
-      "!!**/test/fixtures",
+      "!!**/tests/fixtures",
       "!!**/*.svg"
     ]
   },

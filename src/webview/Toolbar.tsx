@@ -1,9 +1,8 @@
-/** Search box, scope/status filters, and the project summary line. */
-
 import type { FocusEvent, KeyboardEvent, Ref } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DepScope, ScanSummary } from '../core/types.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { DepScope, ProjectGroup, ScanSummary } from '../core/types.js';
 import { ALL_SCOPES, SCOPE_LABELS } from '../core/vocabulary.js';
+import { Icon } from './Icon.js';
 
 export interface Filters {
   text: string;
@@ -15,6 +14,7 @@ export interface Filters {
 }
 
 interface Props {
+  groups?: ProjectGroup[];
   filters: Filters;
   onFiltersChange: (filters: Filters) => void;
   summary: ScanSummary;
@@ -22,6 +22,7 @@ interface Props {
   busyLabel: string | undefined;
   onRefresh: () => void;
   onCheckUpdates: () => void;
+  onUpdateAll?: (manifestPath?: string) => void;
   onToggleInstall: () => void;
   installOpen: boolean;
   /** Lets the app put the caret here from a keyboard shortcut. */
@@ -29,6 +30,7 @@ interface Props {
 }
 
 export function Toolbar({
+  groups = [],
   filters,
   onFiltersChange,
   summary,
@@ -36,6 +38,7 @@ export function Toolbar({
   busyLabel,
   onRefresh,
   onCheckUpdates,
+  onUpdateAll,
   onToggleInstall,
   installOpen,
   filterRef,
@@ -54,13 +57,6 @@ export function Toolbar({
   /** Which button currently holds the toolbar's single tab stop. */
   const [activeIndex, setActiveIndex] = useState(0);
 
-  /**
-   * The buttons the toolbar roves over, in DOM order.
-   *
-   * Both the arrow-key handler and the tabindex effect read the list from here
-   * so they cannot disagree about what "the next button" means — which they
-   * would as soon as one of the conditional chips appeared.
-   */
   const toolbarButtons = useCallback(
     (): HTMLElement[] => [
       ...(container.current?.querySelectorAll<HTMLElement>('button') ?? []),
@@ -68,34 +64,15 @@ export function Toolbar({
     [],
   );
 
-  /*
-   * `role="toolbar"` is a promise that the whole group is one tab stop and that
-   * arrows move within it. Declaring the role without this made the toolbar
-   * *worse* than an undecorated set of buttons: assistive technology announces
-   * a navigation model that then does not work.
-   *
-   * Keeping that promise takes both halves: arrows move between buttons (below)
-   * *and* exactly one button is tabbable at a time (here). With every button
-   * tabbable, Tab walked all twelve of them and the announced model was a lie.
-   *
-   * No dependency array: the button set itself changes with props — "hide
-   * muted" comes and goes — so this has to re-sync after every render rather
-   * than after a list of renders we tried to predict.
-   */
   useEffect(() => {
     const buttons = toolbarButtons();
     if (buttons.length === 0) return;
-    // The remembered index can outlive the button it pointed at.
     const active = Math.min(activeIndex, buttons.length - 1);
     buttons.forEach((button, index) => {
       button.tabIndex = index === active ? 0 : -1;
     });
   });
 
-  /*
-   * The text inputs are excluded — arrow keys there move the caret, which is
-   * what anyone typing in them expects.
-   */
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
     const target = event.target as HTMLElement;
@@ -107,17 +84,29 @@ export function Toolbar({
 
     event.preventDefault();
     const step = event.key === 'ArrowRight' ? 1 : -1;
-    // Wrap, so the ends of the toolbar are not dead stops.
     const next = (index + step + focusable.length) % focusable.length;
     setActiveIndex(next);
     focusable[next]?.focus();
   };
 
-  // Clicking or shift-tabbing onto a button makes it the tab stop, so leaving
-  // and re-entering the toolbar returns to where the user actually was.
   const handleFocus = (event: FocusEvent<HTMLDivElement>) => {
     const index = toolbarButtons().indexOf(event.target as HTMLElement);
     if (index >= 0) setActiveIndex(index);
+  };
+
+  const activeToolchains = useMemo(() => {
+    if (!groups || groups.length === 0) return [];
+    const set = new Set<string>();
+    for (const g of groups) {
+      if (g.toolchain) set.add(g.toolchain.toUpperCase());
+    }
+    return Array.from(set);
+  }, [groups]);
+
+  const handleGlobalUpdateAll = () => {
+    if (onUpdateAll && groups.length > 0) {
+      onUpdateAll(groups[0].manifestPath);
+    }
   };
 
   return (
@@ -129,6 +118,45 @@ export function Toolbar({
       onKeyDown={handleKeyDown}
       onFocus={handleFocus}
     >
+      {/* Top Header & Environment Bar */}
+      <div className="toolbar__header-bar">
+        <div className="toolbar__branding">
+          <div className="toolbar__logo-icon">
+            <Icon name="package" />
+          </div>
+          <div className="toolbar__title-group">
+            <span className="toolbar__title">Panorama Visual Manager</span>
+            <div className="toolbar__env-pills">
+              <span className="env-pill env-pill--status">
+                <span className="env-pill__dot" /> active
+              </span>
+              {activeToolchains.map((tc) => (
+                <span key={tc} className="env-pill env-pill--toolchain">
+                  {tc}
+                </span>
+              ))}
+              <span className="env-pill env-pill--count">
+                {summary.totalDependencies} packages
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="toolbar__header-actions">
+          {summary.outdated > 0 && (
+            <button
+              type="button"
+              className="btn-update-all-primary"
+              onClick={handleGlobalUpdateAll}
+              disabled={busy}
+            >
+              Update All ({summary.outdated})
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Main Control & Search Row */}
       <div className="toolbar__row">
         <div className="toolbar__search">
           <input
@@ -145,13 +173,13 @@ export function Toolbar({
 
         <button
           type="button"
+          className="btn-accent"
           onClick={onToggleInstall}
           aria-expanded={installOpen}
           aria-controls="panorama-search-panel"
         >
           {installOpen ? 'Close search' : '+ Add package'}
         </button>
-        {/* These two look alike, so each one says what it actually does. */}
         <button
           type="button"
           className="secondary"
@@ -172,24 +200,8 @@ export function Toolbar({
         </button>
       </div>
 
+      {/* Filter Chips & Summary Row */}
       <div className="toolbar__row">
-        {/*
-          A <legend> rather than aria-label: a fieldset's accessible name comes
-          from its legend, and support for naming one with aria-label is
-          inconsistent across screen readers.
-
-          The legends are visible because the two chip families look identical
-          and behave in opposite directions. Scope chips start all-on and
-          subtract; status chips start all-off and each one narrows to "only
-          this". Seven identical pills in a row gave no hint of that, and the
-          first thing anyone tried — clicking "outdated" expecting it to work
-          like the scope chips beside it — did the opposite of what they meant.
-
-          The chips sit in their own flex child rather than in the fieldset
-          directly: a fieldset with `display: flex` hands the flex formatting to
-          an anonymous box and keeps the legend out of it, which is engine
-          territory this layout should not be standing on.
-        */}
         <fieldset className="toolbar__group">
           <legend className="toolbar__legend">Scope</legend>
           <div className="toolbar__chips">
@@ -267,13 +279,6 @@ export function Toolbar({
 
         <div className="toolbar__spacer" />
 
-        {/*
-          Visible, but not announced here: the progressbar below already carries
-          this text as its accessible name. Inside the summary's live region it
-          was read out a second time, and its appearance and disappearance made
-          the region re-announce every count along with it — so finishing a scan
-          spoke the same numbers three times.
-        */}
         {busy && busyLabel && (
           <span className="muted" aria-hidden="true">
             {busyLabel}
@@ -282,7 +287,11 @@ export function Toolbar({
 
         <div className="toolbar__summary" role="status">
           <span>{summary.totalDependencies} packages</span>
-          {summary.outdated > 0 && <span>{summary.outdated} outdated</span>}
+          {summary.outdated > 0 && (
+            <span className="highlight-outdated">
+              {summary.outdated} outdated
+            </span>
+          )}
           {summary.vulnerable > 0 && (
             <span className="severity--vuln">
               {summary.vulnerable} vulnerable
@@ -304,7 +313,6 @@ export function Toolbar({
         </div>
       </div>
 
-      {/* Indeterminate: the scan reports no fraction, only that it is running. */}
       {busy && (
         <div
           className="progress"

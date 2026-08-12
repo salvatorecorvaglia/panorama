@@ -16,7 +16,7 @@ import type { Dependency } from './core/types.js';
 import { ManifestWatcher } from './core/watcher.js';
 import { createProviderContext } from './core/workspace.js';
 import { PanelManager } from './ui/panelManager.js';
-import { DependencyTreeProvider } from './ui/treeProvider.js';
+import { SidebarViewProvider } from './ui/sidebarProvider.js';
 
 /**
  * The object `activate` returns.
@@ -80,17 +80,6 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
   const muteList = new MuteList(context.workspaceState);
   const scanner = new Scanner(providerContext, muteList);
 
-  const tree = new DependencyTreeProvider();
-  const treeView = vscode.window.createTreeView('panorama.explorer', {
-    treeDataProvider: tree,
-  });
-
-  /*
-   * The id and `name` are what VS Code shows in the status bar's own
-   * right-click menu, where a user hides individual items. Without them the
-   * entry there is unnamed, so the only way to hide Panorama's counter is to
-   * guess which nameless row it is.
-   */
   const statusBar = vscode.window.createStatusBarItem(
     'panorama.status',
     vscode.StatusBarAlignment.Right,
@@ -104,15 +93,7 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     scanner,
     providerContext,
     (result) => {
-      tree.update(result);
       updateStatusBar(statusBar, result);
-      treeView.badge =
-        result.summary.outdated > 0
-          ? {
-              value: result.summary.outdated,
-              tooltip: `${result.summary.outdated} outdated`,
-            }
-          : undefined;
     },
     muteList,
   );
@@ -176,17 +157,20 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     void runScan(networkAllowed());
   });
 
+  const sidebarProvider = new SidebarViewProvider(context.extensionUri);
+
   context.subscriptions.push(
-    treeView,
+    vscode.window.registerWebviewViewProvider(
+      SidebarViewProvider.viewType,
+      sidebarProvider,
+    ),
     statusBar,
     panel,
     watcher,
 
     vscode.commands.registerCommand('panorama.open', () => {
       panel.reveal();
-      if (panel.currentResult.groups.length === 0) {
-        void runScan(networkAllowed());
-      }
+      void runScan(networkAllowed());
     }),
 
     vscode.commands.registerCommand('panorama.refresh', () =>

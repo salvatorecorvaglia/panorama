@@ -7,6 +7,7 @@
   "packageManager": "pnpm@11.17.0",
   "publisher": "panorama",
   "license": "MIT",
+  "author": "Salvatore Corvaglia",
   "repository": {
     "type": "git",
     "url": "https://github.com/salvatorecorvaglia/panorama"
@@ -107,62 +108,45 @@
     "views": {
       "panorama": [
         {
-          "id": "panorama.explorer",
-          "name": "Dependencies",
+          "type": "webview",
+          "id": "panorama.sidebar",
+          "name": "Panorama Visual Manager",
           "contextualTitle": "Panorama",
           "icon": "resources/panorama.svg"
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "panorama.explorer",
-        "contents": "No dependency manifests found in this workspace.\n\nPanorama looks for package.json, pyproject.toml, requirements.txt, Cargo.toml, go.mod, composer.json, pom.xml, build.gradle and build.gradle.kts.\n[Scan again](command:panorama.refresh)"
-      }
-    ],
     "menus": {
       "view/title": [
         {
           "command": "panorama.open",
-          "when": "view == panorama.explorer",
+          "when": "view == panorama.sidebar",
           "group": "navigation@1"
         },
         {
           "command": "panorama.searchInstall",
-          "when": "view == panorama.explorer",
+          "when": "view == panorama.sidebar",
           "group": "navigation@2"
         },
         {
           "command": "panorama.checkUpdates",
-          "when": "view == panorama.explorer",
+          "when": "view == panorama.sidebar",
           "group": "navigation@3"
         },
         {
           "command": "panorama.refresh",
-          "when": "view == panorama.explorer",
+          "when": "view == panorama.sidebar",
           "group": "navigation@4"
         },
         {
           "command": "panorama.updateAll",
-          "when": "view == panorama.explorer",
+          "when": "view == panorama.sidebar",
           "group": "1_modify@1"
         },
         {
           "command": "panorama.clearMuted",
-          "when": "view == panorama.explorer",
+          "when": "view == panorama.sidebar",
           "group": "1_modify@2"
-        }
-      ],
-      "view/item/context": [
-        {
-          "command": "panorama.showWhy",
-          "when": "view == panorama.explorer && viewItem == dependency",
-          "group": "inline@1"
-        },
-        {
-          "command": "panorama.toggleMute",
-          "when": "view == panorama.explorer && viewItem == dependency",
-          "group": "inline@2"
         }
       ],
       "commandPalette": [
@@ -277,11 +261,11 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.7",
+    "@biomejs/biome": "^2.5.8",
     "@tanstack/react-virtual": "^3.14.9",
-    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.3",
+    "@testing-library/user-event": "^14.6.4",
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.2.0",
     "@types/react": "^18.3.31",

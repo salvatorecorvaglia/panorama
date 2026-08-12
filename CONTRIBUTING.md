@@ -82,7 +82,7 @@ This starts concurrent watch processes for both the Extension Host (`esbuild`) a
 
 ## 🧪 Testing & Verification Guidelines
 
-Panorama includes comprehensive unit tests (`test/unit/`), React webview component tests (`test/webview/` using Testing Library & JSDOM), and extension host integration tests (`test/integration/`).
+Panorama includes comprehensive unit tests (`tests/unit/`), React webview component tests (`tests/webview/` using Testing Library & JSDOM), and extension host integration tests (`tests/integration/`).
 
 Before submitting a pull request, verify that all quality and test checks pass cleanly:
 

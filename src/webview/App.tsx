@@ -116,6 +116,55 @@ export function App() {
   const groupsRef = useRef<ProjectGroup[]>([]);
   const filterRef = useRef<HTMLInputElement>(null);
 
+  const [selectedDepKeys, setSelectedDepKeys] = useState<Set<string>>(
+    new Set(),
+  );
+
+  const handleToggleSelectDep = useCallback((depKey: string) => {
+    setSelectedDepKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(depKey)) {
+        next.delete(depKey);
+      } else {
+        next.add(depKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleToggleSelectAll = useCallback((depKeys: string[]) => {
+    setSelectedDepKeys((prev) => {
+      if (depKeys.length === 0) return new Set();
+      const allSelected = depKeys.every((key) => prev.has(key));
+      if (allSelected) {
+        return new Set();
+      }
+      return new Set(depKeys);
+    });
+  }, []);
+
+  const handleBulkUpdateSelected = useCallback(() => {
+    for (const group of groups) {
+      for (const dep of group.dependencies) {
+        if (selectedDepKeys.has(dep.key) && hasUpdate(dep) && dep.latest) {
+          post({ type: 'update', depKey: dep.key, toVersion: dep.latest });
+        }
+      }
+    }
+  }, [groups, selectedDepKeys]);
+
+  const handleBulkRemoveSelected = useCallback(() => {
+    for (const key of selectedDepKeys) {
+      post({ type: 'uninstall', depKey: key });
+    }
+  }, [selectedDepKeys]);
+
+  const handleBulkMuteSelected = useCallback(() => {
+    for (const key of selectedDepKeys) {
+      post({ type: 'toggleMute', depKey: key });
+    }
+  }, [selectedDepKeys]);
+
   /*
    * Ctrl/Cmd+F focuses the filter box.
    *
@@ -466,6 +515,7 @@ export function App() {
   return (
     <div className="app">
       <Toolbar
+        groups={groups}
         filterRef={filterRef}
         filters={filters}
         onFiltersChange={setFilters}
@@ -476,6 +526,12 @@ export function App() {
         onToggleInstall={() => setInstallOpen((open) => !open)}
         onRefresh={() => post({ type: 'refresh' })}
         onCheckUpdates={() => post({ type: 'checkUpdates' })}
+        onUpdateAll={(manifestPath) =>
+          post({
+            type: 'updateAll',
+            manifestPath: manifestPath ?? groups[0]?.manifestPath ?? '',
+          })
+        }
       />
 
       {banners}
@@ -498,6 +554,12 @@ export function App() {
             onToggleMute={(dep) =>
               post({ type: 'toggleMute', depKey: dep.key })
             }
+            selectedDepKeys={selectedDepKeys}
+            onToggleSelectDep={handleToggleSelectDep}
+            onToggleSelectAll={handleToggleSelectAll}
+            onBulkUpdateSelected={handleBulkUpdateSelected}
+            onBulkRemoveSelected={handleBulkRemoveSelected}
+            onBulkMuteSelected={handleBulkMuteSelected}
             scrollToKey={scrollToKey}
             onScrollHandled={handleScrollHandled}
             loading={!loaded || (busy && groups.length === 0)}

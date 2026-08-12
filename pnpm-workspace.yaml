@@ -4,6 +4,8 @@ allowBuilds:
   '@vscode/vsce-sign': true
   esbuild: true
   keytar: true
+minimumReleaseAgeExclude:
+  - '@testing-library/user-event@14.6.4'
 overrides:
   serialize-javascript: '^7.0.5'
   diff: '^8.0.3'

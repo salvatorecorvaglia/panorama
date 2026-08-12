@@ -13,7 +13,7 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
-          include: ['test/unit/**/*.test.ts'],
+          include: ['tests/unit/**/*.test.ts'],
           environment: 'node',
         },
       },
@@ -21,9 +21,9 @@ export default defineConfig({
         plugins: [react()],
         test: {
           name: 'webview',
-          include: ['test/webview/**/*.test.tsx'],
+          include: ['tests/webview/**/*.test.tsx'],
           environment: 'jsdom',
-          setupFiles: ['test/webview/setup.ts'],
+          setupFiles: ['tests/webview/setup.ts'],
         },
       },
     ],

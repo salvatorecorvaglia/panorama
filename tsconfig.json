@@ -20,7 +20,7 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
   "exclude": [
     "node_modules",
     "dist",
@@ -28,7 +28,7 @@
     // Both halves of the webview — source and tests — need the DOM lib and JSX,
     // so they are typechecked by src/webview/tsconfig.json instead.
     "src/webview/**",
-    "test/webview/**",
-    "test/fixtures/**"
+    "tests/webview/**",
+    "tests/fixtures/**"
   ]
 }

@@ -31,12 +31,7 @@ import {
   SCOPE_LABELS,
   statusRank,
 } from '../core/vocabulary.js';
-import {
-  formatBytes,
-  GROUP_HEADER_HEIGHT,
-  ROW_HEIGHT,
-  updateClass,
-} from './format.js';
+import { formatBytes, GROUP_HEADER_HEIGHT, ROW_HEIGHT } from './format.js';
 import { Icon } from './Icon.js';
 
 export type SortKey =
@@ -61,6 +56,12 @@ interface Props {
   onUninstall: (dep: Dependency) => void;
   onUpdateAll: (manifestPath: string) => void;
   onToggleMute: (dep: Dependency) => void;
+  selectedDepKeys?: Set<string>;
+  onToggleSelectDep?: (depKey: string) => void;
+  onToggleSelectAll?: (depKeys: string[]) => void;
+  onBulkUpdateSelected?: () => void;
+  onBulkRemoveSelected?: () => void;
+  onBulkMuteSelected?: () => void;
   /** Set when a command asked to scroll a specific row into view. */
   scrollToKey?: string;
   /** Called once that scroll has happened, so the request is not repeated. */
@@ -98,6 +99,12 @@ export function DepTable({
   onUninstall,
   onUpdateAll,
   onToggleMute,
+  selectedDepKeys = new Set(),
+  onToggleSelectDep,
+  onToggleSelectAll,
+  onBulkUpdateSelected,
+  onBulkRemoveSelected,
+  onBulkMuteSelected,
   scrollToKey,
   onScrollHandled,
   loading,
@@ -109,7 +116,6 @@ export function DepTable({
 
   const rows = useMemo<Row[]>(() => {
     const result: Row[] = [];
-    // Group headers only earn their space when there is more than one project.
     const showHeaders = groups.length > 1;
 
     for (const group of groups) {
@@ -129,6 +135,20 @@ export function DepTable({
     }
     return result;
   }, [groups, sort]);
+
+  const allDepKeys = useMemo(
+    () =>
+      rows
+        .filter(
+          (row): row is Extract<Row, { kind: 'dep' }> => row.kind === 'dep',
+        )
+        .map((row) => row.dep.key),
+    [rows],
+  );
+
+  const allSelected =
+    allDepKeys.length > 0 &&
+    allDepKeys.every((key) => selectedDepKeys.has(key));
 
   // Read from effects that must not re-run when the list is merely rebuilt.
   const rowsRef = useRef(rows);
@@ -315,26 +335,85 @@ export function DepTable({
       aria-label="Dependencies"
       aria-rowcount={rows.length + 1}
     >
+      {selectedDepKeys.size > 0 && (
+        <div className="table__bulk-bar">
+          <span className="table__bulk-info">
+            Selected <strong>{selectedDepKeys.size}</strong> package(s)
+          </span>
+          <div className="table__bulk-actions">
+            {onBulkUpdateSelected && (
+              <button
+                type="button"
+                className="btn-update-primary"
+                onClick={onBulkUpdateSelected}
+              >
+                Update Selected
+              </button>
+            )}
+            {onBulkMuteSelected && (
+              <button
+                type="button"
+                className="secondary"
+                onClick={onBulkMuteSelected}
+              >
+                Mute Selected
+              </button>
+            )}
+            {onBulkRemoveSelected && (
+              <button
+                type="button"
+                className="danger"
+                onClick={onBulkRemoveSelected}
+              >
+                Remove Selected
+              </button>
+            )}
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => onToggleSelectAll?.([])}
+            >
+              Clear selection
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="table__header" role="row" aria-rowindex={1}>
         {COLUMNS.map((column) => (
           <div
-            key={column.label}
+            key={column.cell + column.label}
             className={`cell ${column.cell}`}
             role="columnheader"
             aria-sort={ariaSort(column.key)}
           >
-            {column.key ? (
+            {column.key === 'name' ? (
+              <div className="table__header-name-wrapper">
+                <input
+                  type="checkbox"
+                  className="row-checkbox"
+                  checked={allSelected}
+                  aria-label="Select all dependencies"
+                  onChange={() => onToggleSelectAll?.(allDepKeys)}
+                />
+                <button type="button" onClick={() => toggleSort('name')}>
+                  {column.label}
+                  {sort.key === 'name' && (
+                    <Icon
+                      name={
+                        sort.direction === 'asc' ? 'chevron-up' : 'chevron-down'
+                      }
+                      className="table__sort"
+                    />
+                  )}
+                </button>
+              </div>
+            ) : column.key ? (
               <button
                 type="button"
                 onClick={() => toggleSort(column.key as SortKey)}
               >
                 {column.label}
-                {/*
-                 * Decorative: `aria-sort` on the columnheader already states
-                 * the sort programmatically, and as a text arrow this became
-                 * part of the button's accessible name ("Package ↑") — the
-                 * same fact announced twice, once in a form nobody chose.
-                 */}
                 {sort.key === column.key && (
                   <Icon
                     name={
@@ -372,8 +451,6 @@ export function DepTable({
             return (
               <div
                 key={virtualRow.key}
-                // Presentational: a grid must own its rows directly, and this
-                // element exists only to position one.
                 role="presentation"
                 style={{
                   position: 'absolute',
@@ -397,6 +474,8 @@ export function DepTable({
                     rowIndex={virtualRow.index + 2}
                     tabbable={virtualRow.index === focusedIndex}
                     selected={row.dep.key === selectedKey}
+                    checked={selectedDepKeys.has(row.dep.key)}
+                    onToggleSelect={() => onToggleSelectDep?.(row.dep.key)}
                     onSelect={onSelect}
                     onUpdate={onUpdate}
                     onUninstall={onUninstall}
@@ -461,25 +540,24 @@ function GroupHeader({
   );
 }
 
-/** The plain-language status, so meaning never rests on colour alone. */
-function statusLabel(dep: Dependency): { text: string; className: string } {
+function renderStatusBadge(dep: Dependency) {
   if (dep.vulnerabilities.length > 0) {
-    return { text: 'Vulnerable', className: 'severity--vuln' };
+    return <span className="badge badge--vuln">VULNERABLE</span>;
   }
   if (dep.meta?.deprecated) {
-    return { text: 'Deprecated', className: 'severity--deprecated' };
+    return <span className="badge badge--deprecated">DEPRECATED</span>;
   }
   switch (dep.updateKind) {
     case 'major':
-      return { text: 'Major', className: 'update--major' };
+      return <span className="badge badge--major">MAJOR</span>;
     case 'minor':
-      return { text: 'Minor', className: 'update--minor' };
+      return <span className="badge badge--minor">MINOR</span>;
     case 'patch':
-      return { text: 'Patch', className: 'update--patch' };
+      return <span className="badge badge--patch">PATCH</span>;
     case 'unknown':
-      return { text: 'Unknown', className: 'update--none' };
+      return <span className="badge badge--muted">UNKNOWN</span>;
     default:
-      return { text: 'Current', className: 'update--none' };
+      return <span className="badge badge--none">CURRENT</span>;
   }
 }
 
@@ -489,6 +567,8 @@ function DepRow({
   rowIndex,
   tabbable,
   selected,
+  checked,
+  onToggleSelect,
   onSelect,
   onUpdate,
   onUninstall,
@@ -500,6 +580,8 @@ function DepRow({
   rowIndex: number;
   tabbable: boolean;
   selected: boolean;
+  checked: boolean;
+  onToggleSelect: () => void;
   onSelect: (dep: Dependency) => void;
   onUpdate: (dep: Dependency) => void;
   onUninstall: (dep: Dependency) => void;
@@ -507,11 +589,10 @@ function DepRow({
   onFocusRow: (index: number) => void;
 }) {
   const upgradeable = hasUpdate(dep);
-  const status = statusLabel(dep);
 
   return (
     <div
-      className={dep.muted ? 'row row--muted' : 'row'}
+      className={`row ${dep.muted ? 'row--muted' : ''} ${checked ? 'row--checked' : ''}`}
       role="row"
       aria-rowindex={rowIndex}
       aria-selected={selected}
@@ -527,7 +608,13 @@ function DepRow({
       }}
     >
       <div className="cell cell--name" role="gridcell" title={dep.name}>
-        {/* The same two codicons `treeProvider.iconFor` uses for these states. */}
+        <input
+          type="checkbox"
+          className="row-checkbox"
+          checked={checked}
+          onClick={(e) => e.stopPropagation()}
+          onChange={onToggleSelect}
+        />
         {dep.vulnerabilities.length > 0 && (
           <Icon
             name="shield"
@@ -544,7 +631,9 @@ function DepRow({
             title={dep.meta.deprecated}
           />
         )}
-        <span data-package-name>{dep.name}</span>
+        <span data-package-name className="package-name-highlight">
+          {dep.name}
+        </span>
         {dep.muted && (
           <span
             className="badge badge--muted"
@@ -569,14 +658,13 @@ function DepRow({
         {currentVersion(dep)}
       </div>
 
-      <div
-        className={`cell cell--latest ${updateClass(dep.updateKind)}`}
-        role="gridcell"
-      >
+      <div className="cell cell--latest" role="gridcell">
         {dep.lookupFailed ? (
           <span className="muted" title="Registry lookup failed">
             —
           </span>
+        ) : upgradeable && dep.latest ? (
+          <span className="version-latest--highlight">{dep.latest}</span>
         ) : (
           (dep.latest ?? '—')
         )}
@@ -585,26 +673,17 @@ function DepRow({
       <div className="cell cell--size" role="gridcell">
         {formatBytes(dep.meta?.sizeBytes)}
       </div>
-      <div className="cell cell--license" role="gridcell">
-        {dep.meta?.license ?? '—'}
-      </div>
-      <div className={`cell cell--status ${status.className}`} role="gridcell">
-        {status.text}
+
+      <div className="cell cell--status" role="gridcell">
+        {renderStatusBadge(dep)}
       </div>
 
-      {/*
-       * Every action carries an aria-label naming its package. The visible text
-       * has to stay short to fit the column, but a screen-reader user moving
-       * through a few hundred rows would otherwise hear "Update, Mute, Remove"
-       * repeated with nothing to tell one row from the next. `title` cannot do
-       * this job — it supplies a description, not an accessible name.
-       */}
       <div className="cell cell--actions" role="gridcell">
         {upgradeable && dep.latest && (
           <>
             <button
               type="button"
-              className="ghost"
+              className="btn-update-primary"
               aria-label={`Update ${dep.name} to ${dep.latest}`}
               title={`Update to ${dep.latest}`}
               onClick={(event) => {

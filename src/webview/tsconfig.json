@@ -20,7 +20,7 @@
     "../core/types.ts",
     "../core/vocabulary.ts",
     "../core/versions/**/*.ts",
-    "../../test/webview/**/*.ts",
-    "../../test/webview/**/*.tsx"
+    "../../tests/webview/**/*.ts",
+    "../../tests/webview/**/*.tsx"
   ]
 }
