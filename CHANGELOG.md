@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CI/CD & Release Workflow**:
+  - Updated GitHub Actions workflows (`ci.yml` and `release.yml`) for improved build reliability and release automation.
+  - Upgraded Biome linter schema configuration and cleaned up whitespace across test suites.
+
+### Removed
+
+- **Mute List Functionality**:
+  - Removed package muting capability across extension host, workspace state, webview toolbar, detail drawer, and commands (`panorama.toggleMute` and `panorama.clearMuted`).
+
 ## [1.2.0] - 2026-08-12
 
 ### Added

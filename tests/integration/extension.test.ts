@@ -184,12 +184,12 @@ describe('scanner discovery', () => {
   });
 });
 
-describe('tree view', () => {
-  it('contributes the explorer view without throwing', async () => {
+describe('sidebar view', () => {
+  it('contributes the sidebar view without throwing', async () => {
     await getApi();
-    // Focusing the view forces VS Code to instantiate the TreeDataProvider,
+    // Focusing the view forces VS Code to instantiate the WebviewViewProvider,
     // which is where a malformed contribution would surface.
-    await vscode.commands.executeCommand('panorama.explorer.focus');
+    await vscode.commands.executeCommand('panorama.sidebar.focus');
   });
 });
 

@@ -10,13 +10,12 @@
 
 - 🌐 **Universal Multi-Ecosystem Support**: Native parsing for `package.json`, `pyproject.toml`, `requirements.txt`, `Cargo.toml`, `go.mod`, `composer.json`, `pom.xml`, `build.gradle`, and `build.gradle.kts`.
 - ⚡ **Dual UI Interface**:
-  - **Activity Bar Tree View** (`panorama.explorer`): Fast, lightweight view of your workspace dependencies with badge indicators for outdated packages.
+  - **Activity Bar Sidebar View** (`panorama.sidebar`): Fast, lightweight webview sidebar embedded in VS Code for rapid workspace dependency inspection.
   - **React Webview Panel** (`panorama.open`): Interactive, virtualized UI built with React, Vite, and TanStack Virtual for deep dependency analysis, search, sorting, and filtering.
 - 🛡️ **Security Vulnerability Audits**: Automated security scans powered by [OSV.dev](https://osv.dev) to detect known CVEs and advisories affecting your direct and transitive dependencies.
 - 🔄 **Smart Update Checks & One-Click Upgrades**: Highlights outdated packages with semver diff indicators (`major`, `minor`, `patch`) and updates dependencies directly from the interface.
 - 🔍 **Registry Search & Package Installation**: Search public registries (npm, PyPI, Crates.io, Packagist, Maven Central) and install packages into your manifests without leaving VS Code.
 - 🌲 **"Why Is This Installed?" Dependency Inspector**: Inspect transitive dependencies and trace exact resolution paths.
-- 🔕 **Per-Workspace Package Muting**: Suppress update notifications for specific packages on a per-project basis.
 - 📁 **Monorepo & Multi-Root Support**: Automatically discovers and aggregates nested manifest files across complex monorepos and multi-root workspaces.
 - ♿ **Accessible & Keyboard-First UI**: Roving `tabindex` table navigation, global `Ctrl+F` / `Cmd+F` search shortcut, ARIA live progress indicators, and high-contrast theme focus rings.
 - 🔔 **Error Notification Queue**: Queued toast notification system for managing host and registry errors without silent dropping.
@@ -59,8 +58,6 @@ Panorama contributes the following commands to VS Code (`Panorama` category):
 | `panorama.updateAll` | **Update All Dependencies** | Upgrades all outdated dependencies in workspace manifests. |
 | `panorama.searchInstall` | **Search & Install Package** | Opens the interactive registry search interface to find and add dependencies. |
 | `panorama.showWhy` | **Why Is This Installed?** | Displays the dependency graph path explaining why a package is present. |
-| `panorama.toggleMute` | **Mute/Unmute Updates** | Suppresses or restores update checks for the selected dependency, in this project only. |
-| `panorama.clearMuted` | **Clear All Muted Packages** | Resets all muted package preferences in the active workspace. |
 | `panorama.revealDependency` | **Reveal Package in Panel** | Focuses and highlights the selected dependency inside the interactive React webview panel. |
 
 ---
