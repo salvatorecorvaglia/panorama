@@ -3,7 +3,10 @@ import * as vscode from 'vscode';
 export class SidebarViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'panorama.sidebar';
 
-  constructor(private readonly extensionUri: vscode.Uri) {}
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    private readonly version: string = '0.0.0',
+  ) {}
 
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -217,7 +220,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     </div>
 
     <h2 class="title">Panorama</h2>
-    <span class="version-badge">v1.1.0</span>
+    <span class="version-badge">v${this.version}</span>
 
     <p class="description">
       Universal Visual Package Manager for Visual Studio Code

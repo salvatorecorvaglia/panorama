@@ -157,7 +157,10 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     void runScan(networkAllowed());
   });
 
-  const sidebarProvider = new SidebarViewProvider(context.extensionUri);
+  const sidebarProvider = new SidebarViewProvider(
+    context.extensionUri,
+    version,
+  );
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
