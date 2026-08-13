@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Package size tracking across providers**: Cargo (Crates.io `crate_size`), Node (npm `unpackedSize` / `size`), and Python (PyPI release file size) providers now fetch and expose package size metadata for installed and latest dependency versions.
+
+### Changed
+
+- **Dependency table UI layout & alignment**: Refined table header alignment for action cells (`.cell--actions`), enabled `scrollbar-gutter: stable` to prevent horizontal layout jumps during virtualization, and improved package name text truncation and size button positioning.
+
+
 ## [2.0.0] - 2026-08-13
 
 ### Fixed
