@@ -48,41 +48,9 @@
 
 ---
 
-## 🕹️ Commands
-
-Panorama contributes the following commands to VS Code (`Panorama` category):
-
-| Command | Title | Description |
-| :--- | :--- | :--- |
-| `panorama.open` | **Open Dependency Panel** | Opens the interactive React Webview dependency management panel. |
-| `panorama.refresh` | **Refresh Dependencies** | Rescans workspace manifest files and updates the dependency panel. |
-| `panorama.checkUpdates` | **Check for Updates** | Queries package registries for newer dependency versions. |
-| `panorama.updateAll` | **Update All Dependencies** | Upgrades all outdated dependencies in workspace manifests. |
-| `panorama.searchInstall` | **Search & Install Package** | Opens the interactive registry search interface to find and add dependencies. |
-| `panorama.showWhy` | **Why Is This Installed?** | Displays the dependency graph path explaining why a package is present. Acts on the package currently open in the detail drawer. |
-
----
-
-## ⚙️ Configuration Settings
-
-Panorama can be customized via VS Code Settings (`settings.json` under the `panorama.` namespace):
-
-| Setting | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `panorama.autoCheckUpdates` | `boolean` | `true` | Automatically check registries for newer versions when the panel opens and when manifests change. |
-| `panorama.checkIntervalMinutes` | `number` | `60` | Background re-check interval in minutes (set to `0` to disable periodic background checks). |
-| `panorama.enableAudit` | `boolean` | `true` | Query OSV.dev for known security vulnerabilities affecting your dependencies. |
-| `panorama.preferredNodeManager` | `string` | `"auto"` | Preferred Node.js package manager (`"auto"`, `"npm"`, `"yarn"`, `"pnpm"`, `"bun"`). |
-| `panorama.pythonManager` | `string` | `"auto"` | Preferred Python package manager (`"auto"`, `"pip"`, `"uv"`, `"poetry"`). |
-| `panorama.excludeGlobs` | `array` | `["**/node_modules/**", "**/.venv/**", ...]` | Glob patterns to skip when scanning workspace manifest files. |
-| `panorama.registryOverrides` | `object` | `{}` | Custom base URLs for package registries per ecosystem (e.g. `{"npm": "https://registry.mycompany.com"}`). |
-| `panorama.contactEmail` | `string` | `""` | Optional contact email included in the `User-Agent` HTTP header sent to registries. |
-
----
-
 ## 🤝 Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and release guidelines.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 📜 Changelog
 
