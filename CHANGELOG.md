@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-13
+
 ### Added
 
 - **Package size tracking across providers**: Cargo (Crates.io `crate_size`), Node (npm `unpackedSize` / `size`), and Python (PyPI release file size) providers now fetch and expose package size metadata for installed and latest dependency versions.
