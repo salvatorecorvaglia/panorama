@@ -351,15 +351,19 @@ export class PythonProvider implements EcosystemProvider {
       try {
         // The PEP 691 simple endpoint is the supported source for the version
         // list; the legacy JSON `releases` key is deprecated.
-        const simple = await ctx.http.getJson<{ versions?: string[] }>(
-          `${index}/simple/${encodeURIComponent(normalizeName(name))}/`,
-          {
-            signal,
-            headers: { Accept: 'application/vnd.pypi.simple.v1+json' },
-          },
-        );
+        const simple = await ctx.http.getJson<{
+          versions?: string[];
+          files?: Array<{ filename?: string; size?: number }>;
+        }>(`${index}/simple/${encodeURIComponent(normalizeName(name))}/`, {
+          signal,
+          headers: { Accept: 'application/vnd.pypi.simple.v1+json' },
+        });
         const versions = simple.versions ?? [];
-        const info: VersionInfo = { versions };
+        const lastFile = simple.files?.[simple.files.length - 1];
+        const info: VersionInfo = {
+          versions,
+          sizeBytes: lastFile?.size,
+        };
         result.set(name, info);
         await ctx.cache.set(key, info, TTL.version);
       } catch {

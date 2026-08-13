@@ -425,10 +425,13 @@ export class Scanner {
       dep.wanted =
         maxSatisfying(ecosystem, info.versions, dep.declared) ?? dep.installed;
 
-      if (info.deprecated) {
+      if (info.deprecated || info.sizeBytes !== undefined) {
         dep.meta = {
           ...(dep.meta ?? { name: dep.name }),
-          deprecated: info.deprecated,
+          ...(info.deprecated ? { deprecated: info.deprecated } : {}),
+          ...(info.sizeBytes !== undefined
+            ? { sizeBytes: info.sizeBytes }
+            : {}),
         };
       }
 

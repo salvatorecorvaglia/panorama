@@ -425,6 +425,7 @@ button.danger.ghost {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  scrollbar-gutter: stable;
 }
 
 .table:focus-visible {
@@ -440,6 +441,8 @@ button.danger.ghost {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--vscode-descriptionForeground);
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
 }
 
 .table__header button,
@@ -552,11 +555,14 @@ button.danger.ghost {
   gap: var(--panorama-space-2);
 }
 
-/*
- * Scoped names run long (`@typescript-eslint/eslint-plugin`). Truncate rather
- * than let one row widen the whole table; the full name is in the row's title
- * attribute and in the drawer.
- */
+.table__header-name-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--panorama-space-2);
+  width: 100%;
+  overflow: hidden;
+}
+
 .cell--name > span[data-package-name] {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -582,6 +588,12 @@ button.danger.ghost {
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: var(--vscode-descriptionForeground);
+}
+
+.cell--size button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 /*
@@ -611,9 +623,10 @@ button.danger.ghost {
   justify-content: flex-end;
 }
 
-/* The header cell above the buttons carries a label but needs no visible one. */
+/* The header cell above the buttons carries a label aligned with action buttons below. */
 .table__header .cell--actions {
-  justify-content: flex-start;
+  justify-content: flex-end;
+  display: flex;
 }
 
 /* ---------- Status colouring ---------- */

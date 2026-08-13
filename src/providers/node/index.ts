@@ -66,7 +66,7 @@ interface Packument {
 interface PackumentVersion {
   version: string;
   deprecated?: string;
-  dist?: { unpackedSize?: number; tarball?: string };
+  dist?: { unpackedSize?: number; tarball?: string; size?: number };
   description?: string;
   homepage?: string;
   repository?: string | { url?: string };
@@ -272,12 +272,14 @@ export class NodeProvider implements EcosystemProvider {
         );
         const versions = Object.keys(packument.versions ?? {});
         const latestTag = packument['dist-tags']?.latest;
+        const latestVer = latestTag
+          ? packument.versions?.[latestTag]
+          : undefined;
         const info: VersionInfo = {
           versions,
           latest: latestTag,
-          deprecated: latestTag
-            ? packument.versions?.[latestTag]?.deprecated
-            : undefined,
+          deprecated: latestVer?.deprecated,
+          sizeBytes: latestVer?.dist?.unpackedSize ?? latestVer?.dist?.size,
         };
         result.set(name, info);
         await ctx.cache.set(key, info, TTL.version);

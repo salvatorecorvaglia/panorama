@@ -39,6 +39,8 @@ export interface VersionInfo {
   latest?: string;
   /** Deprecation notice for the package as a whole. */
   deprecated?: string;
+  /** Unpacked size or package size in bytes for the latest version. */
+  sizeBytes?: number;
 }
 
 /** A command to run, expressed as argv so nothing is shell-interpolated. */

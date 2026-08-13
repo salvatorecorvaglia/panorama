@@ -171,12 +171,17 @@ export class CargoProvider implements EcosystemProvider {
           `${REGISTRY}/api/v1/crates/${encodeURIComponent(name)}`,
           { signal },
         );
+        const latestNum =
+          response.crate.max_stable_version ?? response.crate.newest_version;
+        const latestVerObj =
+          (response.versions ?? []).find((v) => v.num === latestNum) ??
+          response.versions?.[0];
         const info: VersionInfo = {
           versions: (response.versions ?? [])
             .filter((v) => !v.yanked)
             .map((v) => v.num),
-          latest:
-            response.crate.max_stable_version ?? response.crate.newest_version,
+          latest: latestNum,
+          sizeBytes: latestVerObj?.crate_size,
         };
         result.set(name, info);
         await ctx.cache.set(key, info, TTL.version);
