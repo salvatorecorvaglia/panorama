@@ -143,6 +143,103 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     .btn-primary:hover {
       background: #0369a1;
     }
+    .divider {
+      width: 100%;
+      height: 1px;
+      background-color: var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(255, 255, 255, 0.1)));
+      margin: 20px 0 16px 0;
+      border: none;
+    }
+    .github-section {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      text-align: left;
+    }
+    .github-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-descriptionForeground, #888888));
+      margin-bottom: 10px;
+    }
+    .github-icon {
+      fill: currentColor;
+    }
+    .repo-card {
+      width: 100%;
+      padding: 10px 12px;
+      background: var(--vscode-sidebar-background, rgba(255, 255, 255, 0.04));
+      border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, rgba(255, 255, 255, 0.1)));
+      border-radius: 8px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .repo-card:hover {
+      background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
+      border-color: var(--vscode-focusBorder, #0284c7);
+    }
+    .repo-title {
+      font-size: 0.9em;
+      font-weight: 600;
+      color: var(--vscode-textLink-foreground, #38bdf8);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 2px;
+      word-break: break-all;
+    }
+    .repo-sub {
+      font-size: 0.78em;
+      color: var(--vscode-descriptionForeground, #888888);
+    }
+    .github-links {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .github-link-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 6px 10px;
+      background: transparent;
+      color: var(--vscode-foreground, #cccccc);
+      border: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.08));
+      border-radius: 6px;
+      font-size: 0.85em;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+      text-align: left;
+    }
+    .github-link-btn:hover {
+      background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
+      color: var(--vscode-foreground, #ffffff);
+    }
+    .author-footer {
+      margin-top: 16px;
+      font-size: 0.8em;
+      color: var(--vscode-descriptionForeground, #888888);
+      width: 100%;
+      text-align: center;
+    }
+    .author-link {
+      color: var(--vscode-textLink-foreground, #38bdf8);
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .author-link:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
@@ -161,6 +258,43 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     <button type="button" class="btn-primary" id="btn-open">
       Open Panorama
     </button>
+
+    <div class="divider"></div>
+
+    <div class="github-section">
+      <div class="github-header">
+        <svg class="github-icon" viewBox="0 0 16 16" width="14" height="14">
+          <path fill-rule="evenodd" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+        </svg>
+        GitHub Project
+      </div>
+
+      <div class="repo-card" id="link-repo">
+        <div class="repo-title">
+          salvatorecorvaglia/panorama
+        </div>
+        <div class="repo-sub">Source code, releases & issues</div>
+      </div>
+
+      <div class="github-links">
+        <button type="button" class="github-link-btn" id="link-star">
+          <span>⭐</span> Star on GitHub
+        </button>
+        <button type="button" class="github-link-btn" id="link-issues">
+          <span>🐛</span> Report an Issue
+        </button>
+        <button type="button" class="github-link-btn" id="link-changelog">
+          <span>📜</span> Release Notes
+        </button>
+        <button type="button" class="github-link-btn" id="link-license">
+          <span>📄</span> MIT License
+        </button>
+      </div>
+
+      <div class="author-footer">
+        Created by <span id="link-author" class="author-link">@salvatorecorvaglia</span>
+      </div>
+    </div>
   </div>
 
   <script nonce="${nonce}">
@@ -168,6 +302,27 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 
     document.getElementById('btn-open').addEventListener('click', () => {
       vscode.postMessage({ type: 'openPanel' });
+    });
+
+    const repoUrl = 'https://github.com/salvatorecorvaglia/panorama';
+
+    document.getElementById('link-repo').addEventListener('click', () => {
+      vscode.postMessage({ type: 'openUrl', url: repoUrl });
+    });
+    document.getElementById('link-star').addEventListener('click', () => {
+      vscode.postMessage({ type: 'openUrl', url: repoUrl });
+    });
+    document.getElementById('link-issues').addEventListener('click', () => {
+      vscode.postMessage({ type: 'openUrl', url: repoUrl + '/issues' });
+    });
+    document.getElementById('link-changelog').addEventListener('click', () => {
+      vscode.postMessage({ type: 'openUrl', url: repoUrl + '/releases' });
+    });
+    document.getElementById('link-license').addEventListener('click', () => {
+      vscode.postMessage({ type: 'openUrl', url: repoUrl + '/blob/main/LICENSE' });
+    });
+    document.getElementById('link-author').addEventListener('click', () => {
+      vscode.postMessage({ type: 'openUrl', url: 'https://github.com/salvatorecorvaglia' });
     });
   </script>
 </body>
