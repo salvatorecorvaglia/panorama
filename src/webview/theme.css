@@ -44,7 +44,17 @@
   --panorama-name-min-width: 140px;
 
   /* Font monospaziato per versioni e dimensioni */
-  --panorama-font-mono: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+  --panorama-font-mono: var(
+    --vscode-editor-font-family,
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace
+  );
 
   /* Wide enough for "Update Remove"; see `.cell--actions`. */
   --panorama-actions-width: 18em;
@@ -419,7 +429,9 @@ button.danger.ghost {
 .table__header,
 .row {
   display: grid;
-  grid-template-columns: minmax(var(--panorama-name-min-width), 1fr) 90px 110px 130px 90px 96px var(--panorama-actions-width);
+  grid-template-columns: minmax(var(--panorama-name-min-width), 1fr) 90px 110px 130px 90px 96px var(
+      --panorama-actions-width
+    );
   min-width: var(--panorama-table-min-width);
   align-items: center;
 }
@@ -1287,7 +1299,9 @@ a:hover,
   background-color: var(--vscode-editorWidget-background);
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
   border-radius: var(--panorama-radius-pill);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), 0 1px 4px rgba(0, 0, 0, 0.15);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.25),
+    0 1px 4px rgba(0, 0, 0, 0.15);
   backdrop-filter: blur(8px);
 }
 
@@ -1399,7 +1413,10 @@ a:hover,
 }
 
 .badge--none {
-  background-color: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.05));
+  background-color: var(
+    --vscode-toolbar-hoverBackground,
+    rgba(255, 255, 255, 0.05)
+  );
   color: var(--vscode-descriptionForeground);
   border: 1px solid transparent;
   font-weight: 500;

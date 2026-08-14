@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **GitHub Project References Panel in Left Sidebar**: Added interactive project reference card, quick action links (Star on GitHub, Report an Issue, Release Notes, MIT License), and author credits in `SidebarViewProvider`.
+- **Floating Bulk Action Bar**: Redesigned selection toolbar into a floating card centered at the bottom of the webview with backdrop blur and smooth shadow.
+- **KPI Summary Pills & Filter Indicators**: Converted header summary text into status KPI pills with colored dot indicators, and added colored indicator dots to filter chips (`outdated`, `vulnerable`, `deprecated`).
+- **Native Codicon Icons Integration**: Added VS Code Codicon icons to webview toolbar buttons (`Add package`, `Check updates`, `Refresh`) and row actions (`Update`, `Remove`).
+
+### Changed
+
+- **Deterministic CSS Grid Table Layout**: Converted dependency table header and data rows to a unified 7-track CSS Grid layout (`grid-template-columns`), eliminating layout calculation mismatches and scrollbar gutter offsets between headers and virtualized body rows.
+- **Unified Left Alignment for Table Columns**: Standardized header and data cell alignment to left-aligned across all table columns (`Package`, `Scope`, `Current`, `Latest`, `Size`, `Status`, `Actions`) for consistent starting edge alignment.
+- **Monospaced Data Cell Typography & Soft Badges**: Applied monospaced editor typography specifically to data cell versions and sizes while preserving header UI font, refreshed status badges with soft-tint backgrounds, and added directional version diff indicators.
+
 ## [2.1.0] - 2026-08-13
 
 ### Added

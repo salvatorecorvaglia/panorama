@@ -193,7 +193,8 @@ export function Toolbar({
           aria-expanded={installOpen}
           aria-controls="panorama-search-panel"
         >
-          <Icon name={installOpen ? 'close' : 'add'} /> {installOpen ? 'Close search' : 'Add package'}
+          <Icon name={installOpen ? 'close' : 'add'} />{' '}
+          {installOpen ? 'Close search' : 'Add package'}
         </button>
         <button
           type="button"
@@ -291,25 +292,31 @@ export function Toolbar({
 
         <div className="toolbar__summary" role="status">
           <span className="toolbar__kpi">
-            <span className="kpi-dot kpi-dot--total" /> {summary.totalDependencies} packages
+            <span className="kpi-dot kpi-dot--total" />{' '}
+            {summary.totalDependencies} packages
           </span>
           {summary.outdated > 0 && (
             <span className="toolbar__kpi">
-              <span className="kpi-dot kpi-dot--outdated" /> {summary.outdated} outdated
+              <span className="kpi-dot kpi-dot--outdated" /> {summary.outdated}{' '}
+              outdated
             </span>
           )}
           {summary.vulnerable > 0 && (
             <span className="toolbar__kpi">
-              <span className="kpi-dot kpi-dot--vuln" /> {summary.vulnerable} vulnerable
+              <span className="kpi-dot kpi-dot--vuln" /> {summary.vulnerable}{' '}
+              vulnerable
             </span>
           )}
           {summary.deprecated > 0 && (
             <span className="toolbar__kpi">
-              <span className="kpi-dot kpi-dot--deprecated" /> {summary.deprecated} deprecated
+              <span className="kpi-dot kpi-dot--deprecated" />{' '}
+              {summary.deprecated} deprecated
             </span>
           )}
           {summary.stale && (
-            <span className="toolbar__kpi" title="Registries were unreachable">cached</span>
+            <span className="toolbar__kpi" title="Registries were unreachable">
+              cached
+            </span>
           )}
         </div>
       </div>
