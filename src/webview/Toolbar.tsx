@@ -193,7 +193,7 @@ export function Toolbar({
           aria-expanded={installOpen}
           aria-controls="panorama-search-panel"
         >
-          {installOpen ? 'Close search' : '+ Add package'}
+          <Icon name={installOpen ? 'close' : 'add'} /> {installOpen ? 'Close search' : 'Add package'}
         </button>
         <button
           type="button"
@@ -202,7 +202,7 @@ export function Toolbar({
           disabled={busy}
           title="Query the registries now for newer versions, even if automatic checks are off"
         >
-          Check updates
+          <Icon name="cloud-download" /> Check updates
         </button>
         <button
           type="button"
@@ -211,7 +211,7 @@ export function Toolbar({
           disabled={busy}
           title="Re-read the manifests and lockfiles from disk"
         >
-          Refresh
+          <Icon name="refresh" /> Refresh
         </button>
       </div>
 
@@ -248,7 +248,7 @@ export function Toolbar({
                 })
               }
             >
-              outdated
+              <span className="chip__dot chip__dot--outdated" /> outdated
             </button>
             <button
               type="button"
@@ -261,7 +261,7 @@ export function Toolbar({
                 })
               }
             >
-              vulnerable
+              <span className="chip__dot chip__dot--vuln" /> vulnerable
             </button>
             <button
               type="button"
@@ -274,7 +274,7 @@ export function Toolbar({
                 })
               }
             >
-              deprecated
+              <span className="chip__dot chip__dot--deprecated" /> deprecated
             </button>
           </div>
         </fieldset>
@@ -290,24 +290,26 @@ export function Toolbar({
         {busy && busyLabel && <span className="muted">{busyLabel}</span>}
 
         <div className="toolbar__summary" role="status">
-          <span>{summary.totalDependencies} packages</span>
+          <span className="toolbar__kpi">
+            <span className="kpi-dot kpi-dot--total" /> {summary.totalDependencies} packages
+          </span>
           {summary.outdated > 0 && (
-            <span className="highlight-outdated">
-              {summary.outdated} outdated
+            <span className="toolbar__kpi">
+              <span className="kpi-dot kpi-dot--outdated" /> {summary.outdated} outdated
             </span>
           )}
           {summary.vulnerable > 0 && (
-            <span className="severity--vuln">
-              {summary.vulnerable} vulnerable
+            <span className="toolbar__kpi">
+              <span className="kpi-dot kpi-dot--vuln" /> {summary.vulnerable} vulnerable
             </span>
           )}
           {summary.deprecated > 0 && (
-            <span className="severity--deprecated">
-              {summary.deprecated} deprecated
+            <span className="toolbar__kpi">
+              <span className="kpi-dot kpi-dot--deprecated" /> {summary.deprecated} deprecated
             </span>
           )}
           {summary.stale && (
-            <span title="Registries were unreachable">cached</span>
+            <span className="toolbar__kpi" title="Registries were unreachable">cached</span>
           )}
         </div>
       </div>

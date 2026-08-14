@@ -43,6 +43,9 @@
   --panorama-search-min-width: 180px;
   --panorama-name-min-width: 140px;
 
+  /* Font monospaziato per versioni e dimensioni */
+  --panorama-font-mono: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace);
+
   /* Wide enough for "Update Remove"; see `.cell--actions`. */
   --panorama-actions-width: 18em;
 
@@ -414,9 +417,11 @@ button.danger.ghost {
 }
 
 .table__header,
-.table__group,
 .row {
+  display: grid;
+  grid-template-columns: minmax(var(--panorama-name-min-width), 1fr) 90px 110px 130px 90px 96px var(--panorama-actions-width);
   min-width: var(--panorama-table-min-width);
+  align-items: center;
 }
 
 .table {
@@ -434,7 +439,6 @@ button.danger.ghost {
 }
 
 .table__header {
-  display: flex;
   background-color: var(--vscode-editor-background);
   border-bottom: 1px solid var(--vscode-panel-border);
   font-size: var(--panorama-text-sm);
@@ -442,7 +446,6 @@ button.danger.ghost {
   letter-spacing: 0.04em;
   color: var(--vscode-descriptionForeground);
   overflow-y: hidden;
-  scrollbar-gutter: stable;
 }
 
 .table__header button,
@@ -457,7 +460,9 @@ button.danger.ghost {
   text-align: inherit;
   padding: 0;
   margin: 0;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -499,8 +504,6 @@ button.danger.ghost {
 }
 
 .row {
-  display: flex;
-  align-items: center;
   height: var(--panorama-row-height);
   border-bottom: 1px solid var(--vscode-editorGroup-border, transparent);
   cursor: pointer;
@@ -536,6 +539,10 @@ button.danger.ghost {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
 }
 
 /*
@@ -545,13 +552,14 @@ button.danger.ghost {
  */
 .table__header .cell {
   padding: var(--panorama-space-3) var(--panorama-cell-pad);
+  font-family: var(--vscode-font-family);
+  font-size: var(--panorama-text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
 }
 
 .cell--name {
-  flex: 3;
-  min-width: var(--panorama-name-min-width);
-  display: flex;
-  align-items: center;
   gap: var(--panorama-space-2);
 }
 
@@ -569,64 +577,40 @@ button.danger.ghost {
   white-space: nowrap;
 }
 
+/* Left alignment for ALL table columns (Package, Scope, Current, Latest, Size, Status, Actions) */
 .cell--scope {
-  flex: 0 0 90px;
+  text-align: left;
 }
 
 .cell--version {
-  flex: 0 0 110px;
-  font-variant-numeric: tabular-nums;
+  text-align: left;
 }
 
 .cell--latest {
-  flex: 0 0 130px;
-  font-variant-numeric: tabular-nums;
+  text-align: left;
 }
 
 .cell--size {
-  flex: 0 0 90px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+  text-align: left;
   color: var(--vscode-descriptionForeground);
 }
 
-.cell--size button {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-/*
- * The Status column exists so the sort key of the same name has something to
- * point at, and so severity has a text equivalent rather than resting on the
- * colour of the Latest cell alone.
- */
 .cell--status {
-  flex: 0 0 96px;
+  text-align: left;
 }
 
-/*
- * Sized in em, unlike every other column, because this is the only one whose
- * content is button labels rather than a data value.
- *
- * At 180px it could not hold "Update Remove" — which needs 226px at the
- * default editor font — so the cell's `overflow: hidden` ate the left edge of
- * the first button and the primary action on every outdated row read "pdate".
- * A data cell degrades to an ellipsis when it runs out of room; a button just
- * loses its label. And because the labels scale with `--vscode-font-size`, any
- * pixel value that fits at 13px clips again at 16px.
- */
 .cell--actions {
-  flex: 0 0 var(--panorama-actions-width);
-  display: flex;
   gap: var(--panorama-space-2);
-  justify-content: flex-end;
+  display: flex;
 }
 
-/* The header cell above the buttons carries a label aligned with action buttons below. */
-.table__header .cell--actions {
-  justify-content: flex-end;
-  display: flex;
+/* Monospaced font applied ONLY to table row data values, preserving header UI font */
+.row .cell--version,
+.row .cell--latest,
+.row .cell--size {
+  font-family: var(--panorama-font-mono);
+  font-size: var(--panorama-text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Status colouring ---------- */
@@ -1286,18 +1270,31 @@ a:hover,
   background-color: var(--vscode-list-inactiveSelectionBackground);
 }
 
+.table__wrapper {
+  position: relative;
+}
+
 .table__bulk-bar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--panorama-space-2) var(--panorama-gap);
+  gap: var(--panorama-space-4);
+  padding: var(--panorama-space-2) var(--panorama-space-4);
   background-color: var(--vscode-editorWidget-background);
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+  border-radius: var(--panorama-radius-pill);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25), 0 1px 4px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(8px);
 }
 
 .table__bulk-info {
   font-size: var(--panorama-text-sm);
   color: var(--vscode-foreground);
+  white-space: nowrap;
 }
 
 .table__bulk-actions {
@@ -1306,60 +1303,143 @@ a:hover,
   gap: var(--panorama-space-2);
 }
 
-/* Update Type Pills */
+/* KPI Summary Cards & Dots in Toolbar */
+.toolbar__kpi {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--panorama-space-2);
+  padding: 3px 10px;
+  border-radius: var(--panorama-radius-pill);
+  background-color: var(--vscode-badge-background, rgba(255, 255, 255, 0.08));
+  color: var(--vscode-badge-foreground, inherit);
+  font-size: var(--panorama-text-xs);
+  font-weight: 500;
+  border: 1px solid var(--vscode-panel-border);
+}
 
-/*
- * Status badges take their colour from the severity map at the top of this
- * file, so the badge, the row icon and the tree all describe a state the same
- * way — and all of them follow the active theme.
- *
- * `currentColor` on the border keeps each badge to one colour decision rather
- * than a hardcoded rgba() per state. The text sits on the panel background
- * rather than on a tinted fill, because a fixed-alpha tint of a theme colour
- * is exactly the kind of contrast a high-contrast theme cannot correct.
- */
+.kpi-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.kpi-dot--total {
+  background-color: var(--vscode-charts-blue);
+}
+
+.kpi-dot--outdated {
+  background-color: var(--panorama-severity-major);
+}
+
+.kpi-dot--vuln {
+  background-color: var(--panorama-severity-vuln);
+}
+
+.kpi-dot--deprecated {
+  background-color: var(--panorama-severity-deprecated);
+}
+
+.chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.chip__dot--outdated {
+  background-color: var(--panorama-severity-major);
+}
+
+.chip__dot--vuln {
+  background-color: var(--panorama-severity-vuln);
+}
+
+.chip__dot--deprecated {
+  background-color: var(--panorama-severity-deprecated);
+}
+
+/* Status badges with soft backgrounds and high contrast text */
 .badge--patch,
 .badge--minor,
 .badge--major,
 .badge--vuln,
 .badge--deprecated {
-  background: transparent;
   border: 1px solid currentColor;
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 .badge--patch {
   color: var(--panorama-severity-patch);
+  background-color: rgba(56, 189, 248, 0.12);
 }
 
 .badge--minor {
   color: var(--panorama-severity-minor);
+  background-color: rgba(250, 204, 21, 0.12);
 }
 
 .badge--major {
   color: var(--panorama-severity-major);
+  background-color: rgba(249, 115, 22, 0.14);
 }
 
 .badge--vuln {
   color: var(--panorama-severity-vuln);
+  background-color: rgba(239, 68, 68, 0.14);
 }
 
 .badge--deprecated {
   color: var(--panorama-severity-deprecated);
+  background-color: rgba(234, 179, 8, 0.12);
 }
 
 .badge--none {
-  background: transparent;
+  background-color: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.05));
   color: var(--vscode-descriptionForeground);
   border: 1px solid transparent;
+  font-weight: 500;
 }
 
-/* Version & Package Text Highlights */
+.version-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.version-diff__arrow {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+  width: 14px;
+  display: inline-flex;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.version-diff__spacer {
+  width: 14px;
+  display: inline-block;
+  flex-shrink: 0;
+}
 
 .version-latest--highlight {
   color: var(--vscode-charts-green);
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+  background-color: rgba(34, 197, 94, 0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.version-latest--current {
+  color: var(--vscode-foreground);
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
 }
 
 .package-name-highlight {

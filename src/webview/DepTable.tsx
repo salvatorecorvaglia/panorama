@@ -359,7 +359,7 @@ export function DepTable({
                 className="btn-update-primary"
                 onClick={onBulkUpdateSelected}
               >
-                Update Selected
+                <Icon name="arrow-up" /> Update Selected
               </button>
             )}
             {onBulkRemoveSelected && (
@@ -368,7 +368,7 @@ export function DepTable({
                 className="danger"
                 onClick={onBulkRemoveSelected}
               >
-                Remove Selected
+                <Icon name="trash" /> Remove Selected
               </button>
             )}
             <button
@@ -376,7 +376,7 @@ export function DepTable({
               className="ghost"
               onClick={() => onToggleSelectAll?.([])}
             >
-              Clear selection
+              <Icon name="close" /> Clear selection
             </button>
           </div>
         </div>
@@ -671,10 +671,23 @@ function DepRow({
           <span className="muted" title="Registry lookup failed">
             —
           </span>
-        ) : upgradeable && dep.latest ? (
-          <span className="version-latest--highlight">{dep.latest}</span>
         ) : (
-          (dep.latest ?? '—')
+          <span className="version-diff">
+            {upgradeable && dep.latest ? (
+              <Icon name="arrow-right" className="version-diff__arrow" />
+            ) : (
+              <span className="version-diff__spacer" />
+            )}
+            <span
+              className={
+                upgradeable && dep.latest
+                  ? 'version-latest--highlight'
+                  : 'version-latest--current'
+              }
+            >
+              {dep.latest ?? '—'}
+            </span>
+          </span>
         )}
       </div>
 
@@ -698,7 +711,7 @@ function DepRow({
               onUpdate(dep);
             }}
           >
-            Update
+            <Icon name="arrow-up" /> Update
           </button>
         )}
         <button
@@ -711,7 +724,7 @@ function DepRow({
             onUninstall(dep);
           }}
         >
-          Remove
+          <Icon name="trash" /> Remove
         </button>
       </div>
     </div>
