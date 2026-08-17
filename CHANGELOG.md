@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-08-18
+
 ### Added
 
 - **GitHub Project References Panel in Left Sidebar**: Added interactive project reference card, quick action links (Star on GitHub, Report an Issue, Release Notes, MIT License), and author credits in `SidebarViewProvider`.
@@ -114,3 +116,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - First implementation of Panorama.
+
+[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/salvatorecorvaglia/panorama/compare/v1.2.0...v2.0.0
+[1.2.0]: https://github.com/salvatorecorvaglia/panorama/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/salvatorecorvaglia/panorama/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/salvatorecorvaglia/panorama/releases/tag/v1.0.0
