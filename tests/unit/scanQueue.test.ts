@@ -111,6 +111,28 @@ describe('ScanQueue', () => {
     finish(0);
   });
 
+  it('does not palm an unaudited scan off on a caller that wants audit data', async () => {
+    /*
+     * The audit-flag counterpart of the checkUpdates regression above: a
+     * caller asking for vulnerability data must not be handed a result from
+     * an in-flight scan that never ran the audit step, or it will believe it
+     * has vulnerability data it never actually fetched.
+     */
+    const { queue, calls, finish } = deferredQueue();
+
+    queue.request({ checkUpdates: true, audit: false });
+    const wantsAudit = queue.request({ checkUpdates: true, audit: true });
+
+    expect(calls).toHaveLength(1);
+
+    finish(0, 'unaudited');
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1].audit).toBe(true);
+
+    finish(1, 'audited');
+    expect(await wantsAudit).toBe('audited');
+  });
+
   it('starts fresh once a scan has settled', async () => {
     const { queue, calls, finish } = deferredQueue();
 

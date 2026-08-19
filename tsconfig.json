@@ -15,6 +15,13 @@
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
+    // Off, not just unset: turning this on surfaces 30+ errors across core and
+    // providers, all the same shape — an optional field assigned a variable
+    // already typed `T | undefined` (`{ signal: someOptionalSignal }` against
+    // `signal?: AbortSignal`), which is the idiomatic pattern used throughout
+    // this codebase rather than a bug. Enabling it for real means auditing and
+    // widening every such interface to `field?: T | undefined`, which is real,
+    // valuable work — just not a drive-by lint change.
     "exactOptionalPropertyTypes": false,
     "skipLibCheck": true,
     "esModuleInterop": true,

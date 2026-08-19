@@ -20,6 +20,7 @@ import type {
 import { SCOPE_LABELS } from '../core/vocabulary.js';
 import { ECOSYSTEM_LABELS, formatDownloads } from './format.js';
 import { Icon } from './Icon.js';
+import { useDismissableOverlay } from './useDismissableOverlay.js';
 
 interface Props {
   groups: ProjectGroup[];
@@ -66,8 +67,11 @@ export function SearchInstall({
     groups[0]?.manifestPath ?? '',
   );
   const inputRef = useRef<HTMLInputElement>(null);
-  /** The element that had focus when the panel opened, to restore on close. */
-  const returnFocusRef = useRef<Element | null>(null);
+  // Focus lands in the search box on open and goes back where it came from on
+  // close — the same contract as the detail drawer.
+  const handlePanelKeyDown = useDismissableOverlay(onClose, () =>
+    inputRef.current?.focus(),
+  );
 
   // Ecosystems actually present in this workspace — offering PyPI in a pure Go
   // project would just be noise.
@@ -75,19 +79,6 @@ export function SearchInstall({
     () => [...new Set(groups.map((group) => group.ecosystem))],
     [groups],
   );
-
-  // Focus lands in the search box on open and goes back where it came from on
-  // close — the same contract as the detail drawer.
-  useEffect(() => {
-    returnFocusRef.current = document.activeElement;
-    inputRef.current?.focus();
-    return () => {
-      const target = returnFocusRef.current;
-      if (target instanceof HTMLElement && document.contains(target)) {
-        target.focus();
-      }
-    };
-  }, []);
 
   // Keep the install target valid as the workspace changes underneath us.
   useEffect(() => {
@@ -118,19 +109,6 @@ export function SearchInstall({
     if (trimmed.length < 2) return;
     event.preventDefault();
     onSearch(trimmed, ecosystem);
-  };
-
-  /*
-   * Escape closes the panel, and closing returns focus to whatever opened it.
-   *
-   * Both are what the drawer already does. Two dismissable overlays in one
-   * webview that disagree about Escape is the kind of inconsistency you only
-   * notice by having your keystroke ignored.
-   */
-  const handlePanelKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Escape') return;
-    event.stopPropagation();
-    onClose();
   };
 
   const selectedGroup = groups.find(

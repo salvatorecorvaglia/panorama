@@ -1300,8 +1300,8 @@ a:hover,
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
   border-radius: var(--panorama-radius-pill);
   box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.25),
-    0 1px 4px rgba(0, 0, 0, 0.15);
+    0 4px 16px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.25)),
+    0 1px 4px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.15));
   backdrop-filter: blur(8px);
 }
 
@@ -1389,34 +1389,51 @@ a:hover,
 
 .badge--patch {
   color: var(--panorama-severity-patch);
-  background-color: rgba(56, 189, 248, 0.12);
+  background-color: color-mix(
+    in srgb,
+    var(--panorama-severity-patch) 12%,
+    transparent
+  );
 }
 
 .badge--minor {
   color: var(--panorama-severity-minor);
-  background-color: rgba(250, 204, 21, 0.12);
+  background-color: color-mix(
+    in srgb,
+    var(--panorama-severity-minor) 12%,
+    transparent
+  );
 }
 
 .badge--major {
   color: var(--panorama-severity-major);
-  background-color: rgba(249, 115, 22, 0.14);
+  background-color: color-mix(
+    in srgb,
+    var(--panorama-severity-major) 14%,
+    transparent
+  );
 }
 
 .badge--vuln {
   color: var(--panorama-severity-vuln);
-  background-color: rgba(239, 68, 68, 0.14);
+  background-color: color-mix(
+    in srgb,
+    var(--panorama-severity-vuln) 14%,
+    transparent
+  );
 }
 
 .badge--deprecated {
   color: var(--panorama-severity-deprecated);
-  background-color: rgba(234, 179, 8, 0.12);
+  background-color: color-mix(
+    in srgb,
+    var(--panorama-severity-deprecated) 12%,
+    transparent
+  );
 }
 
 .badge--none {
-  background-color: var(
-    --vscode-toolbar-hoverBackground,
-    rgba(255, 255, 255, 0.05)
-  );
+  background-color: var(--vscode-toolbar-hoverBackground, transparent);
   color: var(--vscode-descriptionForeground);
   border: 1px solid transparent;
   font-weight: 500;
@@ -1448,7 +1465,11 @@ a:hover,
   color: var(--vscode-charts-green);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  background-color: rgba(34, 197, 94, 0.12);
+  background-color: color-mix(
+    in srgb,
+    var(--vscode-charts-green) 12%,
+    transparent
+  );
   padding: 1px 6px;
   border-radius: 4px;
 }

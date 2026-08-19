@@ -8,7 +8,6 @@
 import * as path from 'node:path';
 import { type ParseError, parse as parseJsonc } from 'jsonc-parser';
 import { cacheKey, TTL } from '../../core/cache.js';
-import { HttpError } from '../../core/http.js';
 import type {
   Dependency,
   DepScope,
@@ -25,7 +24,7 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { mapWithConcurrency } from '../shared/concurrency.js';
+import { fetchVersionsWithCache } from '../shared/cachedFetch.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
@@ -251,17 +250,13 @@ export class NodeProvider implements EcosystemProvider {
     signal?: AbortSignal,
   ): Promise<Map<string, VersionInfo>> {
     const registry = ctx.registryOverride('node') ?? DEFAULT_REGISTRY;
-    const result = new Map<string, VersionInfo>();
 
-    await mapWithConcurrency(names, 8, async (name) => {
-      const key = cacheKey('npm', 'versions', registry, name);
-      const cached = ctx.cache.get<VersionInfo>(key);
-      if (cached) {
-        result.set(name, cached);
-        return;
-      }
-
-      try {
+    return fetchVersionsWithCache(
+      names,
+      ctx,
+      8,
+      (name) => cacheKey('npm', 'versions', registry, name),
+      async (name) => {
         const packument = await ctx.http.getJson<Packument>(
           `${registry}/${encodeName(name)}`,
           {
@@ -275,23 +270,22 @@ export class NodeProvider implements EcosystemProvider {
         const latestVer = latestTag
           ? packument.versions?.[latestTag]
           : undefined;
-        const info: VersionInfo = {
+        return {
           versions,
           latest: latestTag,
           deprecated: latestVer?.deprecated,
           sizeBytes: latestVer?.dist?.unpackedSize ?? latestVer?.dist?.size,
         };
-        result.set(name, info);
-        await ctx.cache.set(key, info, TTL.version);
-      } catch (error) {
-        // 404s are normal (private or renamed packages); fall back to stale data.
-        const stale = ctx.cache.getStale<VersionInfo>(key);
-        if (stale) result.set(name, stale);
-        if (!(error instanceof HttpError)) throw error;
-      }
-    });
-
-    return result;
+      },
+      // Names come straight from package.json, which is not ours to trust:
+      // anything that is not a real npm name cannot resolve, and should not
+      // be pasted into a URL to find that out. 404s are normal (private or
+      // renamed packages); other failures (a malformed packument, a DNS
+      // error) are just as unactionable per package, so every failure here
+      // falls back to stale data rather than rejecting the whole batch and
+      // losing results already fetched for sibling packages.
+      (name) => this.isValidPackageName(name),
+    );
   }
 
   async fetchMetadata(
@@ -367,7 +361,7 @@ export class NodeProvider implements EcosystemProvider {
       description: entry.package.description,
       ecosystem: 'node' as const,
       downloads: entry.downloads?.weekly,
-      repository: entry.package.links?.repository,
+      repository: normalizeRepositoryUrl(entry.package.links?.repository),
     }));
   }
 

@@ -63,7 +63,7 @@ export class ManifestWatcher implements vscode.Disposable {
  * entries are directory patterns (`**​/node_modules/**`), and the only question
  * that matters is whether the path runs through one of those directories.
  */
-function isExcluded(uri: vscode.Uri): boolean {
+export function isExcluded(uri: vscode.Uri): boolean {
   const globs = vscode.workspace
     .getConfiguration('panorama')
     .get<string[]>('excludeGlobs', []);

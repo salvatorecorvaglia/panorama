@@ -23,6 +23,7 @@ export class ScanQueue<T> {
   private inFlight: Promise<T> | undefined;
   /** What the in-flight scan was asked for, so we can tell if it suffices. */
   private inFlightCheckedUpdates = false;
+  private inFlightAudited = false;
 
   constructor(private readonly run: (request: ScanRequest) => Promise<T>) {}
 
@@ -33,19 +34,28 @@ export class ScanQueue<T> {
    * Deliberately *behind* rather than alongside: two scans over the same files
    * at once would compete for the same file handles and registry rate limits to
    * produce one answer.
+   *
+   * Both `checkUpdates` and `audit` are compared: a plain update check does
+   * not satisfy a request that also needs vulnerability data, or the caller
+   * would be handed a result it believes was audited but wasn't.
    */
   request(request: ScanRequest): Promise<T> {
     if (this.inFlight) {
-      if (!request.checkUpdates || this.inFlightCheckedUpdates) {
+      const satisfied =
+        (!request.checkUpdates || this.inFlightCheckedUpdates) &&
+        (!request.audit || this.inFlightAudited);
+      if (satisfied) {
         return this.inFlight;
       }
       return this.inFlight.then(() => this.request(request));
     }
 
     this.inFlightCheckedUpdates = request.checkUpdates;
+    this.inFlightAudited = request.audit ?? false;
     this.inFlight = this.run(request).finally(() => {
       this.inFlight = undefined;
       this.inFlightCheckedUpdates = false;
+      this.inFlightAudited = false;
     });
     return this.inFlight;
   }

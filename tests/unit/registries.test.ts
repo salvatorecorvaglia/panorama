@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
+import { NodeProvider } from '../../src/providers/node/index.js';
 import { PythonProvider } from '../../src/providers/python/index.js';
 import {
   fetchMavenVersions,
@@ -243,6 +244,34 @@ describe('PythonProvider.search', () => {
     const results = await provider.search('requests', withPyPi([]));
 
     expect(results[0].version).toBe('');
+  });
+});
+
+describe('NodeProvider.fetchVersions', () => {
+  it('keeps results for packages that succeeded when another in the batch fails', async () => {
+    // A malformed packument (or a DNS error) for one package used to reject
+    // the whole `Promise.all` in `mapWithConcurrency`, wiping out every
+    // already-fetched sibling result for the batch. Each name's outcome must
+    // be independent.
+    const ctx = makeContext();
+    const getJson = vi.fn((url: string) => {
+      if (url.includes('bad-package')) {
+        return Promise.reject(new TypeError('unexpected token in JSON'));
+      }
+      return Promise.resolve({
+        'dist-tags': { latest: '1.0.0' },
+        versions: { '1.0.0': {} },
+      });
+    });
+
+    const provider = new NodeProvider();
+    const results = await provider.fetchVersions(
+      ['good-package', 'bad-package'],
+      { ...ctx, http: { ...ctx.http, getJson } as never },
+    );
+
+    expect(results.get('good-package')?.latest).toBe('1.0.0');
+    expect(results.has('bad-package')).toBe(false);
   });
 });
 

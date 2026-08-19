@@ -291,7 +291,14 @@ export class GradleProvider implements EcosystemProvider {
       if (literalMatch[2].includes('$')) {
         return null;
       }
-      return manifestText.replace(literal, `$1${edit.version}$3`);
+      // Uses a replacer function, not string interpolation: the version is
+      // validated upstream, but a literal `$` in a replacement string is a
+      // backreference, and this is the one place that would matter.
+      return manifestText.replace(
+        literal,
+        (_full, prefix: string, _old: string, quote: string) =>
+          `${prefix}${escapeGroovyOrKotlinString(edit.version, quote)}${quote}`,
+      );
     }
 
     // Catalog form: module = "group:artifact" with an adjacent version.
@@ -300,18 +307,42 @@ export class GradleProvider implements EcosystemProvider {
       String.raw`(module\s*=\s*"${escaped}"\s*,\s*version\s*=\s*")([^"]+)(")`,
     );
     if (catalogLine.test(manifestText)) {
-      return manifestText.replace(catalogLine, `$1${edit.version}$3`);
+      return manifestText.replace(
+        catalogLine,
+        (_full, prefix: string, _old: string, quote: string) =>
+          `${prefix}${escapeGroovyOrKotlinString(edit.version, quote)}${quote}`,
+      );
     }
 
     const splitForm = new RegExp(
       String.raw`(group\s*=\s*"${group}"\s*,\s*name\s*=\s*"${artifact}"\s*,\s*version\s*=\s*")([^"]+)(")`,
     );
     if (splitForm.test(manifestText)) {
-      return manifestText.replace(splitForm, `$1${edit.version}$3`);
+      return manifestText.replace(
+        splitForm,
+        (_full, prefix: string, _old: string, quote: string) =>
+          `${prefix}${escapeGroovyOrKotlinString(edit.version, quote)}${quote}`,
+      );
     }
 
     return null;
   }
+}
+
+/**
+ * Escapes a value for interpolation into a single- or double-quoted
+ * Groovy/Kotlin string literal.
+ *
+ * Belt-and-suspenders: `validateVersion` already rejects quotes and
+ * backslashes before an edit reaches here, but `editManifest` is a public
+ * method, not one only reachable through that gate, so it defends itself the
+ * same way the Maven provider's XML escaping does.
+ */
+function escapeGroovyOrKotlinString(value: string, quote: string): string {
+  const escaped = value.replace(/\\/g, '\\\\');
+  return quote === "'"
+    ? escaped.replace(/'/g, "\\'")
+    : escaped.replace(/"/g, '\\"');
 }
 
 function parseCatalogEntry(

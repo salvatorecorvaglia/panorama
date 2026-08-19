@@ -5,7 +5,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { compareComposer } from '../../src/core/versions/composer.js';
+import {
+  compareComposer,
+  composerConstraintToSemver,
+} from '../../src/core/versions/composer.js';
 import {
   classifyUpdate,
   compareVersions,
@@ -121,6 +124,14 @@ describe('Composer ordering', () => {
     expect(asc('1.2.3.4', '1.2.3.5', compareComposer)).toBe('lt');
   });
 
+  it('cannot represent a nonzero fourth segment in a semver range', () => {
+    // node-semver has no fourth segment; silently dropping a nonzero one
+    // would make 1.2.3.4 and 1.2.3.5 compare equal as a "wanted" constraint.
+    expect(composerConstraintToSemver('1.2.3.4')).toBeNull();
+    // A trailing zero build carries no information, so it's safe to drop.
+    expect(composerConstraintToSemver('1.2.3.0')).toBe('1.2.3');
+  });
+
   it('orders stability suffixes', () => {
     expect(asc('1.0.0-dev', '1.0.0-alpha', compareComposer)).toBe('lt');
     expect(asc('1.0.0-beta', '1.0.0-RC', compareComposer)).toBe('lt');
@@ -166,6 +177,12 @@ describe('cross-ecosystem facade', () => {
     // Git and branch constraints have no orderable meaning.
     expect(maxSatisfying('node', ['1.0.0'], 'github:foo/bar')).toBeUndefined();
     expect(maxSatisfying('composer', ['1.0.0'], 'dev-main')).toBeUndefined();
+    // A four-segment pin with a nonzero build number: node-semver cannot
+    // distinguish it from any other build of the same 1.2.3 release, so a
+    // dash is the honest answer rather than a guessed build.
+    expect(
+      maxSatisfying('composer', ['1.2.3.4', '1.2.3.5'], '1.2.3.4'),
+    ).toBeUndefined();
   });
 
   it('classifies the size of an update', () => {

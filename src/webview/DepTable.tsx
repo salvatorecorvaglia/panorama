@@ -22,7 +22,7 @@
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { FocusEvent, KeyboardEvent } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dependency, Ecosystem, ProjectGroup } from '../core/types.js';
 import { compareVersions } from '../core/versions/index.js';
 import {
@@ -495,7 +495,7 @@ export function DepTable({
                       tabbable={virtualRow.index === focusedIndex}
                       selected={row.dep.key === selectedKey}
                       checked={selectedDepKeys.has(row.dep.key)}
-                      onToggleSelect={() => onToggleSelectDep?.(row.dep.key)}
+                      onToggleSelect={onToggleSelectDep}
                       onSelect={onSelect}
                       onUpdate={onUpdate}
                       onUninstall={onUninstall}
@@ -512,7 +512,7 @@ export function DepTable({
   );
 }
 
-function GroupHeader({
+const GroupHeader = memo(function GroupHeader({
   row,
   rowIndex,
   onUpdateAll,
@@ -552,13 +552,13 @@ function GroupHeader({
             className="secondary"
             onClick={() => onUpdateAll(row.group.manifestPath)}
           >
-            Update all
+            Update All
           </button>
         )}
       </div>
     </div>
   );
-}
+});
 
 function renderStatusBadge(dep: Dependency) {
   if (dep.vulnerabilities.length > 0) {
@@ -581,7 +581,7 @@ function renderStatusBadge(dep: Dependency) {
   }
 }
 
-function DepRow({
+const DepRow = memo(function DepRow({
   dep,
   index,
   rowIndex,
@@ -600,7 +600,7 @@ function DepRow({
   tabbable: boolean;
   selected: boolean;
   checked: boolean;
-  onToggleSelect: () => void;
+  onToggleSelect: ((depKey: string) => void) | undefined;
   onSelect: (dep: Dependency) => void;
   onUpdate: (dep: Dependency) => void;
   onUninstall: (dep: Dependency) => void;
@@ -631,7 +631,7 @@ function DepRow({
           className="row-checkbox"
           checked={checked}
           onClick={(e) => e.stopPropagation()}
-          onChange={onToggleSelect}
+          onChange={() => onToggleSelect?.(dep.key)}
         />
         {dep.vulnerabilities.length > 0 && (
           <Icon
@@ -729,7 +729,7 @@ function DepRow({
       </div>
     </div>
   );
-}
+});
 
 /**
  * Orders two version cells using their own ecosystem's rules.

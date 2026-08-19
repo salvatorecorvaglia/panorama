@@ -137,8 +137,19 @@ export function assignWorkspaces(
 ): Map<string, WorkspaceInfo> {
   const result = new Map<string, WorkspaceInfo>();
 
-  for (const { manifest } of manifests) {
-    result.set(manifest.path, { isRoot: false });
+  // Grouped once so each root only ever compares against manifests that could
+  // possibly be one of its members — a root never claims a member outside its
+  // own ecosystem, and a monorepo mixing several ecosystems would otherwise
+  // pay for every root x every manifest regardless of ecosystem.
+  const byEcosystem = new Map<
+    Ecosystem,
+    Array<{ manifest: ParsedManifest; members: string[] }>
+  >();
+  for (const entry of manifests) {
+    result.set(entry.manifest.path, { isRoot: false });
+    const bucket = byEcosystem.get(entry.manifest.ecosystem);
+    if (bucket) bucket.push(entry);
+    else byEcosystem.set(entry.manifest.ecosystem, [entry]);
   }
 
   for (const { manifest, members } of manifests) {
@@ -147,10 +158,9 @@ export function assignWorkspaces(
     const rootDir = path.dirname(manifest.path);
     result.set(manifest.path, { isRoot: true });
 
-    for (const candidate of manifests) {
+    const sameEcosystem = byEcosystem.get(manifest.ecosystem) ?? [];
+    for (const candidate of sameEcosystem) {
       if (candidate.manifest.path === manifest.path) continue;
-      // Members only ever live below their root, and only in the same ecosystem.
-      if (candidate.manifest.ecosystem !== manifest.ecosystem) continue;
 
       const candidateDir = path.dirname(candidate.manifest.path);
       const relative = path.relative(rootDir, candidateDir);
@@ -181,6 +191,13 @@ export function assignWorkspaces(
 }
 
 /**
+ * One glob pattern is tested against every manifest discovered in its
+ * ecosystem, often across several scans, so the compiled form is worth
+ * keeping rather than rebuilding on every call.
+ */
+const globRegexCache = new Map<string, RegExp>();
+
+/**
  * Matches a workspace member glob against a root-relative directory path.
  *
  * Deliberately narrow: workspace globs in practice are `packages/*`,
@@ -202,22 +219,26 @@ export function globMatchesPath(
     return normalisedPath === normalisedPattern;
   }
 
-  const regex = new RegExp(
-    '^' +
-      normalisedPattern
-        .split('/')
-        .map((segment) => {
-          if (segment === '**') return '.*';
-          // A single star matches within one segment only.
-          return segment
-            .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-            .replace(/\*/g, '[^/]*');
-        })
-        .join('/')
-        // `a/**` should also match `a` itself.
-        .replace(/\/\.\*$/, '(?:/.*)?') +
-      '$',
-  );
+  let regex = globRegexCache.get(normalisedPattern);
+  if (!regex) {
+    regex = new RegExp(
+      '^' +
+        normalisedPattern
+          .split('/')
+          .map((segment) => {
+            if (segment === '**') return '.*';
+            // A single star matches within one segment only.
+            return segment
+              .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+              .replace(/\*/g, '[^/]*');
+          })
+          .join('/')
+          // `a/**` should also match `a` itself.
+          .replace(/\/\.\*$/, '(?:/.*)?') +
+        '$',
+    );
+    globRegexCache.set(normalisedPattern, regex);
+  }
 
   return regex.test(normalisedPath);
 }

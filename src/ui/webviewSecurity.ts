@@ -27,6 +27,32 @@ export function createNonce(): string {
 }
 
 /**
+ * The Content-Security-Policy every Panorama webview shares.
+ *
+ * `connect-src 'none'` is deliberate: no webview talks to the network
+ * directly — every registry call happens in the extension host. Scripts load
+ * only under this load's nonce, so injected markup cannot run its own.
+ *
+ * Building this here rather than per-surface is what the whole file exists
+ * for — see the module comment. A surface that needs a narrower policy can
+ * still write its own, but the default for a new one is this, not a
+ * hand-rolled string that quietly drops a directive.
+ */
+export function buildContentSecurityPolicy(
+  webview: vscode.Webview,
+  nonce: string,
+): string {
+  return [
+    `default-src 'none'`,
+    `img-src ${webview.cspSource} https: data:`,
+    `style-src ${webview.cspSource} 'unsafe-inline'`,
+    `script-src 'nonce-${nonce}'`,
+    `font-src ${webview.cspSource}`,
+    `connect-src 'none'`,
+  ].join('; ');
+}
+
+/**
  * Opens a URL in the user's browser, if it is one worth opening.
  *
  * Everything reaching this comes from a registry response or from the webview,

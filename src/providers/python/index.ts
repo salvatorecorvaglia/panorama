@@ -31,7 +31,7 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { mapWithConcurrency } from '../shared/concurrency.js';
+import { fetchVersionsWithCache } from '../shared/cachedFetch.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
@@ -338,17 +338,13 @@ export class PythonProvider implements EcosystemProvider {
     signal?: AbortSignal,
   ): Promise<Map<string, VersionInfo>> {
     const index = ctx.registryOverride('python') ?? DEFAULT_INDEX;
-    const result = new Map<string, VersionInfo>();
 
-    await mapWithConcurrency(names, 8, async (name) => {
-      const key = cacheKey('pypi', 'versions', index, name);
-      const cached = ctx.cache.get<VersionInfo>(key);
-      if (cached) {
-        result.set(name, cached);
-        return;
-      }
-
-      try {
+    return fetchVersionsWithCache(
+      names,
+      ctx,
+      8,
+      (name) => cacheKey('pypi', 'versions', index, name),
+      async (name) => {
         // The PEP 691 simple endpoint is the supported source for the version
         // list; the legacy JSON `releases` key is deprecated.
         const simple = await ctx.http.getJson<{
@@ -360,19 +356,12 @@ export class PythonProvider implements EcosystemProvider {
         });
         const versions = simple.versions ?? [];
         const lastFile = simple.files?.[simple.files.length - 1];
-        const info: VersionInfo = {
+        return {
           versions,
           sizeBytes: lastFile?.size,
         };
-        result.set(name, info);
-        await ctx.cache.set(key, info, TTL.version);
-      } catch {
-        const stale = ctx.cache.getStale<VersionInfo>(key);
-        if (stale) result.set(name, stale);
-      }
-    });
-
-    return result;
+      },
+    );
   }
 
   async fetchMetadata(

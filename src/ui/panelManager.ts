@@ -24,8 +24,13 @@ import { hasUpdate } from '../core/vocabulary.js';
 import type { ProviderContext } from '../providers/provider.js';
 import { validateVersion } from '../providers/provider.js';
 import { providerFor, providerForPath } from '../providers/registry.js';
+import { DependencyMutator } from './dependencyMutator.js';
 import { TerminalRunner } from './terminalRunner.js';
-import { createNonce, openExternalUrl } from './webviewSecurity.js';
+import {
+  buildContentSecurityPolicy,
+  createNonce,
+  openExternalUrl,
+} from './webviewSecurity.js';
 
 export class PanelManager implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
@@ -55,13 +60,21 @@ export class PanelManager implements vscode.Disposable {
    * nothing in particular.
    */
   private pendingReveal: HostMessage | undefined;
+  private readonly mutator: DependencyMutator;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly scanner: Scanner,
     private readonly ctx: ProviderContext,
     private readonly onStateChanged: (result: ScanResult) => void,
-  ) {}
+  ) {
+    this.mutator = new DependencyMutator(
+      ctx,
+      this.terminal,
+      (busy, label) => this.setBusy(busy, label),
+      (message) => this.post({ type: 'error', message }),
+    );
+  }
 
   get currentResult(): ScanResult {
     return this.latest;
@@ -107,7 +120,9 @@ export class PanelManager implements vscode.Disposable {
     });
 
     this.panel.webview.onDidReceiveMessage((message: WebviewMessage) => {
-      void this.handleMessage(message);
+      this.handleMessage(message).catch((error: unknown) => {
+        this.post({ type: 'error', message: describeError(error) });
+      });
     });
   }
 
@@ -206,6 +221,10 @@ export class PanelManager implements vscode.Disposable {
       }
 
       case 'install':
+        if (!this.isKnownManifest(message.manifestPath)) {
+          this.post({ type: 'error', message: 'Unknown manifest.' });
+          return;
+        }
         await this.handleInstall(
           message.name,
           message.version,
@@ -253,6 +272,10 @@ export class PanelManager implements vscode.Disposable {
         return;
 
       case 'openManifest':
+        if (!this.isKnownManifest(message.manifestPath)) {
+          this.post({ type: 'error', message: 'Unknown manifest.' });
+          return;
+        }
         await this.openManifest(message.manifestPath, message.packageName);
         return;
     }
@@ -363,24 +386,13 @@ export class PanelManager implements vscode.Disposable {
       return;
     }
 
-    const toolchain = await provider.detectToolchain(manifestPath, this.ctx);
-    const command = provider.installCommand(toolchain, name, version, scope);
-    const edit = { kind: 'add' as const, name, version, scope };
-
-    if (command) {
-      await this.runCommand(command.argv, command.cwd, command.description);
-      // pip installs into the environment without recording anything, so the
-      // manifest edit is what makes the install outlive the next reinstall.
-      if (command.writesManifest === false) {
-        await this.applyManifestEdit(provider, manifestPath, edit);
-      }
-      await this.refresh();
-      return;
-    }
-
-    // No CLI for this edit — fall back to a manifest edit where the provider
-    // supports one (requirements.txt, pom.xml).
-    const applied = await this.applyManifestEdit(provider, manifestPath, edit);
+    const applied = await this.mutator.install(
+      provider,
+      manifestPath,
+      name,
+      version,
+      scope,
+    );
 
     if (!applied) {
       this.post({
@@ -421,7 +433,11 @@ export class PanelManager implements vscode.Disposable {
       if (choice !== 'Update') return;
     }
 
-    const applied = await this.applyUpdate(dep, toVersion);
+    const applied = await this.mutator.update(
+      dep,
+      providerFor(dep.ecosystem),
+      toVersion,
+    );
 
     if (!applied) {
       this.post({
@@ -433,43 +449,6 @@ export class PanelManager implements vscode.Disposable {
       await this.openManifest(dep.manifestPath, dep.name);
     }
     await this.refresh();
-  }
-
-  /**
-   * Updates one dependency: the provider's CLI command where it has one, its
-   * manifest edit where it does not. Returns false when neither path applied.
-   *
-   * Deliberately free of confirmation prompts and refreshes. Both belong to the
-   * caller, because a bulk action has to ask once and refresh once rather than
-   * once per package — and a per-package prompt is exactly what made the bulk
-   * path stack ten modal dialogs on top of each other.
-   */
-  private async applyUpdate(
-    dep: Dependency,
-    toVersion: string,
-  ): Promise<boolean> {
-    const provider = providerFor(dep.ecosystem);
-    const toolchain = await provider.detectToolchain(
-      dep.manifestPath,
-      this.ctx,
-    );
-    const command = provider.updateCommand(toolchain, dep, toVersion);
-    const edit = {
-      kind: 'update' as const,
-      name: dep.name,
-      version: toVersion,
-      scope: dep.scope,
-    };
-
-    if (command) {
-      await this.runCommand(command.argv, command.cwd, command.description);
-      if (command.writesManifest === false) {
-        await this.applyManifestEdit(provider, dep.manifestPath, edit);
-      }
-      return true;
-    }
-
-    return this.applyManifestEdit(provider, dep.manifestPath, edit);
   }
 
   /**
@@ -515,7 +494,20 @@ export class PanelManager implements vscode.Disposable {
     // the user has to go and edit by hand, so it has to be identifiable.
     const skipped: string[] = [];
     for (const entry of resolved) {
-      if (!(await this.applyUpdate(entry.dep, entry.toVersion))) {
+      try {
+        if (
+          !(await this.mutator.update(
+            entry.dep,
+            providerFor(entry.dep.ecosystem),
+            entry.toVersion,
+          ))
+        ) {
+          skipped.push(entry.dep.name);
+        }
+      } catch {
+        // One package failing to update (terminal disposed mid-run, a
+        // manifest edit that throws) should not abandon the rest of the
+        // batch — it's reported the same way a declined rewrite is.
         skipped.push(entry.dep.name);
       }
     }
@@ -550,7 +542,11 @@ export class PanelManager implements vscode.Disposable {
 
     const skipped: string[] = [];
     for (const dep of deps) {
-      if (!(await this.applyUninstall(dep))) {
+      try {
+        if (!(await this.mutator.uninstall(dep, providerFor(dep.ecosystem)))) {
+          skipped.push(dep.name);
+        }
+      } catch {
         skipped.push(dep.name);
       }
     }
@@ -594,10 +590,9 @@ export class PanelManager implements vscode.Disposable {
     if (choice !== 'Update') return;
 
     const provider = providerFor(group.ecosystem);
-    const toolchain = await provider.detectToolchain(manifestPath, this.ctx);
-    const command = provider.updateAllCommand(toolchain);
+    const applied = await this.mutator.updateAll(provider, manifestPath);
 
-    if (!command) {
+    if (!applied) {
       this.post({
         type: 'error',
         message: `No bulk update command for ${group.ecosystem}.`,
@@ -605,7 +600,6 @@ export class PanelManager implements vscode.Disposable {
       return;
     }
 
-    await this.runCommand(command.argv, command.cwd, command.description);
     await this.refresh();
   }
 
@@ -621,7 +615,10 @@ export class PanelManager implements vscode.Disposable {
     );
     if (choice !== 'Remove') return;
 
-    const applied = await this.applyUninstall(dep);
+    const applied = await this.mutator.uninstall(
+      dep,
+      providerFor(dep.ecosystem),
+    );
 
     if (!applied) {
       this.post({
@@ -631,31 +628,6 @@ export class PanelManager implements vscode.Disposable {
       await this.openManifest(dep.manifestPath, dep.name);
     }
     await this.refresh();
-  }
-
-  /** The uninstall counterpart to `applyUpdate`: no prompt, no refresh. */
-  private async applyUninstall(dep: Dependency): Promise<boolean> {
-    const provider = providerFor(dep.ecosystem);
-    const toolchain = await provider.detectToolchain(
-      dep.manifestPath,
-      this.ctx,
-    );
-    const command = provider.uninstallCommand(toolchain, dep);
-    const edit = {
-      kind: 'remove' as const,
-      name: dep.name,
-      scope: dep.scope,
-    };
-
-    if (command) {
-      await this.runCommand(command.argv, command.cwd, command.description);
-      if (command.writesManifest === false) {
-        await this.applyManifestEdit(provider, dep.manifestPath, edit);
-      }
-      return true;
-    }
-
-    return this.applyManifestEdit(provider, dep.manifestPath, edit);
   }
 
   private async handleDetails(depKey: string): Promise<void> {
@@ -717,40 +689,6 @@ export class PanelManager implements vscode.Disposable {
   }
 
   /**
-   * Runs one command and reports whether it failed.
-   *
-   * Refreshing is the caller's job, not this method's: a bulk action runs many
-   * commands and should rescan the workspace once at the end rather than after
-   * each package.
-   *
-   * A non-zero exit is surfaced. It used to be discarded, so a failed install —
-   * a typo'd version, a private registry needing auth, no network — produced a
-   * refresh that changed nothing and no explanation of why. `undefined` is
-   * different from a failure: it means the shell reported no status at all
-   * (no shell integration), which is not evidence of anything.
-   */
-  private async runCommand(
-    argv: string[],
-    cwd: string,
-    description: string,
-  ): Promise<void> {
-    this.setBusy(true, description);
-    let exitCode: number | undefined;
-    try {
-      ({ exitCode } = await this.terminal.run({ argv, cwd, description }));
-    } finally {
-      this.setBusy(false);
-    }
-
-    if (exitCode !== undefined && exitCode !== 0) {
-      this.post({
-        type: 'error',
-        message: `${argv.join(' ')} failed with exit code ${exitCode}. See the Panorama terminal for details.`,
-      });
-    }
-  }
-
-  /**
    * Rescans the workspace.
    *
    * The watcher usually fires first; going through the command makes the
@@ -759,35 +697,6 @@ export class PanelManager implements vscode.Disposable {
    */
   private async refresh(): Promise<void> {
     await vscode.commands.executeCommand('panorama.refresh');
-  }
-
-  /**
-   * Applies a provider's manifest edit as a WorkspaceEdit, so it lands in the
-   * undo stack and respects any unsaved buffer the user has open.
-   */
-  private async applyManifestEdit(
-    provider: ReturnType<typeof providerFor>,
-    manifestPath: string,
-    edit: Parameters<NonNullable<typeof provider.editManifest>>[1],
-  ): Promise<boolean> {
-    if (!provider.editManifest) return false;
-
-    const uri = vscode.Uri.file(manifestPath);
-    const document = await vscode.workspace.openTextDocument(uri);
-    const updated = provider.editManifest(document.getText(), edit);
-    if (updated === null) return false;
-
-    const workspaceEdit = new vscode.WorkspaceEdit();
-    workspaceEdit.replace(
-      uri,
-      new vscode.Range(0, 0, document.lineCount, 0),
-      updated,
-    );
-    const ok = await vscode.workspace.applyEdit(workspaceEdit);
-    if (!ok) return false;
-
-    await document.save();
-    return true;
   }
 
   private findDependency(
@@ -800,6 +709,19 @@ export class PanelManager implements vscode.Disposable {
       if (dep) return { group, dep };
     }
     return undefined;
+  }
+
+  /**
+   * True if `manifestPath` belongs to a manifest the last scan actually
+   * found. Messages from the webview name a manifest by path rather than by
+   * an opaque key (unlike dependencies, which resolve through
+   * `findDependency`), so this is the one place that trust boundary is
+   * enforced before the path is used as a command's cwd or opened as a file.
+   */
+  private isKnownManifest(manifestPath: string): boolean {
+    return this.latest.groups.some(
+      (group) => group.manifestPath === manifestPath,
+    );
   }
 
   /** Only ever opens http(s) links, so a malformed registry field is inert. */
@@ -840,16 +762,7 @@ export class PanelManager implements vscode.Disposable {
       vscode.Uri.joinPath(base, 'index.css'),
     );
     const nonce = createNonce();
-
-    // connect-src 'none' is deliberate: the webview never talks to the network.
-    const csp = [
-      `default-src 'none'`,
-      `img-src ${webview.cspSource} https: data:`,
-      `style-src ${webview.cspSource} 'unsafe-inline'`,
-      `script-src 'nonce-${nonce}'`,
-      `font-src ${webview.cspSource}`,
-      `connect-src 'none'`,
-    ].join('; ');
+    const csp = buildContentSecurityPolicy(webview, nonce);
 
     return `<!DOCTYPE html>
 <html lang="en">

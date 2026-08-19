@@ -24,6 +24,7 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
+import { fetchVersionsWithCache } from '../shared/cachedFetch.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
@@ -154,19 +155,17 @@ export class CargoProvider implements EcosystemProvider {
     ctx: ProviderContext,
     signal?: AbortSignal,
   ): Promise<Map<string, VersionInfo>> {
-    const result = new Map<string, VersionInfo>();
-
-    // Deliberately sequential: crates.io allows one request per second, so
-    // concurrency would only queue inside the rate limiter anyway.
-    for (const name of names) {
-      const key = cacheKey('crates', 'versions', name);
-      const cached = ctx.cache.get<VersionInfo>(key);
-      if (cached) {
-        result.set(name, cached);
-        continue;
-      }
-
-      try {
+    return fetchVersionsWithCache(
+      names,
+      ctx,
+      // The 1 req/sec cap on crates.io is enforced once, centrally, by
+      // `HttpClient`'s own host limiter (see core/http.ts) — every request
+      // queues there regardless of how many are dispatched concurrently, so
+      // this concurrency only bounds how many workers are waiting on that
+      // queue at once, not how fast requests actually leave.
+      8,
+      (name) => cacheKey('crates', 'versions', name),
+      async (name) => {
         const response = await ctx.http.getJson<CrateResponse>(
           `${REGISTRY}/api/v1/crates/${encodeURIComponent(name)}`,
           { signal },
@@ -176,22 +175,19 @@ export class CargoProvider implements EcosystemProvider {
         const latestVerObj =
           (response.versions ?? []).find((v) => v.num === latestNum) ??
           response.versions?.[0];
-        const info: VersionInfo = {
+        return {
           versions: (response.versions ?? [])
             .filter((v) => !v.yanked)
             .map((v) => v.num),
           latest: latestNum,
           sizeBytes: latestVerObj?.crate_size,
         };
-        result.set(name, info);
-        await ctx.cache.set(key, info, TTL.version);
-      } catch {
-        const stale = ctx.cache.getStale<VersionInfo>(key);
-        if (stale) result.set(name, stale);
-      }
-    }
-
-    return result;
+      },
+      // Names come straight from Cargo.toml, which is not ours to trust:
+      // anything that is not a real crate name cannot resolve, and should
+      // not be pasted into a URL to find that out.
+      (name) => this.isValidPackageName(name),
+    );
   }
 
   async fetchMetadata(

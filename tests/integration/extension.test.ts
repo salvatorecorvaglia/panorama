@@ -103,7 +103,12 @@ describe('scanner discovery', () => {
   it('parses dependencies with their scopes intact', async () => {
     const result = await api.scan({ checkUpdates: false });
 
-    const node = result.groups.find((group) => group.ecosystem === 'node');
+    // Matched by manifest path rather than just `ecosystem === 'node'`: the
+    // gitignore-exclusion fixtures are npm manifests too, so picking "the
+    // first node group" is no longer unambiguous.
+    const node = result.groups.find((group) =>
+      group.manifestPath.includes('node-app'),
+    );
     assert.ok(node, 'node fixture missing');
 
     const names = node.dependencies.map((dep) => dep.name);

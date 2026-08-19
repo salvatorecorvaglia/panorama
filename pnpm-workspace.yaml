@@ -16,6 +16,8 @@ minimumReleaseAgeExclude:
   - '@biomejs/cli-linux-x64@2.5.9'
   - '@biomejs/cli-win32-arm64@2.5.9'
   - '@biomejs/cli-win32-x64@2.5.9'
+  - '@tanstack/react-virtual@3.14.10'
+  - '@tanstack/virtual-core@3.17.8'
 overrides:
   serialize-javascript: '^7.0.5'
   diff: '^8.0.3'

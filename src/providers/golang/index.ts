@@ -26,7 +26,7 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { mapWithConcurrency } from '../shared/concurrency.js';
+import { fetchVersionsWithCache } from '../shared/cachedFetch.js';
 import { changelogUrlFor } from '../shared/repository.js';
 
 const PROXY = 'https://proxy.golang.org';
@@ -119,17 +119,12 @@ export class GoProvider implements EcosystemProvider {
     ctx: ProviderContext,
     signal?: AbortSignal,
   ): Promise<Map<string, VersionInfo>> {
-    const result = new Map<string, VersionInfo>();
-
-    await mapWithConcurrency(names, 6, async (name) => {
-      const key = cacheKey('go', 'versions', name);
-      const cached = ctx.cache.get<VersionInfo>(key);
-      if (cached) {
-        result.set(name, cached);
-        return;
-      }
-
-      try {
+    return fetchVersionsWithCache(
+      names,
+      ctx,
+      6,
+      (name) => cacheKey('go', 'versions', name),
+      async (name) => {
         const escaped = escapeModulePath(name);
         // @latest is authoritative and cheap; @v/list gives the full history but
         // omits versions the proxy has not cached, so we merge both.
@@ -151,18 +146,15 @@ export class GoProvider implements EcosystemProvider {
         if (latest?.Version && !versions.includes(latest.Version)) {
           versions.push(latest.Version);
         }
-        if (versions.length === 0) return;
+        if (versions.length === 0) return undefined;
 
-        const info: VersionInfo = { versions, latest: latest?.Version };
-        result.set(name, info);
-        await ctx.cache.set(key, info, TTL.version);
-      } catch {
-        const stale = ctx.cache.getStale<VersionInfo>(key);
-        if (stale) result.set(name, stale);
-      }
-    });
-
-    return result;
+        return { versions, latest: latest?.Version };
+      },
+      // Names come straight from go.mod, which is not ours to trust: anything
+      // that is not a real module path cannot resolve, and should not be
+      // pasted into a URL to find that out.
+      (name) => this.isValidPackageName(name),
+    );
   }
 
   async fetchMetadata(

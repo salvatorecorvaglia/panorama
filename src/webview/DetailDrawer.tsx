@@ -3,7 +3,6 @@
  * dependency tree that answers "why is this here?".
  */
 
-import type { KeyboardEvent } from 'react';
 import { useEffect, useRef } from 'react';
 import type { Dependency, DepNode } from '../core/types.js';
 import {
@@ -13,6 +12,7 @@ import {
 } from '../core/vocabulary.js';
 import { ECOSYSTEM_LABELS, formatBytes } from './format.js';
 import { Icon } from './Icon.js';
+import { useDismissableOverlay } from './useDismissableOverlay.js';
 import { post } from './vscodeApi.js';
 
 interface Props {
@@ -36,8 +36,7 @@ export function DetailDrawer({
 }: Props) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const whyRef = useRef<HTMLElement>(null);
-  /** The element that had focus when the drawer opened, to restore on close. */
-  const returnFocusRef = useRef<Element | null>(null);
+  const handleKeyDown = useDismissableOverlay(onClose);
 
   // Metadata and the dependency tree are fetched lazily — pulling them for
   // every row up front would mean thousands of needless registry calls.
@@ -45,16 +44,6 @@ export function DetailDrawer({
     post({ type: 'requestDetails', depKey: dep.key });
     post({ type: 'requestWhy', depKey: dep.key });
   }, [dep.key]);
-
-  useEffect(() => {
-    returnFocusRef.current = document.activeElement;
-    return () => {
-      const target = returnFocusRef.current;
-      if (target instanceof HTMLElement && document.contains(target)) {
-        target.focus();
-      }
-    };
-  }, []);
 
   /*
    * "Why Is This Installed?" opens this drawer specifically to answer that
@@ -76,13 +65,6 @@ export function DetailDrawer({
 
   const openLink = (url: string) => post({ type: 'openExternal', url });
   const { homepage, repository, changelogUrl } = dep.meta ?? {};
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      onClose();
-    }
-  };
 
   return (
     <aside

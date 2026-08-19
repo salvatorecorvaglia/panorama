@@ -869,4 +869,20 @@ shorthand = "commons-io:commons-io:2.15.1"
       }),
     ).toBeNull();
   });
+
+  it('escapes a quote in the version rather than closing the string early', () => {
+    // Defense in depth: `validateVersion` already rejects a version like this
+    // before it reaches here, but editManifest must not trust that on its own.
+    const source = `implementation("com.google.guava:guava:33.0.0")`;
+    const updated = provider.editManifest(source, {
+      kind: 'update',
+      name: 'com.google.guava:guava',
+      version: '1.0.0"); malicious.groovy(',
+      scope: 'prod',
+    });
+
+    expect(updated).toBe(
+      `implementation("com.google.guava:guava:1.0.0\\"); malicious.groovy(")`,
+    );
+  });
 });

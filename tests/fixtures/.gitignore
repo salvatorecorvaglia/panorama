@@ -1,0 +1,13 @@
+# Used by tests/integration/scannerExclusions.test.ts to verify Panorama
+# honours .gitignore when discovering manifests, without replicating full
+# gitignore grammar.
+gitignore-test/ignored-pkg
+
+# A negation is skipped rather than honoured — kept-pkg is included because
+# nothing else excludes it, not because this line re-includes it.
+!gitignore-test/kept-pkg
+
+# A line containing a glob character is left entirely to git — Panorama does
+# not try to interpret it — so this must not throw or otherwise break parsing
+# of the rest of the file.
+**/*.tmp

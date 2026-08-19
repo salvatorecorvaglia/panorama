@@ -3,7 +3,7 @@
  * actions.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type {
@@ -359,6 +359,101 @@ describe('row actions', () => {
 
     expect(onUninstall).toHaveBeenCalledOnce();
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe('keyboard navigation', () => {
+  /** `data-row-index` of the row currently holding real DOM focus, if any. */
+  function focusedRowIndex(): string | null {
+    return document.activeElement instanceof HTMLElement
+      ? document.activeElement.getAttribute('data-row-index')
+      : null;
+  }
+
+  it('enters the grid on the first row and moves down/up with the arrow keys', () => {
+    renderTable([
+      group([
+        dep({ name: 'a', key: 'a' }),
+        dep({ name: 'b', key: 'b' }),
+        dep({ name: 'c', key: 'c' }),
+      ]),
+    ]);
+
+    fireEvent.focus(screen.getByRole('rowgroup'));
+    expect(focusedRowIndex()).toBe('0');
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowDown',
+    });
+    expect(focusedRowIndex()).toBe('1');
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowDown',
+    });
+    expect(focusedRowIndex()).toBe('2');
+
+    // Already on the last row: nothing to move to.
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowDown',
+    });
+    expect(focusedRowIndex()).toBe('2');
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowUp',
+    });
+    expect(focusedRowIndex()).toBe('1');
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowUp',
+    });
+    expect(focusedRowIndex()).toBe('0');
+
+    // Already on the first row: nothing to move to.
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowUp',
+    });
+    expect(focusedRowIndex()).toBe('0');
+  });
+
+  it('jumps to the first and last row with Home and End', () => {
+    renderTable([
+      group(['a', 'b', 'c', 'd', 'e'].map((name) => dep({ name, key: name }))),
+    ]);
+
+    fireEvent.focus(screen.getByRole('rowgroup'));
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowDown',
+    });
+    expect(focusedRowIndex()).toBe('1');
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'End' });
+    expect(focusedRowIndex()).toBe('4');
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Home' });
+    expect(focusedRowIndex()).toBe('0');
+  });
+
+  it('skips group header rows rather than stopping on them', () => {
+    // Two groups so headers render at all — a single group never shows one.
+    renderTable([
+      { ...group([dep({ name: 'a1', key: 'a1' })]), label: 'first' },
+      {
+        ...group([dep({ name: 'b1', key: 'b1' })]),
+        label: 'second',
+        manifestPath: '/p2/package.json',
+      },
+    ]);
+
+    // Rows: [header:first, a1, header:second, b1] — indices 0-3.
+    fireEvent.focus(screen.getByRole('rowgroup'));
+    // Entering the grid lands on the first *dep* row, not the header.
+    expect(focusedRowIndex()).toBe('1');
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowDown',
+    });
+    // Index 2 is the second group's header — skipped straight through to b1.
+    expect(focusedRowIndex()).toBe('3');
   });
 });
 

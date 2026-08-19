@@ -23,7 +23,7 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { mapWithConcurrency } from '../shared/concurrency.js';
+import { fetchVersionsWithCache } from '../shared/cachedFetch.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
@@ -166,22 +166,12 @@ export class ComposerProvider implements EcosystemProvider {
     ctx: ProviderContext,
     signal?: AbortSignal,
   ): Promise<Map<string, VersionInfo>> {
-    const result = new Map<string, VersionInfo>();
-
-    await mapWithConcurrency(names, 5, async (name) => {
-      // Names come straight from composer.json, which is not ours to trust:
-      // anything that is not a real Packagist name cannot resolve, and should
-      // not be pasted into a URL to find that out.
-      if (!this.isValidPackageName(name)) return;
-
-      const key = cacheKey('packagist', 'versions', name);
-      const cached = ctx.cache.get<VersionInfo>(key);
-      if (cached) {
-        result.set(name, cached);
-        return;
-      }
-
-      try {
+    return fetchVersionsWithCache(
+      names,
+      ctx,
+      5,
+      (name) => cacheKey('packagist', 'versions', name),
+      async (name) => {
         const response = await ctx.http.getJson<P2Response>(
           `${REPO}/p2/${encodePackageName(name)}.json`,
           { signal },
@@ -189,7 +179,7 @@ export class ComposerProvider implements EcosystemProvider {
         const releases = response.packages[name] ?? [];
         const abandoned = releases[0]?.abandoned;
 
-        const info: VersionInfo = {
+        return {
           // Strip the conventional `v` prefix so comparisons stay uniform.
           versions: releases.map((release) =>
             release.version.replace(/^v/, ''),
@@ -201,15 +191,12 @@ export class ComposerProvider implements EcosystemProvider {
                 ? `Abandoned — use ${abandoned} instead`
                 : 'This package is abandoned and no longer maintained',
         };
-        result.set(name, info);
-        await ctx.cache.set(key, info, TTL.version);
-      } catch {
-        const stale = ctx.cache.getStale<VersionInfo>(key);
-        if (stale) result.set(name, stale);
-      }
-    });
-
-    return result;
+      },
+      // Names come straight from composer.json, which is not ours to trust:
+      // anything that is not a real Packagist name cannot resolve, and should
+      // not be pasted into a URL to find that out.
+      (name) => this.isValidPackageName(name),
+    );
   }
 
   async fetchMetadata(

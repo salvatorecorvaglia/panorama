@@ -94,11 +94,23 @@ export function composerConstraintToSemver(constraint: string): string | null {
   // Branch constraints have no ordering we can reason about.
   if (/^dev-/i.test(trimmed) || /-dev$/i.test(trimmed)) return null;
 
+  // node-semver has no concept of a fourth segment. Dropping a `.0` build
+  // number is lossless, but dropping a nonzero one (`1.2.3.4` vs `1.2.3.5`)
+  // would silently make two distinct builds compare equal — better to say
+  // the constraint cannot be evaluated than to guess and be wrong.
+  let droppedPrecision = false;
   const normalised = trimmed
     .replace(/\bv(\d)/gi, '$1')
-    .replace(/(\d+)\.(\d+)\.(\d+)\.(\d+)/g, '$1.$2.$3')
+    .replace(
+      /(\d+)\.(\d+)\.(\d+)\.(\d+)/g,
+      (_full, major, minor, patch, build) => {
+        if (build !== '0') droppedPrecision = true;
+        return `${major}.${minor}.${patch}`;
+      },
+    )
     .replace(/\s*\|\|\s*/g, ' || ')
     .replace(/\s+-\s+/g, ' - ');
 
+  if (droppedPrecision) return null;
   return normalised;
 }
