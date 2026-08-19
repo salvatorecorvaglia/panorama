@@ -14,7 +14,7 @@
   },
   "engines": {
     "node": ">=22.13.0",
-    "vscode": "^1.93.0"
+    "vscode": "^1.125.0"
   },
   "categories": [
     "Other",
