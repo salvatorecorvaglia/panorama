@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-19
+
 ### Added
 
 - **`DependencyMutator` Service**: Decoupled package update and uninstall command orchestration from `PanelManager` into a dedicated `DependencyMutator` service layer (`src/ui/dependencyMutator.ts`).
@@ -130,7 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First implementation of Panorama.
 
-[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/salvatorecorvaglia/panorama/compare/v1.2.0...v2.0.0
