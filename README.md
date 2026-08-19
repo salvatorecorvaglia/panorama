@@ -18,8 +18,9 @@
 
 - 🔍 **Registry Search & Package Installation**: Search public registries (npm, PyPI, Crates.io, Packagist, Maven Central) and install packages into your manifests without leaving VS Code.
 - 🌲 **"Why Is This Installed?" Dependency Inspector**: Inspect transitive dependencies and trace exact resolution paths.
-- 📁 **Monorepo & Multi-Root Support**: Automatically discovers and aggregates nested manifest files across complex monorepos and multi-root workspaces.
-- ♿ **Accessible & Keyboard-First UI**: Roving `tabindex` table navigation, global `Ctrl+F` / `Cmd+F` search shortcut, ARIA live progress indicators, and high-contrast theme focus rings.
+- 📁 **Monorepo & Multi-Root Support**: Automatically discovers and aggregates nested manifest files across complex monorepos and multi-root workspaces with `.gitignore` and glob exclusion awareness.
+- ♿ **Accessible & Keyboard-First UI**: Roving `tabindex` table navigation, global `Ctrl+F` / `Cmd+F` search shortcut, dismissable overlays (`Escape` key & backdrop dismissal for drawers/modals), ARIA live progress indicators, and high-contrast theme focus rings.
+- 🚀 **High Performance & Shared Caching**: Built-in HTTP caching layer across registry queries and concurrent background manifest scanning.
 - 🔔 **Error Notification Queue**: Queued toast notification system for managing host and registry errors without silent dropping.
 - ⚙️ **Custom Registries & Proxy Overrides**: Configure private registries and custom `User-Agent` contact headers.
 

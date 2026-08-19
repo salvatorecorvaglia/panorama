@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`DependencyMutator` Service**: Decoupled package update and uninstall command orchestration from `PanelManager` into a dedicated `DependencyMutator` service layer (`src/ui/dependencyMutator.ts`).
+- **Shared Registry Caching (`cachedFetch`)**: Added a unified HTTP caching and request handler (`src/providers/shared/cachedFetch.ts`) across all ecosystem providers (Cargo, Composer, Go, Gradle, Node, Python) to optimize registry lookups and standardize header management.
+- **`useDismissableOverlay` Custom Hook**: Added custom React hook (`src/webview/useDismissableOverlay.ts`) to centralize `Escape` key listener, backdrop click detection, and focus management across webview overlay components (`DetailDrawer` and `SearchInstall`).
+- **Comprehensive Integration & Webview Test Suites**: Added new integration test coverage for terminal execution (`terminalRunner.test.ts`), workspace file watching (`watcher.test.ts`), webview security & CSP policies (`webviewSecurity.test.ts`), scanner exclusion rules (`scannerExclusions.test.ts`), webview table rendering (`DepTable.test.tsx`), and VS Code API communication (`vscodeApi.test.tsx`).
+
+### Changed
+
+- **Refactored `PanelManager`**: Streamlined webview panel lifecycle management, state synchronization, and message routing by delegating mutation logic to `DependencyMutator`.
+- **Enhanced Workspace Manifest Scanner**: Improved `src/core/workspaces.ts` and `src/core/scanQueue.ts` to strictly observe nested `.gitignore` files and workspace glob exclusions during manifest file discovery.
+- **Dependency & Build Maintenance**: Updated devDependencies (Biome, Testing Library) and added `minimumReleaseAgeExclude` configurations in `pnpm-workspace.yaml`.
+
 ## [2.2.0] - 2026-08-18
 
 ### Added

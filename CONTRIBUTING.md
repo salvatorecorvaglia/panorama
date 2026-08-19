@@ -18,9 +18,9 @@ Before you start, ensure you have the following installed on your system:
 
 Panorama is structured as a VS Code extension with a dual-layer architecture:
 
-- **Extension Host (`src/`)**: Written in TypeScript and compiled with `esbuild`. Responsible for scanning manifest files concurrently, workspace file watching, package manager CLI execution, registry API queries & package size metadata tracking, OSV.dev vulnerability auditing, sidebar view provider (`panorama.sidebar`), and webview panel message handling.
+- **Extension Host (`src/`)**: Written in TypeScript and compiled with `esbuild`. Responsible for scanning manifest files concurrently with `.gitignore` awareness (`src/core/workspaces.ts`), workspace file watching (`src/core/watcher.ts`), package manager CLI execution & terminal orchestration (`src/ui/dependencyMutator.ts`), shared registry API querying & HTTP caching (`src/providers/shared/cachedFetch.ts`), package size tracking, OSV.dev vulnerability auditing, sidebar view provider (`panorama.sidebar`), and webview panel lifecycle & message routing (`src/ui/panelManager.ts`).
 
-- **Webview UI (`src/webview/`)**: React application built with TypeScript, Vite, and TanStack Virtual (`@tanstack/react-virtual`). Rendered inside a VS Code Webview panel (`panorama.open`) for deep, interactive dependency management with full accessibility support (roving `tabindex` table focus, global keyboard shortcuts, error queuing toast alerts, and ARIA live progress indicators).
+- **Webview UI (`src/webview/`)**: React application built with TypeScript, Vite, and TanStack Virtual (`@tanstack/react-virtual`). Rendered inside a VS Code Webview panel (`panorama.open`) for deep, interactive dependency management with full accessibility support (roving `tabindex` table focus, global keyboard shortcuts, dismissable overlay management via `useDismissableOverlay`, error queuing toast alerts, and ARIA live progress indicators).
 
 ---
 
@@ -83,7 +83,10 @@ This starts concurrent watch processes for both the Extension Host (`esbuild`) a
 
 ## 🧪 Testing & Verification Guidelines
 
-Panorama includes comprehensive unit tests (`tests/unit/`), React webview component tests (`tests/webview/` using Testing Library & JSDOM), and extension host integration tests (`tests/integration/`).
+Panorama includes comprehensive test suites across three layers:
+- **Unit Tests (`tests/unit/`)**: Verifies manifest parsers (`parsers.test.ts`), registry metadata lookups & caching (`registries.test.ts`), scan queues (`scanQueue.test.ts`), and version utilities (`versions.test.ts`).
+- **Webview Component Tests (`tests/webview/`)**: Verifies React component logic (`DepTable.test.tsx`), UI interactions, and VS Code API message communication (`vscodeApi.test.tsx`) using Testing Library & JSDOM.
+- **Integration Tests (`tests/integration/`)**: Verifies host execution inside VS Code Extension Host including terminal command execution (`terminalRunner.test.ts`), workspace file watching (`watcher.test.ts`), webview security & CSP headers (`webviewSecurity.test.ts`), and scanner exclusion policies (`scannerExclusions.test.ts`).
 
 Before submitting a pull request, verify that all quality and test checks pass cleanly:
 
