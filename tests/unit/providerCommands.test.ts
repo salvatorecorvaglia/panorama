@@ -306,6 +306,7 @@ describe('NodeProvider commands', () => {
 
 describe('PythonProvider commands', () => {
   const provider = new PythonProvider();
+  const pythonBin = process.platform === 'win32' ? 'python' : 'python3';
 
   it('generates installCommand for pip, uv, poetry', () => {
     const pip: Toolchain = { id: 'pip', ecosystem: 'python', cwd: '/p' };
@@ -313,7 +314,7 @@ describe('PythonProvider commands', () => {
     const poetry: Toolchain = { id: 'poetry', ecosystem: 'python', cwd: '/p' };
 
     expect(provider.installCommand(pip, 'requests', '2.31.0', 'prod')).toEqual({
-      argv: ['python3', '-m', 'pip', 'install', 'requests==2.31.0'],
+      argv: [pythonBin, '-m', 'pip', 'install', 'requests==2.31.0'],
       cwd: '/p',
       description: 'Install requests==2.31.0 with pip',
       writesManifest: false,
@@ -346,7 +347,7 @@ describe('PythonProvider commands', () => {
     });
 
     expect(provider.uninstallCommand(pip, dep)).toEqual({
-      argv: ['python3', '-m', 'pip', 'uninstall', '-y', 'requests'],
+      argv: [pythonBin, '-m', 'pip', 'uninstall', '-y', 'requests'],
       cwd: '/p',
       description: 'Uninstall requests with pip',
       writesManifest: false,

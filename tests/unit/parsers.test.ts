@@ -136,8 +136,26 @@ describe('Node provider', () => {
       }),
     });
     const resolved = await provider.readLockfile('/p', context);
-    // The top-level install path wins over the nested one.
     expect(resolved.get('react')).toBe('18.3.1');
+  });
+
+  it('reads direct dependency version from pnpm-lock when transitive version comes first', async () => {
+    const context = makeContext({
+      '/p/pnpm-lock.yaml': `
+lockfileVersion: '9.0'
+importers:
+  .:
+    dependencies:
+      semver:
+        specifier: ^7.8.5
+        version: 7.8.5
+packages:
+  semver@5.7.2: {}
+  semver@7.8.5: {}
+`,
+    });
+    const resolved = await provider.readLockfile('/p', context);
+    expect(resolved.get('semver')).toBe('7.8.5');
   });
 
   it('validates package names, including scoped ones', () => {

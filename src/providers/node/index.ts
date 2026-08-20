@@ -153,7 +153,15 @@ export class NodeProvider implements EcosystemProvider {
           packages?: Record<string, { version?: string }>;
           dependencies?: Record<string, { version?: string }>;
         };
-        // lockfileVersion 2/3 keys entries by install path.
+        // Direct top-level install paths (e.g. "node_modules/semver") take priority
+        for (const [key, entry] of Object.entries(parsed.packages ?? {})) {
+          if (!key.startsWith('node_modules/') || !entry.version) continue;
+          const relative = key.slice('node_modules/'.length);
+          if (!relative.includes('node_modules/')) {
+            resolved.set(relative, entry.version);
+          }
+        }
+        // Fallback for nested or legacy dependencies
         for (const [key, entry] of Object.entries(parsed.packages ?? {})) {
           if (!key.startsWith('node_modules/') || !entry.version) continue;
           const name = key
@@ -175,6 +183,12 @@ export class NodeProvider implements EcosystemProvider {
       path.join(manifestDir, 'pnpm-lock.yaml'),
     );
     if (pnpmLock) {
+      // Direct dependencies under `importers` or root `dependencies`/`devDependencies`
+      const directPattern =
+        /^\s{4,6}(@?[^:\s]+):\n\s{6,8}(?:specifier:[^\n]+\n\s{6,8})?version:\s*['"]?([0-9][^(\s'"]+)/gm;
+      for (const match of pnpmLock.matchAll(directPattern)) {
+        if (!resolved.has(match[1])) resolved.set(match[1], match[2]);
+      }
       // Entries look like `/react@18.2.0:` or `react@18.2.0:` depending on version.
       const pattern = /^\s{2}\/?(@?[^@\s:]+(?:\/[^@\s:]+)?)@([^(:\s]+)/gm;
       for (const match of pnpmLock.matchAll(pattern)) {
