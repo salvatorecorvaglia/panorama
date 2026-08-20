@@ -18,6 +18,9 @@ minimumReleaseAgeExclude:
   - '@biomejs/cli-win32-x64@2.5.9'
   - '@tanstack/react-virtual@3.14.10'
   - '@tanstack/virtual-core@3.17.8'
+  - '@types/vscode@1.134.0'
+  - '@vitejs/plugin-react@6.1.0'
+  - vite@8.2.2
 overrides:
   serialize-javascript: '^7.0.5'
   diff: '^8.0.3'

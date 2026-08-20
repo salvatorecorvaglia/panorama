@@ -68,10 +68,6 @@ jobs:
       - name: Run TypeScript typecheck
         run: pnpm run typecheck
 
-  # Windows is not optional here: quoteArgument, pythonExe and the Maven/Gradle
-  # wrapper lookups all branch on the platform, and a Linux-only matrix means
-  # the shell-quoting layer — the one that has to hold when validation does
-  # not — is never executed by CI at all.
   test:
     name: Unit Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -117,8 +113,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # The VS Code build is ~120MB and does not change between runs; keyed on
-      # the engine range so a version bump invalidates it.
       - name: Cache VS Code test build
         uses: actions/cache@v6
         with:
