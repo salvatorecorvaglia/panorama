@@ -4,7 +4,6 @@
     // The VS Code test host loads these through Mocha's CommonJS require, so
     // this build cannot use the bundler-oriented settings the host bundle uses.
     "module": "CommonJS",
-    "moduleResolution": "Node",
     "outDir": "out",
     "rootDir": ".",
     "noEmit": false,
