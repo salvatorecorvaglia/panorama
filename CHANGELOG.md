@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-08-20
+
+### Added
+
+- **Provider Dependency Management Unit Test Suite**: Added dedicated unit tests (`tests/unit/providerCommands.test.ts`) validating command generation (`installCommand`, `uninstallCommand`, `updateCommand`) across all 6 ecosystem providers (`Cargo`, `Composer`, `Go`, `Gradle`, `Node`, `Python`).
+- **Webview CSS Module Declarations**: Added ambient CSS module declarations (`src/webview/env.d.ts`) and configured global DOM / Vitest test types in `tsconfig.json`.
+
+### Fixed
+
+- **`pnpm-lock.yaml` Resolution Priority**: Fixed version resolution in `NodeProvider` (`src/providers/node/index.ts`) so direct dependency version specifiers declared under `importers` take priority over transitive package definitions.
+- **`package-lock.json` Top-Level Precedence**: Enhanced `package-lock.json` parsing to ensure direct top-level `node_modules` paths take precedence over nested transitive entries.
+- **Cross-Platform Python Binary Selection**: Standardized Python executable binary selection (`python` on Windows vs `python3` on POSIX environments) for `pip` command execution in `PythonProvider`.
+
+### Changed
+
+- **Dependencies & Toolchain Upgrades**: Upgraded core framework and build tools including React 19 (`^19.2.8`), TypeScript 7 (`^7.0.2`), Vite 8 (`^8.2.2`), Vitest 4 (`^4.1.11`), `@types/node` (`^26.2.0`), `@types/react` (`^19.2.18`), and Biome (`^2.5.9`).
+- **Integration Test TSConfig Clean-up**: Removed obsolete `moduleResolution` setting from `tsconfig.integration.json`.
+
 ## [2.3.0] - 2026-08-19
 
 ### Added
@@ -132,7 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First implementation of Panorama.
 
-[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.0.0...v2.1.0

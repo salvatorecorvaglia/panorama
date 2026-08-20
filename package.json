@@ -3,7 +3,7 @@
   "displayName": "Panorama - Universal Visual Package Manager",
   "description": "Universal Visual Package Manager for Visual Studio Code",
   "icon": "resources/panorama.png",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "packageManager": "pnpm@11.17.0",
   "publisher": "panorama",
   "license": "MIT",
@@ -14,7 +14,7 @@
   },
   "engines": {
     "node": ">=22.13.0",
-    "vscode": "^1.125.0"
+    "vscode": "^1.134.0"
   },
   "categories": [
     "Other",

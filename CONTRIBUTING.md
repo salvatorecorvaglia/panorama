@@ -10,7 +10,7 @@ Before you start, ensure you have the following installed on your system:
 
 - **Node.js**: `v22.13.0` or higher
 - **pnpm**: `v11.17.0` or higher (managed via `packageManager` in `package.json`)
-- **VS Code**: `v1.93.0` or higher (Panorama uses VS Code terminal shell integration APIs finalized in 1.93)
+- **VS Code**: `v1.134.0` or higher (Panorama requires VS Code 1.134+ APIs)
 
 ---
 
@@ -84,7 +84,7 @@ This starts concurrent watch processes for both the Extension Host (`esbuild`) a
 ## 🧪 Testing & Verification Guidelines
 
 Panorama includes comprehensive test suites across three layers:
-- **Unit Tests (`tests/unit/`)**: Verifies manifest parsers (`parsers.test.ts`), registry metadata lookups & caching (`registries.test.ts`), scan queues (`scanQueue.test.ts`), and version utilities (`versions.test.ts`).
+- **Unit Tests (`tests/unit/`)**: Verifies manifest parsers (`parsers.test.ts`), provider management commands (`providerCommands.test.ts`), registry metadata lookups & caching (`registries.test.ts`), scan queues (`scanQueue.test.ts`), and version utilities (`versions.test.ts`).
 - **Webview Component Tests (`tests/webview/`)**: Verifies React component logic (`DepTable.test.tsx`), UI interactions, and VS Code API message communication (`vscodeApi.test.tsx`) using Testing Library & JSDOM.
 - **Integration Tests (`tests/integration/`)**: Verifies host execution inside VS Code Extension Host including terminal command execution (`terminalRunner.test.ts`), workspace file watching (`watcher.test.ts`), webview security & CSP headers (`webviewSecurity.test.ts`), and scanner exclusion policies (`scannerExclusions.test.ts`).
 
