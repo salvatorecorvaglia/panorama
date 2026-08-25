@@ -9,7 +9,7 @@ Thank you for your interest in contributing to **Panorama**! We welcome contribu
 Before you start, ensure you have the following installed on your system:
 
 - **Node.js**: `v22.13.0` or higher
-- **pnpm**: `v11.17.0` or higher (managed via `packageManager` in `package.json`)
+- **pnpm**: `v11.23.0` or higher (managed via `packageManager` in `package.json`)
 - **VS Code**: `v1.134.0` or higher (Panorama requires VS Code 1.134+ APIs)
 
 ---
@@ -84,9 +84,9 @@ This starts concurrent watch processes for both the Extension Host (`esbuild`) a
 ## 🧪 Testing & Verification Guidelines
 
 Panorama includes comprehensive test suites across three layers:
-- **Unit Tests (`tests/unit/`)**: Verifies manifest parsers (`parsers.test.ts`), provider management commands (`providerCommands.test.ts`), registry metadata lookups & caching (`registries.test.ts`), scan queues (`scanQueue.test.ts`), and version utilities (`versions.test.ts`).
-- **Webview Component Tests (`tests/webview/`)**: Verifies React component logic (`DepTable.test.tsx`), UI interactions, and VS Code API message communication (`vscodeApi.test.tsx`) using Testing Library & JSDOM.
-- **Integration Tests (`tests/integration/`)**: Verifies host execution inside VS Code Extension Host including terminal command execution (`terminalRunner.test.ts`), workspace file watching (`watcher.test.ts`), webview security & CSP headers (`webviewSecurity.test.ts`), and scanner exclusion policies (`scannerExclusions.test.ts`).
+- **Unit Tests (`tests/unit/`)**: Verifies manifest parsers (`parsers.test.ts`), provider management commands & input validation (`providerCommands.test.ts`, `providerValidation.test.ts`), registry metadata lookups & caching (`registries.test.ts`, `registry.test.ts`, `registryOverride.test.ts`), the TTL cache (`cache.test.ts`), the "why is this installed" dependency graph (`depGraph.test.ts`), scan queues (`scanQueue.test.ts`), shell-argument quoting (`quoting.test.ts`), and version utilities (`versions.test.ts`).
+- **Webview Component Tests (`tests/webview/`)**: Verifies React component logic (`App.test.tsx`, `DepTable.test.tsx`, `SearchInstall.test.tsx`), UI interactions, and VS Code API message communication (`vscodeApi.test.tsx`) using Testing Library & JSDOM.
+- **Integration Tests (`tests/integration/`)**: Verifies host execution inside VS Code Extension Host including terminal command execution (`terminalRunner.test.ts`), manifest mutation (`dependencyMutator.test.ts`), webview panel lifecycle (`panelManager.test.ts`), the sidebar view (`sidebarProvider.test.ts`), workspace file watching (`watcher.test.ts`), webview security & CSP headers (`webviewSecurity.test.ts`), and scanner exclusion policies (`scannerExclusions.test.ts`).
 
 Before submitting a pull request, verify that all quality and test checks pass cleanly:
 

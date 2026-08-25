@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-08-25
+
+### Added
+
+- **Custom Registry Overrides for All Providers**: Extended `panorama.registryOverrides` support to Cargo, Composer, Go, and Maven/Gradle (previously limited to npm and PyPI), so a private registry or mirror can be configured for every ecosystem.
+- **Workspace Trust Support**: Declared the `untrustedWorkspaces` capability in `package.json`, restricting `panorama.registryOverrides` so it is not read from an untrusted workspace's settings.
+- **Update Preserves the Declared Version Range Operator**: Updating a Node dependency now carries the manifest's existing `^`/`~` prefix onto the new version (`applyDeclaredPrefix`) instead of silently pinning an exact version.
+- **CI Verify Gate on Release**: `release.yml` now runs lint, typecheck, and unit tests in a dedicated `Verify` job that `Release` depends on.
+- **Registry Rate Limits for PyPI & the Go Proxy**: Added self-imposed per-host rate limits for `pypi.org` and `proxy.golang.org`, matching the existing limits for Maven Central, Packagist, and OSV.dev.
+- **Expanded Test Coverage**: Added integration tests for `DependencyMutator`, `PanelManager`, and `SidebarViewProvider`, and unit tests for `TtlCache`, `depGraph`, `registryOverride`, provider input validation, and shell quoting.
+
+### Fixed
+
+- **`pnpm-lock.yaml` Parsed with a Real YAML Parser**: `NodeProvider` and the "why is this installed" dependency graph (`core/depGraph.ts`) now parse `pnpm-lock.yaml` with the `yaml` package instead of regex/indentation scanning, correctly separating the `importers:` block from `packages:`/`snapshots:` and fixing resolution on lockfiles the hand-rolled parser used to get wrong.
+- **Lazily Fetched Metadata Not Rendering**: Description, license, and size metadata fetched after the initial scan and merged into an existing row could be silently dropped by the virtualized table's row memoization, since the underlying dependency object is mutated in place rather than replaced. Rows now re-render when their metadata arrives.
+- **Windows Command Injection via Crafted Version Strings**: cmd.exe's `.cmd`/`.bat` wrappers — what npm/yarn/pnpm are on Windows — treat unquoted `,` and `=` as argument delimiters, and `!VAR!` expands under delayed expansion. Both are now stripped/rejected by the shell-quoting layer so a malicious registry response cannot smuggle extra arguments into an install or update command.
+- **PEP 440 Epoch Versions in Vulnerability Matching**: `constraintToApproxVersion`, whose result feeds the OSV.dev audit match, previously returned just the epoch digit for a constraint like `1!2.0.0`; it now correctly returns `2.0.0`.
+- **Table Sort: Missing Sizes**: Rows without size metadata now sort last in ascending size order, matching the convention used for missing version data, instead of sorting first.
+- **Sidebar Theme Colors**: Replaced hardcoded hex colors and a typo'd `--vscode-sidebar-background` token in `SidebarViewProvider` with the correct VS Code theme tokens (`--vscode-badge-*`, `--vscode-button-*`, `--vscode-sideBar-background`), fixing contrast in custom and high-contrast themes.
+- **Manifest Edit Race**: `DependencyMutator` now checks that the document version hasn't changed between reading and applying a manifest edit, and no longer force-saves a manifest the user already had unrelated unsaved changes open in.
+- **Cache Pruning Failures No Longer Abort the Sweep**: A single failed storage write during `TtlCache.prune()` no longer stops the rest of the sweep, and a lapsed in-memory entry is now evicted on read rather than lingering until pushed out by the LRU count bound.
+- **Unhandled Rejection on Activation**: `cache.prune()` errors during extension activation are now caught instead of becoming an unhandled promise rejection.
+
+### Accessibility
+
+- **Search & Install Disabled Reason**: The reason an "Install" button is disabled (wrong ecosystem, no target manifest) is now also exposed via `aria-describedby`, not only a `title` tooltip a keyboard or screen-reader user cannot reach.
+
+### Changed
+
+- **Metadata Caching Deduplicated**: Node, Cargo, Composer, and Python providers now share a single `fetchMetadataWithCache` helper instead of each re-implementing the same cache-first, stale-on-failure logic.
+- **Per-Ecosystem Maven Version Cache Keys**: Maven and Gradle version lookups are now cached under separate keys so a registry override on one no longer serves cached results to the other.
+- **Queued Error Toasts Capped**: The webview's error notification queue is capped at 50 entries so a broken registry during a large bulk update can't grow it without bound.
+
+### Removed
+
+- **Dead Scanner Cancellation Code**: Removed `Scanner.cancel()` and its `inFlight` guard — `ScanQueue` is the only caller and never overlaps scans, so the guard was unreachable.
+- **Unused `toolchainOf` Helper**: Removed the unused `toolchainOf()` export and its `ToolchainId` import from `providers/provider.ts`.
+
 ## [2.4.0] - 2026-08-20
 
 ### Added
@@ -150,7 +188,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First implementation of Panorama.
 
-[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.5.0...HEAD
+[2.5.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.1.0...v2.2.0

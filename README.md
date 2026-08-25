@@ -22,7 +22,7 @@
 - ♿ **Accessible & Keyboard-First UI**: Roving `tabindex` table navigation, global `Ctrl+F` / `Cmd+F` search shortcut, dismissable overlays (`Escape` key & backdrop dismissal for drawers/modals), ARIA live progress indicators, and high-contrast theme focus rings.
 - 🚀 **High Performance & Shared Caching**: Built-in HTTP caching layer across registry queries and concurrent background manifest scanning.
 - 🔔 **Error Notification Queue**: Queued toast notification system for managing host and registry errors without silent dropping.
-- ⚙️ **Custom Registries & Proxy Overrides**: Configure private registries and custom `User-Agent` contact headers.
+- ⚙️ **Custom Registries & Proxy Overrides**: Configure private registries per ecosystem (npm, PyPI, Crates.io, Packagist, Go Proxy, Maven Central) and custom `User-Agent` contact headers. Registry overrides are ignored in untrusted workspaces.
 
 ---
 
