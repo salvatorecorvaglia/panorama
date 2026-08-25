@@ -976,14 +976,17 @@ shorthand = "commons-io:commons-io:2.15.1"
   });
 
   it('detects the toolchain, preferring the wrapper when present', async () => {
-    const withWrapper = makeContext({ '/p/gradlew': '#!/bin/sh' });
+    const withWrapper = makeContext({
+      '/p/gradlew': '#!/bin/sh',
+      '/p/gradlew.bat': '@echo off',
+    });
     expect(
       await provider.detectToolchain('/p/build.gradle', withWrapper),
     ).toEqual({
       id: 'gradle',
       ecosystem: 'gradle',
       cwd: '/p',
-      wrapper: './gradlew',
+      wrapper: process.platform === 'win32' ? 'gradlew.bat' : './gradlew',
     });
     expect(await provider.detectToolchain('/p/build.gradle', ctx)).toEqual({
       id: 'gradle',
