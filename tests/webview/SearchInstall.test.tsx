@@ -207,15 +207,30 @@ describe('install and remove', () => {
     renderPanel({
       results: [{ name: 'serde', version: '1.0', ecosystem: 'cargo' }],
     });
-    expect(screen.getByRole('button', { name: 'Install' })).toBeDisabled();
+    const button = screen.getByRole('button', { name: 'Install' });
+    expect(button).toBeDisabled();
+    // The reason is reachable by keyboard/screen reader, not only a mouse
+    // hover tooltip — `aria-describedby` must point at real, visible text.
+    const describedBy = button.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy ?? '')?.textContent).toMatch(
+      /cannot go into/i,
+    );
   });
 
   it('disables installing when there is nowhere to install into', () => {
     renderPanel({ groups: [], results: [reactResult] });
-    expect(screen.getByRole('button', { name: 'Install' })).toBeDisabled();
+    const button = screen.getByRole('button', { name: 'Install' });
+    expect(button).toBeDisabled();
     expect(
       screen.getByRole('combobox', { name: /Install into/i }),
     ).toBeDisabled();
+
+    const describedBy = button.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy ?? '')?.textContent).toMatch(
+      /dependency manifest/i,
+    );
   });
 });
 

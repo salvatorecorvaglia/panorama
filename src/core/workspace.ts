@@ -9,6 +9,7 @@ import * as vscode from 'vscode';
 import type { ProviderContext } from '../providers/provider.js';
 import type { TtlCache } from './cache.js';
 import type { HttpClient } from './http.js';
+import { resolveRegistryOverride } from './registryOverride.js';
 import type { Ecosystem } from './types.js';
 
 export function createProviderContext(
@@ -40,19 +41,13 @@ export function createProviderContext(
     },
 
     registryOverride(ecosystem: Ecosystem): string | undefined {
+      // Restricted in package.json's untrustedWorkspaces.restrictedConfigurations,
+      // so VS Code already withholds any workspace-scoped value here when the
+      // workspace is untrusted — this only ever sees a value the user opted into.
       const overrides = vscode.workspace
         .getConfiguration('panorama')
         .get<Record<string, string>>('registryOverrides', {});
-      // Accept both the ecosystem id and its common alias, so users can write
-      // "npm" rather than having to know we call it "node" internally.
-      const alias =
-        ecosystem === 'node'
-          ? 'npm'
-          : ecosystem === 'python'
-            ? 'pypi'
-            : ecosystem;
-      const value = overrides[ecosystem] ?? overrides[alias];
-      return value?.replace(/\/$/, '');
+      return resolveRegistryOverride(overrides, ecosystem);
     },
 
     preferredToolchain(ecosystem: Ecosystem): string {

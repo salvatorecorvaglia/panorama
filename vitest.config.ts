@@ -60,21 +60,20 @@ export default defineConfig({
         'src/webview/main.tsx',
       ],
       /*
-       * Set just under what the suite currently achieves (78.2% lines, 78.4%
-       * branches, 70.3% functions), so the gate catches regressions without
-       * failing on the next honest refactor.
+       * Set just under what the suite currently achieves (86.1% lines, 74.5%
+       * branches, 83.5% functions, 82.3% statements), so the gate catches
+       * regressions without failing on the next honest refactor.
        *
        * Raise these when coverage rises; do not lower them to make a red build
-       * green. Functions trails the others because the provider classes
-       * implement a wide interface of which the parsing half is exercised
-       * heavily and the command-building half only in part — that is the gap
-       * worth closing next.
+       * green. Branches trails the others: the provider classes' error-path
+       * and stale-fallback branches are the least exercised part of the suite
+       * — that is the gap worth closing next.
        */
       thresholds: {
-        lines: 77,
-        functions: 69,
-        branches: 71,
-        statements: 77,
+        lines: 84,
+        functions: 81,
+        branches: 73,
+        statements: 80,
       },
     },
   },

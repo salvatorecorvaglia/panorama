@@ -71,7 +71,7 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
   // Lapsed entries would otherwise accumulate in globalState forever, and
   // globalState is loaded synchronously on every extension-host start. Not
   // awaited: nothing below depends on it, and activation stays cheap.
-  void cache.prune();
+  void cache.prune().catch(() => undefined);
   const providerContext = createProviderContext(http, cache);
   const scanner = new Scanner(providerContext);
 

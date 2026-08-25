@@ -1,0 +1,288 @@
+/**
+ * `panelManager.ts` imports `vscode`, so it cannot be loaded under vitest at
+ * all (see the exclusion list in `vitest.config.ts`). It is also the
+ * largest untested file in the codebase — `extension.test.ts`'s "commands
+ * are safe to invoke" suite only checks that the `panorama.open` command
+ * does not throw; it never sends a message into the resulting panel.
+ *
+ * `vscode.window.createWebviewPanel` is called internally by `reveal()`, so
+ * — unlike `SidebarViewProvider.resolveWebviewView`, which takes a webview
+ * as a parameter — there is no way to hand `PanelManager` a fake one.
+ * Instead this intercepts `createWebviewPanel` itself for the duration of
+ * one `reveal()` call, wrapping the real panel's `webview.onDidReceiveMessage`
+ * and `webview.postMessage` just long enough to capture the message handler
+ * `PanelManager` registers and the messages it posts back — the real panel
+ * underneath is untouched, so its own CSP/HTML build still genuinely runs.
+ */
+
+import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import * as vscode from 'vscode';
+import { type Memento, TtlCache } from '../../src/core/cache.js';
+import { HttpClient } from '../../src/core/http.js';
+import type { HostMessage, WebviewMessage } from '../../src/core/protocol.js';
+import { Scanner, type ScanResult } from '../../src/core/scanner.js';
+import type { Dependency, ProjectGroup } from '../../src/core/types.js';
+import { createProviderContext } from '../../src/core/workspace.js';
+import { PanelManager } from '../../src/ui/panelManager.js';
+
+class MapMemento implements Memento {
+  private readonly store = new Map<string, unknown>();
+  get<T>(key: string): T | undefined {
+    return this.store.get(key) as T | undefined;
+  }
+  update(key: string, value: unknown): Thenable<void> {
+    this.store.set(key, value);
+    return Promise.resolve();
+  }
+}
+
+/**
+ * Intercepts the next `createWebviewPanel` call to capture the message
+ * handler `PanelManager` registers and every message it posts back.
+ */
+function interceptNextPanel(): {
+  ready: Promise<{
+    receive: (message: WebviewMessage) => void;
+    posted: HostMessage[];
+  }>;
+  restore: () => void;
+} {
+  const original = vscode.window.createWebviewPanel;
+  let resolveReady: (value: {
+    receive: (message: WebviewMessage) => void;
+    posted: HostMessage[];
+  }) => void;
+  const ready = new Promise<{
+    receive: (message: WebviewMessage) => void;
+    posted: HostMessage[];
+  }>((resolve) => {
+    resolveReady = resolve;
+  });
+
+  (
+    vscode.window as {
+      createWebviewPanel: typeof vscode.window.createWebviewPanel;
+    }
+  ).createWebviewPanel = ((...args: Parameters<typeof original>) => {
+    const panel = original(...args);
+    const posted: HostMessage[] = [];
+    const originalPostMessage = panel.webview.postMessage.bind(panel.webview);
+    (
+      panel.webview as { postMessage: typeof panel.webview.postMessage }
+    ).postMessage = (async (message: HostMessage) => {
+      posted.push(message);
+      return originalPostMessage(message);
+    }) as typeof panel.webview.postMessage;
+
+    const originalOnDidReceiveMessage = panel.webview.onDidReceiveMessage.bind(
+      panel.webview,
+    );
+    (
+      panel.webview as {
+        onDidReceiveMessage: typeof panel.webview.onDidReceiveMessage;
+      }
+    ).onDidReceiveMessage = ((listener: (message: WebviewMessage) => void) => {
+      resolveReady({ receive: listener, posted });
+      return originalOnDidReceiveMessage(listener);
+    }) as typeof panel.webview.onDidReceiveMessage;
+
+    return panel;
+  }) as typeof original;
+
+  return {
+    ready,
+    restore: () => {
+      (
+        vscode.window as {
+          createWebviewPanel: typeof vscode.window.createWebviewPanel;
+        }
+      ).createWebviewPanel = original;
+    },
+  };
+}
+
+function emptyScanResult(): ScanResult {
+  return {
+    groups: [],
+    summary: {
+      totalDependencies: 0,
+      outdated: 0,
+      vulnerable: 0,
+      deprecated: 0,
+      stale: false,
+    },
+  };
+}
+
+/** Waits for `posted` to contain a message of `type`, or fails after a beat. */
+async function waitForMessage<T extends HostMessage['type']>(
+  posted: HostMessage[],
+  type: T,
+): Promise<Extract<HostMessage, { type: T }>> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const found = posted.find((m) => m.type === type);
+    if (found) return found as Extract<HostMessage, { type: T }>;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.fail(
+    `no "${type}" message was posted; got: ${posted.map((m) => m.type).join(', ')}`,
+  );
+}
+
+describe('PanelManager message handling', () => {
+  let manager: PanelManager;
+
+  function makeManager(): PanelManager {
+    const http = new HttpClient('0.0.0-test');
+    const cache = new TtlCache(new MapMemento());
+    const ctx = createProviderContext(http, cache);
+    const scanner = new Scanner(ctx);
+    return new PanelManager(
+      vscode.extensions.getExtension('panorama.panorama-vscode')!.extensionUri,
+      scanner,
+      ctx,
+      () => undefined,
+    );
+  }
+
+  afterEach(() => {
+    manager?.dispose();
+  });
+
+  it('replies to "ready" with the current state and clears a queued reveal', async () => {
+    manager = makeManager();
+
+    const dep: Dependency = {
+      key: 'k',
+      name: 'demo-pkg',
+      ecosystem: 'node',
+      scope: 'prod',
+      declared: '1.0.0',
+      installed: '1.0.0',
+      updateKind: 'none',
+      vulnerabilities: [],
+      manifestPath: '/does/not/matter/package.json',
+      projectLabel: 'demo',
+    };
+    const group: ProjectGroup = {
+      label: 'demo',
+      manifestPath: '/does/not/matter/package.json',
+      ecosystem: 'node',
+      toolchain: 'npm',
+      dependencies: [dep],
+    };
+    manager.setResult({
+      groups: [group],
+      summary: {
+        totalDependencies: 1,
+        outdated: 0,
+        vulnerable: 0,
+        deprecated: 0,
+        stale: false,
+      },
+    });
+
+    const intercept = interceptNextPanel();
+    try {
+      // Queued before the webview exists — "ready" must replay it.
+      manager.revealDependency(dep.key, 'why');
+      const { receive, posted } = await intercept.ready;
+
+      receive({ type: 'ready' });
+
+      const state = await waitForMessage(posted, 'state');
+      assert.equal(state.groups[0]?.dependencies[0]?.key, 'k');
+
+      const focus = await waitForMessage(posted, 'focusDependency');
+      assert.equal(focus.depKey, 'k');
+
+      // The reveal must not still be queued behind a second "ready".
+      posted.length = 0;
+      receive({ type: 'ready' });
+      await waitForMessage(posted, 'state');
+      assert.equal(
+        posted.some((m) => m.type === 'focusDependency'),
+        false,
+        'a already-delivered reveal was replayed a second time',
+      );
+    } finally {
+      intercept.restore();
+    }
+  });
+
+  it('opens the manifest for "openManifest", but refuses an unknown path', async () => {
+    manager = makeManager();
+
+    const tmpDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'panorama-panel-manifest-'),
+    );
+    const manifestPath = path.join(tmpDir, 'package.json');
+    await fs.writeFile(manifestPath, '{"name":"demo","dependencies":{}}\n');
+
+    manager.setResult({
+      groups: [
+        {
+          label: 'demo',
+          manifestPath,
+          ecosystem: 'node',
+          toolchain: 'npm',
+          dependencies: [],
+        },
+      ],
+      summary: {
+        totalDependencies: 0,
+        outdated: 0,
+        vulnerable: 0,
+        deprecated: 0,
+        stale: false,
+      },
+    });
+
+    const intercept = interceptNextPanel();
+    try {
+      manager.reveal();
+      const { receive, posted } = await intercept.ready;
+      receive({ type: 'ready' });
+      await waitForMessage(posted, 'state');
+
+      // An unknown manifest is refused rather than opened.
+      receive({
+        type: 'openManifest',
+        manifestPath: path.join(tmpDir, 'not-scanned.json'),
+      });
+      const error = await waitForMessage(posted, 'error');
+      assert.match(error.message, /Unknown manifest/);
+
+      // The real one opens.
+      posted.length = 0;
+      receive({ type: 'openManifest', manifestPath });
+      for (let attempt = 0; attempt < 50; attempt++) {
+        if (
+          vscode.window.visibleTextEditors.some(
+            (editor) => editor.document.uri.fsPath === manifestPath,
+          )
+        ) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.ok(
+        vscode.window.visibleTextEditors.some(
+          (editor) => editor.document.uri.fsPath === manifestPath,
+        ),
+        'the manifest was not opened in an editor',
+      );
+    } finally {
+      intercept.restore();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('starts from an empty result before anything has been scanned', () => {
+    manager = makeManager();
+    assert.deepEqual(manager.currentResult, emptyScanResult());
+  });
+});

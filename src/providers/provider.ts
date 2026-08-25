@@ -15,7 +15,6 @@ import type {
   ParsedManifest,
   SearchResult,
   Toolchain,
-  ToolchainId,
 } from '../core/types.js';
 
 export interface ProviderContext {
@@ -217,12 +216,4 @@ export function dependencyKey(
   name: string,
 ): string {
   return `${manifestPath}::${scope}::${name}`;
-}
-
-export function toolchainOf(
-  id: ToolchainId,
-  ecosystem: Ecosystem,
-  cwd: string,
-): Toolchain {
-  return { id, ecosystem, cwd };
 }

@@ -109,6 +109,23 @@ describe('TtlCache', () => {
     expect(cache.get('d')).toBe(4);
   });
 
+  it('drops a lapsed entry from the memory mirror on access, not just by LRU count', async () => {
+    // The LRU bound is by entry count, which does nothing for one oversized
+    // entry (e.g. the PyPI name index) sitting among a handful of others —
+    // it would otherwise never be pushed out. A lapsed, non-persisted entry
+    // must actually leave the mirror once `get()` notices it has expired,
+    // not just become logically unreachable through `get()` while still
+    // sitting there. `getStale()` — which deliberately ignores expiry — is
+    // the only way to observe whether it is still in memory, since a
+    // non-persisted entry has nowhere else to be found.
+    const cache = new TtlCache(new MapMemento());
+    await cache.set('huge', 'x'.repeat(1000), 1000, { persist: false });
+
+    vi.advanceTimersByTime(1001);
+    expect(cache.get('huge')).toBeUndefined();
+    expect(cache.getStale('huge')).toBeUndefined();
+  });
+
   it('keeps a persisted entry readable after it leaves the memory mirror', async () => {
     const cache = new TtlCache(new MapMemento(), 1);
 
@@ -156,6 +173,30 @@ describe('TtlCache', () => {
     it('does nothing when the Memento cannot be enumerated', async () => {
       // No `keys()` means no way to find what to prune; it must not throw.
       expect(await new TtlCache(new OpaqueMemento()).prune()).toBe(0);
+    });
+
+    it('keeps pruning the rest when one deletion rejects', async () => {
+      // A Memento write can fail (extension host under memory pressure, a
+      // storage backend hiccup); one bad key must not reject the whole
+      // prune() and turn `void cache.prune()` at the call site into an
+      // unhandled rejection.
+      const storage = new MapMemento();
+      const cache = new TtlCache(storage);
+      await cache.set('stale-a', 1, 1);
+      await cache.set('stale-b', 2, 1);
+      vi.advanceTimersByTime(1000);
+
+      const originalUpdate = storage.update.bind(storage);
+      storage.update = (key: string, value: unknown) => {
+        if (key === 'panorama.cache.stale-a') {
+          return Promise.reject(new Error('storage unavailable'));
+        }
+        return originalUpdate(key, value);
+      };
+
+      await expect(cache.prune()).resolves.toBe(1);
+      expect(storage.store.has('panorama.cache.stale-a')).toBe(true);
+      expect(storage.store.has('panorama.cache.stale-b')).toBe(false);
     });
   });
 });

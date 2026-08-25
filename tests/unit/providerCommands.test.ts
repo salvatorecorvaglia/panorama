@@ -267,6 +267,65 @@ describe('NodeProvider commands', () => {
     });
   });
 
+  it('preserves the declared range prefix when updating', () => {
+    const npm: Toolchain = { id: 'npm', ecosystem: 'node', cwd: '/p' };
+    const pnpm: Toolchain = { id: 'pnpm', ecosystem: 'node', cwd: '/p' };
+
+    const caretDep = makeDep({
+      name: 'react',
+      declared: '^18.2.0',
+      scope: 'prod',
+      ecosystem: 'node',
+      manifestPath: '/p/package.json',
+    });
+    expect(provider.updateCommand(npm, caretDep, '18.3.1')).toEqual({
+      argv: ['npm', 'install', 'react@^18.3.1'],
+      cwd: '/p',
+      description: 'Install react@^18.3.1',
+    });
+
+    const tildeDep = makeDep({
+      name: 'lodash',
+      declared: '~4.17.0',
+      scope: 'prod',
+      ecosystem: 'node',
+      manifestPath: '/p/package.json',
+    });
+    expect(provider.updateCommand(npm, tildeDep, '4.17.21')).toEqual({
+      argv: ['npm', 'install', 'lodash@~4.17.21'],
+      cwd: '/p',
+      description: 'Install lodash@~4.17.21',
+    });
+
+    // An exact pin was a deliberate choice; updating must not silently
+    // widen it into a range.
+    const pinnedDep = makeDep({
+      name: 'proj4',
+      declared: '2.19.5',
+      scope: 'prod',
+      ecosystem: 'node',
+      manifestPath: '/p/package.json',
+    });
+    expect(provider.updateCommand(pnpm, pinnedDep, '2.21.0')).toEqual({
+      argv: ['pnpm', 'add', 'proj4@2.21.0'],
+      cwd: '/p',
+      description: 'Install proj4@2.21.0',
+    });
+
+    const compoundDep = makeDep({
+      name: 'left-pad',
+      declared: '>=1.0.0 <2',
+      scope: 'prod',
+      ecosystem: 'node',
+      manifestPath: '/p/package.json',
+    });
+    expect(provider.updateCommand(npm, compoundDep, '1.3.0')).toEqual({
+      argv: ['npm', 'install', 'left-pad@1.3.0'],
+      cwd: '/p',
+      description: 'Install left-pad@1.3.0',
+    });
+  });
+
   it('generates uninstallCommand for npm, yarn, pnpm, bun', () => {
     const npm: Toolchain = { id: 'npm', ecosystem: 'node', cwd: '/p' };
     const pnpm: Toolchain = { id: 'pnpm', ecosystem: 'node', cwd: '/p' };

@@ -4,6 +4,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
+import { CargoProvider } from '../../src/providers/cargo/index.js';
+import { ComposerProvider } from '../../src/providers/composer/index.js';
+import { GoProvider } from '../../src/providers/golang/index.js';
 import { NodeProvider } from '../../src/providers/node/index.js';
 import { PythonProvider } from '../../src/providers/python/index.js';
 import {
@@ -49,7 +52,7 @@ describe('fetchMavenVersions', () => {
       response: { numFound: 2, docs: [{ v: '1.0' }, { v: '2.0' }] },
     });
 
-    await fetchMavenVersions(['com.google.guava:guava'], ctx);
+    await fetchMavenVersions(['com.google.guava:guava'], 'maven', ctx);
 
     const url = getJson.mock.calls[0][0];
     expect(url).toContain('g:com.google.guava');
@@ -66,7 +69,7 @@ describe('fetchMavenVersions', () => {
       },
     });
 
-    const result = await fetchMavenVersions(['g:a'], ctx);
+    const result = await fetchMavenVersions(['g:a'], 'maven', ctx);
     expect(result.get('g:a')?.latest).toBe('2.0');
     expect(result.get('g:a')?.versions).toHaveLength(3);
   });
@@ -76,7 +79,7 @@ describe('fetchMavenVersions', () => {
       response: { numFound: 0, docs: [] },
     });
 
-    const result = await fetchMavenVersions(['not-a-coordinate'], ctx);
+    const result = await fetchMavenVersions(['not-a-coordinate'], 'maven', ctx);
     expect(result.size).toBe(0);
     expect(getJson).not.toHaveBeenCalled();
   });
@@ -86,14 +89,14 @@ describe('fetchMavenVersions', () => {
       response: { numFound: 1, docs: [{ v: '1.0' }] },
     });
 
-    await fetchMavenVersions(['g:a'], ctx);
-    await fetchMavenVersions(['g:a'], ctx);
+    await fetchMavenVersions(['g:a'], 'maven', ctx);
+    await fetchMavenVersions(['g:a'], 'maven', ctx);
     expect(getJson).toHaveBeenCalledOnce();
   });
 
   it('returns nothing rather than throwing when Solr is unreachable', async () => {
     // makeContext's http rejects every call.
-    const result = await fetchMavenVersions(['g:a'], makeContext());
+    const result = await fetchMavenVersions(['g:a'], 'maven', makeContext());
     expect(result.size).toBe(0);
   });
 });
@@ -289,5 +292,92 @@ describe('searchMavenCentral encoding', () => {
     expect(url).toContain('g:com.example%26x');
     expect(url).toContain('a:widget%23y');
     expect(url).not.toContain('&x:');
+  });
+});
+
+/**
+ * `panorama.registryOverrides` used to only be wired up for Node and Python —
+ * the other five providers hardcoded their public registry, so a compliance
+ * mirror configured for e.g. Cargo silently kept talking to crates.io. One
+ * test per provider (plus Maven/Gradle, sharing `mavenCentral.ts`) pins that
+ * every ecosystem's outbound request actually goes to the configured host.
+ */
+describe('registryOverride wiring', () => {
+  function withOverride(ecosystem: string, override: string, body: unknown) {
+    const ctx = makeContext();
+    const getJson = vi.fn((_url: string) => Promise.resolve(body));
+    const getText = vi.fn((_url: string) => Promise.resolve(''));
+    return {
+      ctx: {
+        ...ctx,
+        http: { ...ctx.http, getJson, getText } as never,
+        registryOverride: (eco: string) =>
+          eco === ecosystem ? override : undefined,
+      },
+      getJson,
+      getText,
+    };
+  }
+
+  it('CargoProvider.fetchVersions uses the configured registry', async () => {
+    const { ctx, getJson } = withOverride('cargo', 'https://cargo.internal', {
+      crate: { name: 'serde', newest_version: '1.0.0' },
+      versions: [{ num: '1.0.0', yanked: false }],
+    });
+
+    await new CargoProvider().fetchVersions(['serde'], ctx);
+
+    expect(getJson.mock.calls[0][0]).toMatch(/^https:\/\/cargo\.internal\//);
+  });
+
+  it('ComposerProvider.fetchVersions uses the configured registry', async () => {
+    const { ctx, getJson } = withOverride(
+      'composer',
+      'https://packagist.internal',
+      {
+        packages: { 'vendor/pkg': [{ name: 'vendor/pkg', version: '1.0.0' }] },
+      },
+    );
+
+    await new ComposerProvider().fetchVersions(['vendor/pkg'], ctx);
+
+    expect(getJson.mock.calls[0][0]).toMatch(
+      /^https:\/\/packagist\.internal\//,
+    );
+  });
+
+  it('GoProvider.fetchVersions uses the configured registry', async () => {
+    const { ctx, getJson, getText } = withOverride(
+      'golang',
+      'https://proxy.internal',
+      { Version: 'v1.0.0' },
+    );
+    getText.mockResolvedValue('v1.0.0\n');
+
+    await new GoProvider().fetchVersions(['github.com/foo/bar'], ctx);
+
+    expect(getJson.mock.calls[0][0]).toMatch(/^https:\/\/proxy\.internal\//);
+    expect(getText.mock.calls[0][0]).toMatch(/^https:\/\/proxy\.internal\//);
+  });
+
+  it('fetchMavenVersions resolves the override per ecosystem, not globally', async () => {
+    const ctx = makeContext();
+    const getJson = vi.fn((_url: string) =>
+      Promise.resolve({ response: { numFound: 1, docs: [{ v: '1.0' }] } }),
+    );
+    const withMaven = {
+      ...ctx,
+      http: { ...ctx.http, getJson } as never,
+      // Only "maven" has an override configured; "gradle" must still fall
+      // back to the public default rather than reusing maven's value.
+      registryOverride: (eco: string) =>
+        eco === 'maven' ? 'https://maven.internal' : undefined,
+    };
+
+    await fetchMavenVersions(['g:a'], 'maven', withMaven);
+    expect(getJson.mock.calls[0][0]).toMatch(/^https:\/\/maven\.internal\?/);
+
+    await fetchMavenVersions(['g:a'], 'gradle', withMaven);
+    expect(getJson.mock.calls[1][0]).toMatch(/^https:\/\/search\.maven\.org\//);
   });
 });

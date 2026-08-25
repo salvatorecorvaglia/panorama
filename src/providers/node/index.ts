@@ -7,7 +7,8 @@
 
 import * as path from 'node:path';
 import { type ParseError, parse as parseJsonc } from 'jsonc-parser';
-import { cacheKey, TTL } from '../../core/cache.js';
+import { parse as parseYaml } from 'yaml';
+import { cacheKey } from '../../core/cache.js';
 import type {
   Dependency,
   DepScope,
@@ -17,6 +18,7 @@ import type {
   Toolchain,
   ToolchainId,
 } from '../../core/types.js';
+import { applyDeclaredPrefix } from '../../core/versions/index.js';
 import {
   type Command,
   dependencyKey,
@@ -24,7 +26,10 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { fetchVersionsWithCache } from '../shared/cachedFetch.js';
+import {
+  fetchMetadataWithCache,
+  fetchVersionsWithCache,
+} from '../shared/cachedFetch.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
@@ -183,16 +188,42 @@ export class NodeProvider implements EcosystemProvider {
       path.join(manifestDir, 'pnpm-lock.yaml'),
     );
     if (pnpmLock) {
-      // Direct dependencies under `importers` or root `dependencies`/`devDependencies`
-      const directPattern =
-        /^\s{4,6}(@?[^:\s]+):\n\s{6,8}(?:specifier:[^\n]+\n\s{6,8})?version:\s*['"]?([0-9][^(\s'"]+)/gm;
-      for (const match of pnpmLock.matchAll(directPattern)) {
-        if (!resolved.has(match[1])) resolved.set(match[1], match[2]);
-      }
-      // Entries look like `/react@18.2.0:` or `react@18.2.0:` depending on version.
-      const pattern = /^\s{2}\/?(@?[^@\s:]+(?:\/[^@\s:]+)?)@([^(:\s]+)/gm;
-      for (const match of pnpmLock.matchAll(pattern)) {
-        if (!resolved.has(match[1])) resolved.set(match[1], match[2]);
+      try {
+        const doc = (parseYaml(pnpmLock) ?? {}) as {
+          importers?: Record<string, PnpmImporter>;
+          packages?: Record<string, unknown>;
+          snapshots?: Record<string, unknown>;
+        };
+
+        // Direct dependencies, keyed by the workspace they belong to.
+        for (const importer of Object.values(doc.importers ?? {})) {
+          for (const bucket of [
+            importer.dependencies,
+            importer.devDependencies,
+            importer.optionalDependencies,
+          ]) {
+            for (const [name, entry] of Object.entries(bucket ?? {})) {
+              if (entry?.version && !resolved.has(name)) {
+                resolved.set(name, stripPnpmPeerSuffix(entry.version));
+              }
+            }
+          }
+        }
+
+        // Every resolved install, keyed by `name@version` (packages:) or
+        // `name@version(peer@x)` (snapshots:) — either way, everything this
+        // lockfile actually installed.
+        for (const key of [
+          ...Object.keys(doc.packages ?? {}),
+          ...Object.keys(doc.snapshots ?? {}),
+        ]) {
+          const parsed = pnpmKeyToNameVersion(key);
+          if (parsed && !resolved.has(parsed.name)) {
+            resolved.set(parsed.name, parsed.version);
+          }
+        }
+      } catch {
+        // A malformed lockfile is not worth failing the scan over.
       }
       return resolved;
     }
@@ -309,10 +340,8 @@ export class NodeProvider implements EcosystemProvider {
   ): Promise<PackageMeta | undefined> {
     const registry = ctx.registryOverride('node') ?? DEFAULT_REGISTRY;
     const key = cacheKey('npm', 'meta', registry, name);
-    const cached = ctx.cache.get<PackageMeta>(key);
-    if (cached) return cached;
 
-    try {
+    return fetchMetadataWithCache(key, ctx, async () => {
       // The full version document, not the abbreviated packument: the
       // abbreviated form is install-oriented and carries none of the fields we
       // need here (repository, homepage, description).
@@ -328,7 +357,7 @@ export class NodeProvider implements EcosystemProvider {
           : version.repository?.url,
       );
 
-      const meta: PackageMeta = {
+      return {
         name,
         description: version.description,
         homepage: version.homepage,
@@ -341,11 +370,7 @@ export class NodeProvider implements EcosystemProvider {
             ? version.author
             : version.author?.name,
       };
-      await ctx.cache.set(key, meta, TTL.metadata);
-      return meta;
-    } catch {
-      return ctx.cache.getStale<PackageMeta>(key);
-    }
+    });
   }
 
   async search(
@@ -404,7 +429,11 @@ export class NodeProvider implements EcosystemProvider {
     dep: Dependency,
     toVersion: string,
   ): Command | null {
-    return this.installCommand(toolchain, dep.name, toVersion, dep.scope);
+    // `toVersion` is a bare version from the registry. Re-applying the range
+    // operator the manifest already uses (`^`, `~`) keeps the project's
+    // constraint style instead of silently pinning an exact version.
+    const version = applyDeclaredPrefix(dep.declared, toVersion);
+    return this.installCommand(toolchain, dep.name, version, dep.scope);
   }
 
   uninstallCommand(toolchain: Toolchain, dep: Dependency): Command | null {
@@ -482,4 +511,38 @@ async function isYarnBerry(
 /** Encode scoped package names for npm registry API while preserving the leading '@'. */
 function encodeName(name: string): string {
   return encodeURIComponent(name).replace(/^%40/, '@');
+}
+
+/** One `importers.<path>.dependencies` bucket in pnpm-lock.yaml. */
+interface PnpmImporter {
+  dependencies?: Record<string, { version?: string }>;
+  devDependencies?: Record<string, { version?: string }>;
+  optionalDependencies?: Record<string, { version?: string }>;
+}
+
+/** Drops the `(peer@x)` suffix pnpm appends to a resolved version. */
+function stripPnpmPeerSuffix(version: string): string {
+  const paren = version.indexOf('(');
+  return paren >= 0 ? version.slice(0, paren) : version;
+}
+
+/**
+ * Splits a `packages:`/`snapshots:` key into a name and version.
+ *
+ * Keys look like `/react@18.2.0:` (older lockfiles), `react@18.2.0:`, or
+ * `react@18.2.0(react-dom@18.2.0):` (peer-dependency suffix) — scoped names
+ * carry their own `@`, so only the last one separates name from version.
+ */
+function pnpmKeyToNameVersion(
+  key: string,
+): { name: string; version: string } | undefined {
+  let rest = key.startsWith('/') ? key.slice(1) : key;
+  const paren = rest.indexOf('(');
+  if (paren >= 0) rest = rest.slice(0, paren);
+
+  const at = rest.lastIndexOf('@');
+  if (at <= 0) return undefined;
+  const name = rest.slice(0, at);
+  const version = rest.slice(at + 1);
+  return name && version ? { name, version } : undefined;
 }

@@ -220,7 +220,7 @@ export class GradleProvider implements EcosystemProvider {
     ctx: ProviderContext,
     signal?: AbortSignal,
   ): Promise<Map<string, VersionInfo>> {
-    return fetchMavenVersions(names, ctx, signal);
+    return fetchMavenVersions(names, 'gradle', ctx, signal);
   }
 
   async fetchMetadata(

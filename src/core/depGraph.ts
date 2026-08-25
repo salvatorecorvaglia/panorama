@@ -8,6 +8,7 @@
  */
 
 import * as path from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import type { ProviderContext } from '../providers/provider.js';
 // The one PEP 503 implementation. A second copy lived here to avoid depending
 // on a provider, but this file already imports the provider registry, and two
@@ -159,13 +160,20 @@ function npmLockName(key: string): string {
   return '__root__';
 }
 
+interface PnpmLockEntry {
+  dependencies?: Record<string, unknown>;
+  optionalDependencies?: Record<string, unknown>;
+}
+
 /**
  * pnpm-lock.yaml.
  *
- * Parsed structurally by indentation rather than with a YAML library: the
- * `packages:`/`snapshots:` section is a flat map of `name@version` keys, each
- * with an optional nested `dependencies:` map. That shape is stable across
- * lockfile versions 5–9, where the surrounding schema is not.
+ * Read with the real YAML parser rather than by indentation: `importers:`
+ * shares the same 2-space-indent, colon-terminated shape as `packages:`/
+ * `snapshots:`, and a hand-rolled line scanner had no way to tell them apart
+ * from the text alone. Only the latter two hold the resolved dependency
+ * graph — that shape is stable across lockfile versions 5–9, where the
+ * surrounding schema is not.
  */
 async function buildPnpmGraph(
   dir: string,
@@ -174,47 +182,32 @@ async function buildPnpmGraph(
   const text = await ctx.readFile(path.join(dir, 'pnpm-lock.yaml'));
   if (!text) return undefined;
 
+  let doc: {
+    packages?: Record<string, PnpmLockEntry>;
+    snapshots?: Record<string, PnpmLockEntry>;
+  };
+  try {
+    doc = (parseYaml(text) ?? {}) as typeof doc;
+  } catch {
+    return undefined;
+  }
+
   const graph: ForwardGraph = new Map();
-  const lines = text.split(/\r?\n/);
 
-  let currentPackage: string | undefined;
-  let inDependencies = false;
-  let dependencyIndent = 0;
+  for (const section of [doc.packages, doc.snapshots]) {
+    for (const [key, entry] of Object.entries(section ?? {})) {
+      const name = pnpmNameFromKey(key);
+      if (!name) continue;
+      if (!graph.has(name)) graph.set(name, []);
 
-  for (const line of lines) {
-    if (line.trim() === '' || line.trimStart().startsWith('#')) continue;
-    const indent = line.length - line.trimStart().length;
-    const trimmed = line.trim();
+      const children = [
+        ...Object.keys(entry?.dependencies ?? {}),
+        ...Object.keys(entry?.optionalDependencies ?? {}),
+      ];
+      if (children.length === 0) continue;
 
-    // A package entry sits at indent 2 and ends with a colon.
-    if (indent === 2 && trimmed.endsWith(':')) {
-      const key = trimmed.slice(0, -1).replace(/^['"]|['"]$/g, '');
-      currentPackage = pnpmNameFromKey(key);
-      inDependencies = false;
-      if (currentPackage && !graph.has(currentPackage))
-        graph.set(currentPackage, []);
-      continue;
-    }
-
-    if (!currentPackage) continue;
-
-    if (
-      indent === 4 &&
-      (trimmed === 'dependencies:' || trimmed === 'optionalDependencies:')
-    ) {
-      inDependencies = true;
-      dependencyIndent = 6;
-      continue;
-    }
-    // Any other key at the same level ends the dependency block.
-    if (indent <= 4 && trimmed.endsWith(':')) {
-      inDependencies = false;
-      continue;
-    }
-
-    if (inDependencies && indent === dependencyIndent) {
-      const name = trimmed.split(':')[0].replace(/^['"]|['"]$/g, '');
-      if (name) graph.get(currentPackage)?.push(name);
+      const existing = graph.get(name) ?? [];
+      graph.set(name, [...new Set([...existing, ...children])]);
     }
   }
 

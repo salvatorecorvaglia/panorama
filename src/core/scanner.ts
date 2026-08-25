@@ -66,9 +66,6 @@ interface ManifestScan {
 }
 
 export class Scanner {
-  /** Guards against overlapping scans when several files change at once. */
-  private inFlight: AbortController | undefined;
-
   /**
    * True when the last scan hit `MAX_MANIFESTS`. Read by the host so it can
    * tell the user results are incomplete rather than letting them assume the
@@ -85,22 +82,19 @@ export class Scanner {
 
   constructor(private readonly ctx: ProviderContext) {}
 
-  cancel(): void {
-    this.inFlight?.abort();
-    this.inFlight = undefined;
-  }
-
   /**
    * Runs the full pipeline. `onPartial` fires once with manifest data before
    * any network call, so the table paints immediately and fills in after.
+   *
+   * Callers never overlap two scans: `ScanQueue` (see `core/scanQueue.ts`) is
+   * the only production caller, and it never starts one while another is
+   * still running.
    */
   async scan(
     options: { checkUpdates: boolean; audit: boolean },
     onPartial?: (result: ScanResult) => void,
   ): Promise<ScanResult> {
-    this.inFlight?.abort();
     const controller = new AbortController();
-    this.inFlight = controller;
     const signal = controller.signal;
 
     const groups = await this.collectGroups(signal);

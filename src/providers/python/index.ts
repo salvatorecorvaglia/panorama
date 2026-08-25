@@ -31,7 +31,10 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { fetchVersionsWithCache } from '../shared/cachedFetch.js';
+import {
+  fetchMetadataWithCache,
+  fetchVersionsWithCache,
+} from '../shared/cachedFetch.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
@@ -371,10 +374,8 @@ export class PythonProvider implements EcosystemProvider {
   ): Promise<PackageMeta | undefined> {
     const index = ctx.registryOverride('python') ?? DEFAULT_INDEX;
     const key = cacheKey('pypi', 'meta', index, name);
-    const cached = ctx.cache.get<PackageMeta>(key);
-    if (cached) return cached;
 
-    try {
+    return fetchMetadataWithCache(key, ctx, async () => {
       const response = await ctx.http.getJson<PyPiResponse>(
         `${index}/pypi/${encodeURIComponent(name)}/json`,
         { signal },
@@ -392,7 +393,7 @@ export class PythonProvider implements EcosystemProvider {
         (entry) => entry.packagetype === 'bdist_wheel',
       );
 
-      const meta: PackageMeta = {
+      return {
         name: response.info.name,
         description: response.info.summary,
         homepage: response.info.home_page,
@@ -405,11 +406,7 @@ export class PythonProvider implements EcosystemProvider {
           : undefined,
         author: response.info.author,
       };
-      await ctx.cache.set(key, meta, TTL.metadata);
-      return meta;
-    } catch {
-      return ctx.cache.getStale<PackageMeta>(key);
-    }
+    });
   }
 
   /**

@@ -24,6 +24,19 @@ import { SearchInstall } from './SearchInstall.js';
 import { type Filters, Toolbar } from './Toolbar.js';
 import { loadState, onHostMessage, post, saveState } from './vscodeApi.js';
 
+/**
+ * Survives a webview reload (a VS Code window reload, or an extension
+ * update) — everyday tab switches already survive via `retainContextWhenHidden`
+ * and never touch this.
+ *
+ * Deliberately narrower than the full `Filters` shape: sort order and which
+ * scope chips are on are durable preferences about how someone likes to look
+ * at their dependencies. Search text and the only-outdated/vulnerable/
+ * deprecated toggles are the opposite — a one-off narrowing for the task at
+ * hand — and persisting those would mean a reload weeks later silently
+ * reopens the panel pre-filtered down to whatever the user was chasing last,
+ * with nothing on screen explaining why so few rows are showing.
+ */
 interface PersistedState {
   sort: SortState;
   scopes: DepScope[];
@@ -38,6 +51,12 @@ const EMPTY_SUMMARY: ScanSummary = {
 };
 
 const NOTICE_TIMEOUT_MS = 8000;
+/**
+ * Caps the error queue so a broken registry during a large `updateAll`
+ * cannot enqueue one string per package without bound. The newest is always
+ * kept — that is what is shown — so the oldest are dropped first.
+ */
+const MAX_QUEUED_ERRORS = 50;
 
 function defaultFilters(scopes?: DepScope[]): Filters {
   return {
@@ -106,10 +125,22 @@ export function App() {
   const [activeRequestId, setActiveRequestId] = useState<string | undefined>();
 
   /**
-   * Bumped when lazily fetched metadata is merged into an existing row. See the
-   * `depDetails` case below for why that merge does not replace `groups`.
+   * Forces a render after lazily fetched metadata is merged into an existing
+   * row. See the `depDetails` case below for why that merge does not replace
+   * `groups`; `metaVersionsRef` is the per-row counterpart that lets the
+   * specific row re-render despite `React.memo`.
    */
-  const [, setDetailsVersion] = useState(0);
+  const [, setRenderTick] = useState(0);
+  /**
+   * depKey -> a counter bumped each time that row's `meta` is merged.
+   *
+   * `DepRow` is memoized on shallow prop equality, and `dep` keeps its
+   * identity across a merge (mutated in place, not replaced) so that sorted
+   * order does not shift while the user is looking at it. Without some prop
+   * that actually changes value, memo sees the same `dep` reference and skips
+   * the re-render — this counter is that prop.
+   */
+  const metaVersionsRef = useRef<Map<string, number>>(new Map());
   const groupsRef = useRef<ProjectGroup[]>([]);
   const filterRef = useRef<HTMLInputElement>(null);
 
@@ -257,7 +288,11 @@ export function App() {
               ...message.meta,
               deprecated: message.meta.deprecated ?? dep.meta?.deprecated,
             };
-            setDetailsVersion((version) => version + 1);
+            metaVersionsRef.current.set(
+              dep.key,
+              (metaVersionsRef.current.get(dep.key) ?? 0) + 1,
+            );
+            setRenderTick((tick) => tick + 1);
             break;
           }
           break;
@@ -296,12 +331,14 @@ export function App() {
           break;
 
         case 'error':
-          setErrors((current) =>
+          setErrors((current) => {
             // A repeat of the message already on screen is not new information.
-            current[current.length - 1] === message.message
-              ? current
-              : [...current, message.message],
-          );
+            if (current[current.length - 1] === message.message) return current;
+            const next = [...current, message.message];
+            return next.length > MAX_QUEUED_ERRORS
+              ? next.slice(next.length - MAX_QUEUED_ERRORS)
+              : next;
+          });
           break;
 
         case 'notice':
@@ -583,6 +620,7 @@ export function App() {
         <div className="app__main">
           <DepTable
             groups={filteredGroups}
+            metaVersions={metaVersionsRef.current}
             sort={sort}
             onSortChange={setSort}
             selectedKey={selectedKey}

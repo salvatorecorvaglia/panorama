@@ -22,8 +22,15 @@ export type ShellKind = 'posix' | 'powershell' | 'cmd';
  * `%` is deliberately absent: it is inert in POSIX and PowerShell but expands
  * variables in cmd.exe, and a single list keeps one argument from being quoted
  * differently depending on which shell is attached.
+ *
+ * `,` and `=` are deliberately absent too: cmd.exe's own `.cmd`/`.bat` batch
+ * wrappers — which is what npm/yarn/pnpm are on Windows — treat unquoted
+ * comma, semicolon and `=` as argument delimiters when they parse `%1`/`%*`,
+ * the same way whitespace is. A version string a registry handed back like
+ * `1.0.0,--registry=http://evil` would otherwise pass through as two
+ * arguments instead of one.
  */
-const SAFE_ARGUMENT = /^[A-Za-z0-9_@:.,+=/\\-]+$/;
+const SAFE_ARGUMENT = /^[A-Za-z0-9_@:.+/\\-]+$/;
 
 /**
  * Classifies a shell from its executable path.
@@ -83,12 +90,18 @@ export function quoteArgument(argument: string, shell: ShellKind): string {
        * only reliable defence is to refuse the character outright — no
        * legitimate package name or version contains one.
        *
+       * `!VAR!` is the same story under delayed expansion (`cmd /v:on`, which
+       * some environments enable globally), so it is stripped alongside `%`
+       * even though that costs the rare PEP 440 epoch version (`1!2.0.0`) its
+       * `!` when quoted for this shell.
+       *
        * `"` is closed and reopened around an escaped copy, and a run of
        * backslashes preceding the closing quote has to be doubled or it escapes
        * that quote instead.
        */
       return `"${argument
         .replace(/%/g, '')
+        .replace(/!/g, '')
         .replace(/"/g, '""')
         .replace(/(\\+)$/, '$1$1')}"`;
 

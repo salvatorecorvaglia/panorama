@@ -6,7 +6,7 @@
  * worse than one that fails loudly.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CargoProvider } from '../../src/providers/cargo/index.js';
 import { ComposerProvider } from '../../src/providers/composer/index.js';
 import {
@@ -568,6 +568,66 @@ require github.com/spf13/cobra v1.8.0
         ?.argv,
     ).toEqual(['go', 'get', 'example.com/m@none']);
   });
+
+  it('detects the toolchain from the manifest directory', async () => {
+    const toolchain = await provider.detectToolchain('/p/go.mod', ctx);
+    expect(toolchain).toEqual({ id: 'go', ecosystem: 'golang', cwd: '/p' });
+  });
+
+  it('validates module paths, rejecting anything too long or shell-hostile', () => {
+    expect(provider.isValidPackageName('github.com/spf13/cobra')).toBe(true);
+    expect(provider.isValidPackageName('a; rm -rf /')).toBe(false);
+    expect(provider.isValidPackageName('a'.repeat(513))).toBe(false);
+  });
+
+  it('derives a repository link for known forges, and none for unknown ones', async () => {
+    const getJson = vi.fn(() => Promise.resolve({}));
+    const forgeCtx = { ...ctx, http: { ...ctx.http, getJson } as never };
+
+    const known = await provider.fetchMetadata(
+      'github.com/spf13/cobra',
+      forgeCtx,
+    );
+    expect(known?.repository).toBe('https://github.com/spf13/cobra');
+    expect(known?.homepage).toBe('https://pkg.go.dev/github.com/spf13/cobra');
+
+    const unknown = await provider.fetchMetadata(
+      'gitea.example.com/foo/bar',
+      forgeCtx,
+    );
+    expect(unknown?.repository).toBeUndefined();
+  });
+
+  describe('search', () => {
+    it('returns nothing for a query that is not a module path', async () => {
+      expect(await provider.search('cobra', ctx)).toEqual([]);
+      expect(await provider.search('../evil', ctx)).toEqual([]);
+    });
+
+    it('verifies a real-looking module path against the proxy', async () => {
+      const getJson = vi.fn(() => Promise.resolve({ Version: 'v1.8.0' }));
+      const proxyCtx = { ...ctx, http: { ...ctx.http, getJson } as never };
+
+      const results = await provider.search('github.com/spf13/cobra', proxyCtx);
+      expect(results).toEqual([
+        {
+          name: 'github.com/spf13/cobra',
+          version: 'v1.8.0',
+          ecosystem: 'golang',
+          repository: 'https://github.com/spf13/cobra',
+        },
+      ]);
+    });
+
+    it('returns nothing rather than throwing when the proxy has no such module', async () => {
+      const getJson = vi.fn(() => Promise.reject(new Error('404')));
+      const proxyCtx = { ...ctx, http: { ...ctx.http, getJson } as never };
+
+      expect(
+        await provider.search('github.com/nobody/nothing', proxyCtx),
+      ).toEqual([]);
+    });
+  });
 });
 
 describe('Composer provider', () => {
@@ -902,5 +962,64 @@ shorthand = "commons-io:commons-io:2.15.1"
     expect(updated).toBe(
       `implementation("com.google.guava:guava:1.0.0\\"); malicious.groovy(")`,
     );
+  });
+
+  it('returns an empty manifest for a build script with no [project] equivalent', async () => {
+    const manifest = await provider.parse('/p/build.gradle', '', ctx);
+    expect(manifest.dependencies).toEqual([]);
+    expect(manifest.name).toBe('p');
+  });
+
+  it('validates groupId:artifactId coordinates', () => {
+    expect(provider.isValidPackageName('com.google.guava:guava')).toBe(true);
+    expect(provider.isValidPackageName('no-colon')).toBe(false);
+  });
+
+  it('detects the toolchain, preferring the wrapper when present', async () => {
+    const withWrapper = makeContext({ '/p/gradlew': '#!/bin/sh' });
+    expect(
+      await provider.detectToolchain('/p/build.gradle', withWrapper),
+    ).toEqual({
+      id: 'gradle',
+      ecosystem: 'gradle',
+      cwd: '/p',
+      wrapper: './gradlew',
+    });
+    expect(await provider.detectToolchain('/p/build.gradle', ctx)).toEqual({
+      id: 'gradle',
+      ecosystem: 'gradle',
+      cwd: '/p',
+    });
+  });
+
+  it('roots the toolchain cwd two levels up for a version catalog', async () => {
+    expect(
+      await provider.detectToolchain('/p/gradle/libs.versions.toml', ctx),
+    ).toEqual({ id: 'gradle', ecosystem: 'gradle', cwd: '/p' });
+  });
+
+  it('has no CLI add/remove/update — everything goes through editManifest', () => {
+    expect(provider.updateCommand()).toBeNull();
+    expect(provider.uninstallCommand()).toBeNull();
+  });
+
+  it('delegates fetchVersions, fetchMetadata, and search to Maven Central', async () => {
+    const getJson = vi.fn(() =>
+      Promise.resolve({ response: { numFound: 0, docs: [] } }),
+    );
+    const solrCtx = { ...ctx, http: { ...ctx.http, getJson } as never };
+
+    await provider.fetchVersions(['com.google.guava:guava'], solrCtx);
+    const meta = await provider.fetchMetadata(
+      'com.google.guava:guava',
+      solrCtx,
+    );
+    const results = await provider.search('guava', solrCtx);
+
+    expect(getJson).toHaveBeenCalled();
+    expect(meta?.homepage).toBe(
+      'https://central.sonatype.com/artifact/com.google.guava/guava',
+    );
+    expect(results).toEqual([]);
   });
 });

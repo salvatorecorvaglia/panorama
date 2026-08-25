@@ -162,8 +162,16 @@ export class DependencyMutator {
 
     const uri = vscode.Uri.file(manifestPath);
     const document = await vscode.workspace.openTextDocument(uri);
+    const versionBeforeEdit = document.version;
+    const wasDirty = document.isDirty;
     const updated = provider.editManifest(document.getText(), edit);
     if (updated === null) return false;
+
+    // A whole-document replace built from a snapshot is only safe against
+    // that same snapshot — guards a future `editManifest` becoming async (or
+    // any other yield landing above) from silently clobbering a concurrent
+    // edit that lands in the gap.
+    if (document.version !== versionBeforeEdit) return false;
 
     const workspaceEdit = new vscode.WorkspaceEdit();
     workspaceEdit.replace(
@@ -174,7 +182,12 @@ export class DependencyMutator {
     const ok = await vscode.workspace.applyEdit(workspaceEdit);
     if (!ok) return false;
 
-    await document.save();
+    // Only auto-save when our edit was the only change in flight. Forcing a
+    // save while the user has unrelated unsaved edits open would commit those
+    // too, without them having chosen to.
+    if (!wasDirty) {
+      await document.save();
+    }
     return true;
   }
 }

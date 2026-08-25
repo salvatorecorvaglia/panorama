@@ -276,6 +276,12 @@ export function SearchInstall({
         );
         const compatible =
           !selectedGroup || selectedGroup.ecosystem === result.ecosystem;
+        const disabledReason = !targetManifest
+          ? 'Open a project with a dependency manifest to install into'
+          : compatible
+            ? undefined
+            : `${result.name} is a ${ECOSYSTEM_LABELS[result.ecosystem]} package and cannot go into ${selectedGroup?.label}`;
+        const disabledReasonId = `install-reason-${result.ecosystem}-${result.name}`;
 
         return (
           <div
@@ -334,12 +340,9 @@ export function SearchInstall({
                 <button
                   type="button"
                   disabled={!compatible || !targetManifest}
-                  title={
-                    !targetManifest
-                      ? 'Open a project with a dependency manifest to install into'
-                      : compatible
-                        ? undefined
-                        : `${result.name} is a ${ECOSYSTEM_LABELS[result.ecosystem]} package and cannot go into ${selectedGroup?.label}`
+                  title={disabledReason}
+                  aria-describedby={
+                    disabledReason ? disabledReasonId : undefined
                   }
                   onClick={() =>
                     onInstall(
@@ -352,6 +355,13 @@ export function SearchInstall({
                 >
                   Install
                 </button>
+              )}
+              {disabledReason && (
+                // A `title` tooltip only reaches a mouse hovering the button;
+                // this is the same text reachable by keyboard/screen reader.
+                <span id={disabledReasonId} className="visually-hidden">
+                  {disabledReason}
+                </span>
               )}
             </div>
           </div>

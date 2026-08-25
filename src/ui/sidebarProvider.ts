@@ -114,9 +114,9 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     .version-badge {
       display: inline-block;
       padding: 2px 10px;
-      background-color: rgba(2, 132, 199, 0.2);
-      color: #38bdf8;
-      border: 1px solid rgba(2, 132, 199, 0.4);
+      background-color: var(--vscode-badge-background, rgba(2, 132, 199, 0.2));
+      color: var(--vscode-badge-foreground, #38bdf8);
+      border: 1px solid var(--vscode-badge-background, rgba(2, 132, 199, 0.4));
       border-radius: 12px;
       font-size: 0.82em;
       font-weight: 600;
@@ -135,8 +135,8 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       gap: 6px;
       width: 100%;
       padding: 9px 14px;
-      background: #0284c7;
-      color: #ffffff;
+      background: var(--vscode-button-background, #0284c7);
+      color: var(--vscode-button-foreground, #ffffff);
       border: none;
       border-radius: 6px;
       font-size: 0.95em;
@@ -146,7 +146,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       transition: background-color 0.15s ease;
     }
     .btn-primary:hover {
-      background: #0369a1;
+      background: var(--vscode-button-hoverBackground, #0369a1);
     }
     .divider {
       width: 100%;
@@ -179,7 +179,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     .repo-card {
       width: 100%;
       padding: 10px 12px;
-      background: var(--vscode-sidebar-background, rgba(255, 255, 255, 0.04));
+      background: var(--vscode-sideBar-background, rgba(255, 255, 255, 0.04));
       border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, rgba(255, 255, 255, 0.1)));
       border-radius: 8px;
       margin-bottom: 12px;

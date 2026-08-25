@@ -196,6 +196,21 @@ describe('sorting', () => {
       'current',
     ]);
   });
+
+  it('sorts unknown sizes last in ascending order, matching the version columns', () => {
+    renderTable(
+      [
+        group([
+          dep({ name: 'small', key: 's', meta: { name: 's', sizeBytes: 100 } }),
+          dep({ name: 'unknown', key: 'u' }),
+          dep({ name: 'large', key: 'l', meta: { name: 'l', sizeBytes: 900 } }),
+        ]),
+      ],
+      { key: 'size', direction: 'asc' },
+    );
+
+    expect(renderedNames()).toEqual(['small', 'large', 'unknown']);
+  });
 });
 
 describe('the ARIA grid contract', () => {
@@ -305,6 +320,54 @@ describe('severity markers', () => {
   it('shows no marker on a healthy package', () => {
     renderTable([group([dep({ name: 'fine', key: 'f' })])]);
     expect(screen.queryByRole('img')).toBeNull();
+  });
+});
+
+describe('metaVersions', () => {
+  /*
+   * Regression test for a stale-render bug: App.tsx merges lazily fetched
+   * metadata by mutating `dep.meta` in place (to avoid re-sorting the table),
+   * which means `dep`'s object identity never changes. DepRow is wrapped in
+   * `React.memo`, so without some other prop that actually changes value, the
+   * row would silently keep rendering its old (pre-fetch) content forever.
+   * `metaVersions` is that prop.
+   */
+  it('re-renders a row after its mutated-in-place meta gains a size', () => {
+    const groups = [group([dep({ name: 'pkg', key: 'k' })])];
+    const { rerender } = renderTable(groups, undefined, {
+      metaVersions: new Map([['k', 0]]),
+    });
+
+    const sizeCellBefore = screen
+      .getAllByRole('gridcell')
+      .find((cell) => cell.className.includes('cell--size'));
+    expect(sizeCellBefore?.textContent).toBe('—');
+
+    // Simulate App.tsx's in-place merge: same `dep`/`groups` object identity,
+    // only the `meta` field and the row's version counter change.
+    groups[0].dependencies[0].meta = { name: 'pkg', sizeBytes: 2048 };
+
+    rerender(
+      <DepTable
+        groups={groups}
+        sort={{ key: 'name', direction: 'asc' }}
+        onSortChange={noop}
+        selectedKey={undefined}
+        onSelect={noop}
+        onUpdate={noop}
+        onUninstall={noop}
+        onUpdateAll={noop}
+        loading={false}
+        filtering={false}
+        onClearFilters={noop}
+        metaVersions={new Map([['k', 1]])}
+      />,
+    );
+
+    const sizeCellAfter = screen
+      .getAllByRole('gridcell')
+      .find((cell) => cell.className.includes('cell--size'));
+    expect(sizeCellAfter?.textContent).toBe('2.0 KB');
   });
 });
 

@@ -478,10 +478,7 @@ export class PanelManager implements vscode.Disposable {
     if (resolved.length === 0) return;
 
     const majors = resolved.filter((entry) => entry.dep.updateKind === 'major');
-    const detail =
-      majors.length > 0
-        ? `${resolved.length} package(s), including ${majors.length} major upgrade(s) that may contain breaking changes.`
-        : `${resolved.length} package(s), all minor or patch.`;
+    const detail = majorUpgradeDetail(resolved.length, majors.length);
 
     const choice = await vscode.window.showWarningMessage(
       `Update ${resolved.length} selected package(s)?`,
@@ -577,10 +574,7 @@ export class PanelManager implements vscode.Disposable {
     }
 
     const majors = outdated.filter((dep) => dep.updateKind === 'major');
-    const detail =
-      majors.length > 0
-        ? `${outdated.length} package(s), including ${majors.length} major upgrade(s) that may contain breaking changes.`
-        : `${outdated.length} package(s), all minor or patch.`;
+    const detail = majorUpgradeDetail(outdated.length, majors.length);
 
     const choice = await vscode.window.showWarningMessage(
       `Update all dependencies in ${group.label}?`,
@@ -789,6 +783,13 @@ export class PanelManager implements vscode.Disposable {
 function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+/** The confirmation dialog detail shared by bulk-update and update-all. */
+function majorUpgradeDetail(count: number, majorCount: number): string {
+  return majorCount > 0
+    ? `${count} package(s), including ${majorCount} major upgrade(s) that may contain breaking changes.`
+    : `${count} package(s), all minor or patch.`;
 }
 
 /** The name users know a registry by, which is rarely our ecosystem id. */

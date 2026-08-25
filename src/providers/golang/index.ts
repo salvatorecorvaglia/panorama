@@ -29,7 +29,7 @@ import {
 import { fetchVersionsWithCache } from '../shared/cachedFetch.js';
 import { changelogUrlFor } from '../shared/repository.js';
 
-const PROXY = 'https://proxy.golang.org';
+const DEFAULT_PROXY = 'https://proxy.golang.org';
 
 /** A module path is a slash-separated set of domain-ish segments. */
 const MODULE_PATTERN = /^[a-zA-Z0-9][\w.~-]*(?:\/[\w.~+-]+)*$/;
@@ -125,17 +125,18 @@ export class GoProvider implements EcosystemProvider {
       6,
       (name) => cacheKey('go', 'versions', name),
       async (name) => {
+        const proxy = ctx.registryOverride('golang') ?? DEFAULT_PROXY;
         const escaped = escapeModulePath(name);
         // @latest is authoritative and cheap; @v/list gives the full history but
         // omits versions the proxy has not cached, so we merge both.
         const [latest, list] = await Promise.all([
           ctx.http
-            .getJson<{ Version: string }>(`${PROXY}/${escaped}/@latest`, {
+            .getJson<{ Version: string }>(`${proxy}/${escaped}/@latest`, {
               signal,
             })
             .catch(() => undefined),
           ctx.http
-            .getText(`${PROXY}/${escaped}/@v/list`, { signal })
+            .getText(`${proxy}/${escaped}/@v/list`, { signal })
             .catch(() => ''),
         ]);
 
@@ -194,8 +195,9 @@ export class GoProvider implements EcosystemProvider {
     }
 
     try {
+      const proxy = ctx.registryOverride('golang') ?? DEFAULT_PROXY;
       const latest = await ctx.http.getJson<{ Version: string }>(
-        `${PROXY}/${escapeModulePath(trimmed)}/@latest`,
+        `${proxy}/${escapeModulePath(trimmed)}/@latest`,
         { signal },
       );
       return [

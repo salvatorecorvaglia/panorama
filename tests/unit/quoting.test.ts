@@ -39,6 +39,8 @@ const HOSTILE = [
   'a^b',
   '$env:PATH',
   '@(1,2)',
+  '1.0.0,--registry=http://evil',
+  '1.0.0;calc.exe',
 ];
 
 describe('detectShell', () => {
@@ -155,6 +157,24 @@ describe('quoteArgument', () => {
 
     it('doubles an embedded double quote', () => {
       expect(quoteArgument('a"b', 'cmd')).toBe('"a""b"');
+    });
+
+    it('quotes commas, semicolons and equals signs rather than leaving them bare', () => {
+      // Unquoted, these are argument delimiters to a .cmd/.bat wrapper's own
+      // %1/%* parsing (npm/yarn/pnpm on Windows), letting one argv element
+      // split into several. Quoting keeps the whole thing one token.
+      for (const payload of [
+        '1.0.0,--registry=http://evil',
+        '1.0.0;calc.exe',
+        'a=b',
+      ]) {
+        const quoted = quoteArgument(payload, 'cmd');
+        expect(quoted).toBe(`"${payload}"`);
+      }
+    });
+
+    it('strips exclamation marks, which delayed expansion treats like percent signs', () => {
+      expect(quoteArgument('a!USERPROFILE!b', 'cmd')).not.toContain('!');
     });
   });
 });

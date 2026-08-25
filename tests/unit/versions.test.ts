@@ -10,8 +10,10 @@ import {
   composerConstraintToSemver,
 } from '../../src/core/versions/composer.js';
 import {
+  applyDeclaredPrefix,
   classifyUpdate,
   compareVersions,
+  constraintToApproxVersion,
   isPrerelease,
   maxSatisfying,
   maxVersion,
@@ -136,6 +138,49 @@ describe('Composer ordering', () => {
     expect(asc('1.0.0-dev', '1.0.0-alpha', compareComposer)).toBe('lt');
     expect(asc('1.0.0-beta', '1.0.0-RC', compareComposer)).toBe('lt');
     expect(asc('1.0.0-RC', '1.0.0', compareComposer)).toBe('lt');
+  });
+});
+
+describe('applyDeclaredPrefix', () => {
+  it('carries caret and tilde operators onto the new version', () => {
+    expect(applyDeclaredPrefix('^18.2.0', '18.3.1')).toBe('^18.3.1');
+    expect(applyDeclaredPrefix('~1.2.3', '1.4.0')).toBe('~1.4.0');
+  });
+
+  it('keeps exact pins exact', () => {
+    expect(applyDeclaredPrefix('2.19.5', '2.21.0')).toBe('2.21.0');
+  });
+
+  it('leaves compound ranges, tags and protocols untouched', () => {
+    expect(applyDeclaredPrefix('>=1.2.0 <2', '1.9.0')).toBe('1.9.0');
+    expect(applyDeclaredPrefix('*', '2.0.0')).toBe('2.0.0');
+    expect(applyDeclaredPrefix('latest', '2.0.0')).toBe('2.0.0');
+    expect(applyDeclaredPrefix('workspace:^', '1.1.0')).toBe('1.1.0');
+  });
+
+  it('does not mangle a target that is already a range or tag', () => {
+    expect(applyDeclaredPrefix('^1.2.3', '^1.4.0')).toBe('^1.4.0');
+    expect(applyDeclaredPrefix('^1.2.3', 'latest')).toBe('latest');
+  });
+});
+
+describe('constraintToApproxVersion', () => {
+  it('strips range operators down to the bare version', () => {
+    expect(constraintToApproxVersion('^1.2.3')).toBe('1.2.3');
+    expect(constraintToApproxVersion('~>4.5.0')).toBe('4.5.0');
+    expect(constraintToApproxVersion('>=1.0.0 <2.0.0')).toBe('1.0.0');
+  });
+
+  it('skips a PEP 440 epoch rather than returning it as the version', () => {
+    // A "first run of digits" match would stop at "1", not the version that
+    // follows the epoch marker — wrong enough to throw off OSV audit matching.
+    expect(constraintToApproxVersion('1!2.0.0')).toBe('2.0.0');
+    expect(constraintToApproxVersion('>=1!2.0.0')).toBe('2.0.0');
+  });
+
+  it('returns undefined for a constraint with no version in it', () => {
+    expect(constraintToApproxVersion('latest')).toBeUndefined();
+    expect(constraintToApproxVersion('workspace:^')).toBeUndefined();
   });
 });
 

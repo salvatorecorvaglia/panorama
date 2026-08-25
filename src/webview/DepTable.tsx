@@ -49,6 +49,12 @@ export interface SortState {
 
 interface Props {
   groups: ProjectGroup[];
+  /**
+   * depKey -> a counter bumped each time that row's `meta` is merged in place.
+   * Passed through to `DepRow` purely to give its memo comparator a prop that
+   * actually changes value when the mutated-in-place `dep` does not.
+   */
+  metaVersions?: ReadonlyMap<string, number>;
   sort: SortState;
   onSortChange: (sort: SortState) => void;
   selectedKey: string | undefined;
@@ -89,6 +95,7 @@ const COLUMNS: Array<{ key: SortKey | null; label: string; cell: string }> = [
 
 export function DepTable({
   groups,
+  metaVersions,
   sort,
   onSortChange,
   selectedKey,
@@ -490,6 +497,7 @@ export function DepTable({
                   ) : (
                     <DepRow
                       dep={row.dep}
+                      metaVersion={metaVersions?.get(row.dep.key) ?? 0}
                       index={virtualRow.index}
                       rowIndex={virtualRow.index + 2}
                       tabbable={virtualRow.index === focusedIndex}
@@ -583,6 +591,7 @@ function renderStatusBadge(dep: Dependency) {
 
 const DepRow = memo(function DepRow({
   dep,
+  metaVersion,
   index,
   rowIndex,
   tabbable,
@@ -595,6 +604,8 @@ const DepRow = memo(function DepRow({
   onFocusRow,
 }: {
   dep: Dependency;
+  /** Unused directly — its only job is to change value when `dep.meta` does. */
+  metaVersion: number;
   index: number;
   rowIndex: number;
   tabbable: boolean;
@@ -606,6 +617,9 @@ const DepRow = memo(function DepRow({
   onUninstall: (dep: Dependency) => void;
   onFocusRow: (index: number) => void;
 }) {
+  // Exists only so memo's shallow prop comparison sees a change when `dep`
+  // (mutated in place, not replaced) does not.
+  void metaVersion;
   const upgradeable = hasUpdate(dep);
 
   return (
@@ -793,9 +807,18 @@ function sortDependencies(
           b.latest,
         );
         break;
-      case 'size':
-        comparison = (a.meta?.sizeBytes ?? -1) - (b.meta?.sizeBytes ?? -1);
+      case 'size': {
+        // Missing sizes sort last in ascending order, matching the version
+        // columns' convention — not first, which is what defaulting the
+        // missing value to -1 used to produce.
+        const sizeA = a.meta?.sizeBytes;
+        const sizeB = b.meta?.sizeBytes;
+        if (sizeA === undefined && sizeB === undefined) comparison = 0;
+        else if (sizeA === undefined) comparison = 1;
+        else if (sizeB === undefined) comparison = -1;
+        else comparison = sizeA - sizeB;
         break;
+      }
       case 'status':
         comparison =
           statusRank(a) - statusRank(b) || a.name.localeCompare(b.name);

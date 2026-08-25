@@ -11,6 +11,7 @@
  */
 
 import { TTL } from '../../core/cache.js';
+import type { PackageMeta } from '../../core/types.js';
 import type { ProviderContext, VersionInfo } from '../provider.js';
 import { mapWithConcurrency } from './concurrency.js';
 
@@ -47,4 +48,30 @@ export async function fetchVersionsWithCache(
   });
 
   return result;
+}
+
+/**
+ * The same cache-first, stale-on-failure shape as `fetchVersionsWithCache`,
+ * for the single-package `fetchMetadata` every provider implements the same
+ * way: a cache hit skips the network, a miss fetches and caches, and a
+ * failure falls back to whatever the cache still remembers rather than
+ * surfacing an error for what is, from the user's perspective, just a
+ * missing description.
+ */
+export async function fetchMetadataWithCache(
+  key: string,
+  ctx: ProviderContext,
+  fetchOne: () => Promise<PackageMeta | undefined>,
+): Promise<PackageMeta | undefined> {
+  const cached = ctx.cache.get<PackageMeta>(key);
+  if (cached) return cached;
+
+  try {
+    const meta = await fetchOne();
+    if (meta === undefined) return undefined;
+    await ctx.cache.set(key, meta, TTL.metadata);
+    return meta;
+  } catch {
+    return ctx.cache.getStale<PackageMeta>(key);
+  }
 }

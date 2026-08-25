@@ -11,7 +11,7 @@ import { maxMaven } from '../../core/versions/maven.js';
 import type { ProviderContext, VersionInfo } from '../provider.js';
 import { mapWithConcurrency } from './concurrency.js';
 
-const SOLR = 'https://search.maven.org/solrsearch/select';
+const DEFAULT_SOLR = 'https://search.maven.org/solrsearch/select';
 
 interface SolrResponse {
   response: {
@@ -38,10 +38,12 @@ export function splitCoordinate(
 
 export async function fetchMavenVersions(
   names: string[],
+  ecosystem: Ecosystem,
   ctx: ProviderContext,
   signal?: AbortSignal,
 ): Promise<Map<string, VersionInfo>> {
   const result = new Map<string, VersionInfo>();
+  const solr = ctx.registryOverride(ecosystem) ?? DEFAULT_SOLR;
 
   /*
    * Five at a time, matching the per-host limit `core/http.ts` applies to
@@ -54,7 +56,10 @@ export async function fetchMavenVersions(
     const coordinate = splitCoordinate(name);
     if (!coordinate) return;
 
-    const key = cacheKey('maven', 'versions', name);
+    // Keyed by ecosystem, not just "maven": Maven and Gradle can each carry
+    // their own registryOverride now, so they must not serve each other's
+    // cached results when those overrides differ.
+    const key = cacheKey(ecosystem, 'versions', name);
     const cached = ctx.cache.get<VersionInfo>(key);
     if (cached) {
       result.set(name, cached);
@@ -64,7 +69,7 @@ export async function fetchMavenVersions(
     try {
       // core=gav returns one document per version rather than per artifact.
       const url =
-        `${SOLR}?q=g:${encodeURIComponent(coordinate.groupId)}+AND+a:${encodeURIComponent(coordinate.artifactId)}` +
+        `${solr}?q=g:${encodeURIComponent(coordinate.groupId)}+AND+a:${encodeURIComponent(coordinate.artifactId)}` +
         `&core=gav&rows=200&wt=json`;
       const response = await ctx.http.getJson<SolrResponse>(url, { signal });
 
@@ -128,8 +133,9 @@ export async function searchMavenCentral(
     ? `g:${encodeURIComponent(coordinate.groupId)}+AND+a:${encodeURIComponent(coordinate.artifactId)}`
     : encodeURIComponent(query);
 
+  const solr = ctx.registryOverride(ecosystem) ?? DEFAULT_SOLR;
   const response = await ctx.http.getJson<SolrResponse>(
-    `${SOLR}?q=${q}&rows=25&wt=json`,
+    `${solr}?q=${q}&rows=25&wt=json`,
     { signal },
   );
 

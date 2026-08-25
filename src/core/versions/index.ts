@@ -210,13 +210,38 @@ export function classifyUpdate(
 
 /**
  * Strips a constraint down to a concrete version for display, e.g. `^1.2.3`
- * becomes `1.2.3`. Used when no lockfile pins an exact version.
+ * becomes `1.2.3`. Used when no lockfile pins an exact version, and this
+ * value is what the audit step matches advisories against — a wrong guess
+ * means wrong vulnerability results, not just a wrong-looking cell.
+ *
+ * The leading `(?:\d+!)?` skips a PEP 440 epoch (`1!2.0.0`), which is
+ * otherwise indistinguishable from the version itself to a plain "first run
+ * of digits" match — without it this would return `1`, not `2.0.0`.
  */
 export function constraintToApproxVersion(
   constraint: string,
 ): string | undefined {
-  const match = /(\d+(?:\.\d+)*(?:[-+][0-9a-zA-Z.-]+)?)/.exec(constraint);
+  const match = /(?:\d+!)?(\d+(?:\.\d+)*(?:[-+][0-9a-zA-Z.-]+)?)/.exec(
+    constraint,
+  );
   return match?.[1];
+}
+
+/**
+ * Carries a simple range operator from a declared constraint onto a new
+ * concrete version, so updating `^1.2.3` to `1.4.0` yields `^1.4.0` rather
+ * than silently pinning `1.4.0`.
+ *
+ * Everything else is left untouched: exact pins stay pinned (the author asked
+ * for exactness), and compound ranges (`>=1 <2`), dist-tags (`latest`) or
+ * workspace protocols have no single operator worth preserving.
+ */
+export function applyDeclaredPrefix(declared: string, version: string): string {
+  // Only bare versions get a prefix; a range or tag arriving as the target is
+  // passed through verbatim rather than mangled.
+  if (!/^\d/.test(version)) return version;
+  const match = /^([~^])\s*\d/.exec(declared.trim());
+  return match ? `${match[1]}${version}` : version;
 }
 
 export { satisfiesPep440 };

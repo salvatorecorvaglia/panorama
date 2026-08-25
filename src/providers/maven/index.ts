@@ -202,7 +202,7 @@ export class MavenProvider implements EcosystemProvider {
     ctx: ProviderContext,
     signal?: AbortSignal,
   ): Promise<Map<string, VersionInfo>> {
-    return fetchMavenVersions(names, ctx, signal);
+    return fetchMavenVersions(names, 'maven', ctx, signal);
   }
 
   async fetchMetadata(

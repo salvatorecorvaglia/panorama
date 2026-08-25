@@ -112,6 +112,43 @@ snapshots:
     // The scope must survive and the (peer) suffix must not.
     expect(flatten(result.roots)).toEqual(['@babel/core', '@babel/traverse']);
   });
+
+  it('does not mistake a workspace member path in importers: for a package', async () => {
+    // `importers:` shares the same 2-space-indent, colon-terminated shape as
+    // `packages:`/`snapshots:` — a line-oriented parser had no way to tell a
+    // workspace path like `packages/ui:` apart from a real package entry.
+    const ctx = makeContext({
+      '/p/pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      chalk:
+        specifier: ^4.1.2
+        version: 4.1.2
+
+  packages/ui:
+    dependencies:
+      chalk:
+        specifier: ^4.1.2
+        version: 4.1.2
+
+snapshots:
+
+  chalk@4.1.2:
+    dependencies:
+      ansi-styles: 4.3.0
+
+  ansi-styles@4.3.0: {}
+`,
+    });
+
+    const result = await explainDependency(dep({ name: 'ansi-styles' }), ctx);
+    expect(result.source).toBe('lockfile');
+    // Only the real dependency edge, not a phantom "packages/ui" root.
+    expect(flatten(result.roots)).toEqual(['chalk', 'ansi-styles']);
+  });
 });
 
 describe('yarn.lock', () => {

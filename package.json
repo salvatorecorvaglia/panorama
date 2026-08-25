@@ -39,6 +39,14 @@
     "workspaceContains:**/build.gradle",
     "workspaceContains:**/build.gradle.kts"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "restrictedConfigurations": [
+        "panorama.registryOverrides"
+      ]
+    }
+  },
   "contributes": {
     "commands": [
       {
@@ -193,7 +201,7 @@
         "panorama.registryOverrides": {
           "type": "object",
           "default": {},
-          "description": "Override registry base URLs per ecosystem, e.g. { \"npm\": \"https://registry.mycompany.com\" }.",
+          "description": "Override registry base URLs per ecosystem, e.g. { \"npm\": \"https://registry.mycompany.com\" }. Ignored in untrusted workspaces.",
           "additionalProperties": {
             "type": "string"
           }

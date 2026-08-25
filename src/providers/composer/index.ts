@@ -7,7 +7,7 @@
 
 import * as path from 'node:path';
 import { parse as parseJsonc } from 'jsonc-parser';
-import { cacheKey, TTL } from '../../core/cache.js';
+import { cacheKey } from '../../core/cache.js';
 import type {
   Dependency,
   DepScope,
@@ -23,14 +23,17 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { fetchVersionsWithCache } from '../shared/cachedFetch.js';
+import {
+  fetchMetadataWithCache,
+  fetchVersionsWithCache,
+} from '../shared/cachedFetch.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
 } from '../shared/repository.js';
 
-const PACKAGIST = 'https://packagist.org';
-const REPO = 'https://repo.packagist.org';
+const DEFAULT_PACKAGIST = 'https://packagist.org';
+const DEFAULT_REPO = 'https://repo.packagist.org';
 
 /** Composer names are always `vendor/package`, lowercase. */
 const NAME_PATTERN =
@@ -77,6 +80,9 @@ export class ComposerProvider implements EcosystemProvider {
   readonly manifestFiles = ['composer.json'];
   readonly lockFiles = ['composer.lock'];
   readonly osvEcosystem = 'Packagist';
+  // No depsDevSystem: deps.dev does not support PHP/Packagist at all, so
+  // there is no value that would resolve — "Why is this installed" falls
+  // back to the manifest-only answer for a project with no composer.lock.
 
   isValidPackageName(name: string): boolean {
     return NAME_PATTERN.test(name);
@@ -172,8 +178,9 @@ export class ComposerProvider implements EcosystemProvider {
       5,
       (name) => cacheKey('packagist', 'versions', name),
       async (name) => {
+        const repo = ctx.registryOverride('composer') ?? DEFAULT_REPO;
         const response = await ctx.http.getJson<P2Response>(
-          `${REPO}/p2/${encodePackageName(name)}.json`,
+          `${repo}/p2/${encodePackageName(name)}.json`,
           { signal },
         );
         const releases = response.packages[name] ?? [];
@@ -207,19 +214,18 @@ export class ComposerProvider implements EcosystemProvider {
     if (!this.isValidPackageName(name)) return undefined;
 
     const key = cacheKey('packagist', 'meta', name);
-    const cached = ctx.cache.get<PackageMeta>(key);
-    if (cached) return cached;
 
-    try {
+    return fetchMetadataWithCache(key, ctx, async () => {
+      const repo = ctx.registryOverride('composer') ?? DEFAULT_REPO;
       const response = await ctx.http.getJson<P2Response>(
-        `${REPO}/p2/${encodePackageName(name)}.json`,
+        `${repo}/p2/${encodePackageName(name)}.json`,
         { signal },
       );
       const latest = response.packages[name]?.[0];
       if (!latest) return undefined;
 
       const repository = normalizeRepositoryUrl(latest.source?.url);
-      const meta: PackageMeta = {
+      return {
         name,
         description: latest.description,
         homepage: latest.homepage,
@@ -232,11 +238,7 @@ export class ComposerProvider implements EcosystemProvider {
               ? `Abandoned — use ${latest.abandoned} instead`
               : 'This package is abandoned',
       };
-      await ctx.cache.set(key, meta, TTL.metadata);
-      return meta;
-    } catch {
-      return ctx.cache.getStale<PackageMeta>(key);
-    }
+    });
   }
 
   async search(
@@ -254,8 +256,9 @@ export class ComposerProvider implements EcosystemProvider {
       }>;
     }
 
+    const packagist = ctx.registryOverride('composer') ?? DEFAULT_PACKAGIST;
     const response = await ctx.http.getJson<SearchResponse>(
-      `${PACKAGIST}/search.json?q=${encodeURIComponent(query)}&per_page=25`,
+      `${packagist}/search.json?q=${encodeURIComponent(query)}&per_page=25`,
       { signal },
     );
 

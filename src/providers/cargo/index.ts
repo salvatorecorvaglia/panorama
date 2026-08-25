@@ -8,7 +8,7 @@
 
 import * as path from 'node:path';
 import { parse as parseToml } from 'smol-toml';
-import { cacheKey, TTL } from '../../core/cache.js';
+import { cacheKey } from '../../core/cache.js';
 import type {
   Dependency,
   DepScope,
@@ -24,13 +24,16 @@ import {
   type ProviderContext,
   type VersionInfo,
 } from '../provider.js';
-import { fetchVersionsWithCache } from '../shared/cachedFetch.js';
+import {
+  fetchMetadataWithCache,
+  fetchVersionsWithCache,
+} from '../shared/cachedFetch.js';
 import {
   changelogUrlFor,
   normalizeRepositoryUrl,
 } from '../shared/repository.js';
 
-const REGISTRY = 'https://crates.io';
+const DEFAULT_REGISTRY = 'https://crates.io';
 const NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
 
 interface CrateResponse {
@@ -166,8 +169,9 @@ export class CargoProvider implements EcosystemProvider {
       8,
       (name) => cacheKey('crates', 'versions', name),
       async (name) => {
+        const registry = ctx.registryOverride('cargo') ?? DEFAULT_REGISTRY;
         const response = await ctx.http.getJson<CrateResponse>(
-          `${REGISTRY}/api/v1/crates/${encodeURIComponent(name)}`,
+          `${registry}/api/v1/crates/${encodeURIComponent(name)}`,
           { signal },
         );
         const latestNum =
@@ -196,18 +200,17 @@ export class CargoProvider implements EcosystemProvider {
     signal?: AbortSignal,
   ): Promise<PackageMeta | undefined> {
     const key = cacheKey('crates', 'meta', name);
-    const cached = ctx.cache.get<PackageMeta>(key);
-    if (cached) return cached;
 
-    try {
+    return fetchMetadataWithCache(key, ctx, async () => {
+      const registry = ctx.registryOverride('cargo') ?? DEFAULT_REGISTRY;
       const response = await ctx.http.getJson<CrateResponse>(
-        `${REGISTRY}/api/v1/crates/${encodeURIComponent(name)}`,
+        `${registry}/api/v1/crates/${encodeURIComponent(name)}`,
         { signal },
       );
       const newest = response.versions?.[0];
       const repository = normalizeRepositoryUrl(response.crate.repository);
 
-      const meta: PackageMeta = {
+      return {
         name: response.crate.name,
         description: response.crate.description,
         homepage: response.crate.homepage ?? response.crate.documentation,
@@ -216,11 +219,7 @@ export class CargoProvider implements EcosystemProvider {
         sizeBytes: newest?.crate_size,
         downloads: response.crate.downloads,
       };
-      await ctx.cache.set(key, meta, TTL.metadata);
-      return meta;
-    } catch {
-      return ctx.cache.getStale<PackageMeta>(key);
-    }
+    });
   }
 
   async search(
@@ -239,8 +238,9 @@ export class CargoProvider implements EcosystemProvider {
       }>;
     }
 
+    const registry = ctx.registryOverride('cargo') ?? DEFAULT_REGISTRY;
     const response = await ctx.http.getJson<SearchResponse>(
-      `${REGISTRY}/api/v1/crates?q=${encodeURIComponent(query)}&per_page=25`,
+      `${registry}/api/v1/crates?q=${encodeURIComponent(query)}&per_page=25`,
       { signal },
     );
 

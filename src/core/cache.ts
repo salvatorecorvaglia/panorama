@@ -74,6 +74,14 @@ export class TtlCache {
       return undefined;
     }
     if (entry.expiresAt < Date.now()) {
+      // A lapsed entry sitting in the mirror does nobody any good — drop it
+      // here rather than waiting on the LRU to eventually push it out by
+      // count. That bound does nothing for a single oversized entry (the
+      // PyPI name index is the case that motivated this): it is one of up to
+      // `maxEntries`, so it would otherwise sit in memory for the life of the
+      // window regardless of size. Storage is untouched: `prune()` already
+      // owns that, and `getStale()` still needs to find it there.
+      this.memory.delete(key);
       return undefined;
     }
     return entry.value;
@@ -127,7 +135,15 @@ export class TtlCache {
       )
         continue;
 
-      await this.storage.update(storageKey, undefined);
+      try {
+        await this.storage.update(storageKey, undefined);
+      } catch {
+        // Best-effort: a write that fails here just leaves one stale entry
+        // behind, which is what happens if prune() never runs at all — not
+        // worth losing the rest of the sweep, or turning into an unhandled
+        // rejection for `void cache.prune()` at the call site.
+        continue;
+      }
       this.memory.delete(storageKey.slice(STORAGE_PREFIX.length));
       removed++;
     }

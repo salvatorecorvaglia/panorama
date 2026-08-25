@@ -41,6 +41,12 @@ const RATE_LIMITS: Record<string, number> = {
   'search.maven.org': 5,
   'packagist.org': 5,
   'repo.packagist.org': 5,
+  // Neither publishes a documented cap, but both are hit hard by a large
+  // Python or Go monorepo's scan — the same self-imposed politeness limit
+  // already applied to osv.dev and deps.dev, so one busy scan cannot burst
+  // past what's reasonable for either registry to field unprompted.
+  'pypi.org': 10,
+  'proxy.golang.org': 10,
 };
 
 export interface HttpOptions {

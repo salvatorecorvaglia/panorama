@@ -155,6 +155,21 @@ describe('notices and errors', () => {
 
     expect(screen.getByRole('alert')).not.toHaveTextContent('earlier');
   });
+
+  it('caps the error queue rather than growing it without bound', () => {
+    // "Update all" against a broken registry can fail once per package —
+    // hundreds of distinct messages in a large monorepo.
+    renderLoaded();
+    for (let i = 0; i < 60; i++) {
+      send({ type: 'error', message: `failure ${i}` });
+    }
+
+    const alert = screen.getByRole('alert');
+    // The newest is always what is shown...
+    expect(alert).toHaveTextContent('failure 59');
+    // ...and the queue behind it is capped, not 59 deep.
+    expect(alert).toHaveTextContent('and 49 earlier errors');
+  });
 });
 
 describe('keyboard shortcuts', () => {
