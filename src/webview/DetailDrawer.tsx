@@ -4,13 +4,14 @@
  */
 
 import { useEffect, useRef } from 'react';
-import type { Dependency, DepNode } from '../core/types.js';
+import type { ChangelogEntry, Dependency, DepNode } from '../core/types.js';
 import {
   currentVersion,
   declaredLabel,
+  hasUpdate,
   scopeLabel,
 } from '../core/vocabulary.js';
-import { ECOSYSTEM_LABELS, formatBytes } from './format.js';
+import { ECOSYSTEM_LABELS, formatBytes, formatDate } from './format.js';
 import { Icon } from './Icon.js';
 import { useDismissableOverlay } from './useDismissableOverlay.js';
 import { post } from './vscodeApi.js';
@@ -18,6 +19,14 @@ import { post } from './vscodeApi.js';
 interface Props {
   dep: Dependency;
   why: { roots: DepNode[]; source: 'lockfile' | 'registry' } | undefined;
+  /**
+   * Undefined and `changelogLoaded: false` means "not answered yet";
+   * undefined with `changelogLoaded: true` means the host looked and found
+   * nothing to show (not a GitHub repository) — the two read differently
+   * because only the second means there is nothing left to wait for.
+   */
+  changelogEntries: ChangelogEntry[] | undefined;
+  changelogLoaded: boolean;
   /** Which section the command that opened this drawer wants to land on. */
   reveal: 'details' | 'why';
   onClose: () => void;
@@ -29,6 +38,8 @@ interface Props {
 export function DetailDrawer({
   dep,
   why,
+  changelogEntries,
+  changelogLoaded,
   reveal,
   onClose,
   onUpdate,
@@ -171,6 +182,51 @@ export function DetailDrawer({
             )}
         </div>
       </section>
+
+      {/*
+       * Only offered alongside an actual update — a package already current
+       * has no "between" to show — and only once a repository is known,
+       * which `changelogLoaded` distinguishes from "checked, and it isn't
+       * on GitHub" (the section stays hidden for the latter).
+       */}
+      {hasUpdate(dep) &&
+        dep.meta?.repository &&
+        (!changelogLoaded || changelogEntries) && (
+          <section>
+            <h3>What&rsquo;s changed</h3>
+            {!changelogLoaded ? (
+              <div className="muted">Loading…</div>
+            ) : changelogEntries!.length === 0 ? (
+              <div className="muted">
+                No release notes found for this update.
+              </div>
+            ) : (
+              <div className="changelog">
+                {changelogEntries!.map((entry) => (
+                  <div className="changelog__entry" key={entry.url}>
+                    <div className="changelog__entry-header">
+                      <button
+                        type="button"
+                        className="link"
+                        onClick={() => openLink(entry.url)}
+                      >
+                        {entry.title ?? entry.version}
+                      </button>
+                      {entry.publishedAt && (
+                        <span className="muted">
+                          {formatDate(entry.publishedAt)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="changelog__entry-body">
+                      {entry.body || 'No description provided.'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
       <section>
         <h3>Package</h3>

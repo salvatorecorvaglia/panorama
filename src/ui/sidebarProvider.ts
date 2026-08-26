@@ -291,9 +291,6 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
         <button type="button" class="github-link-btn" id="link-changelog">
           <span>📜</span> Release Notes
         </button>
-        <button type="button" class="github-link-btn" id="link-license">
-          <span>📄</span> MIT License
-        </button>
       </div>
 
       <div class="author-footer">

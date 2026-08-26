@@ -28,6 +28,7 @@ interface Props {
   duplicatesOpen?: boolean;
   onToggleLicenses?: () => void;
   licensesOpen?: boolean;
+  onCompareDependencies?: () => void;
   onExportReport?: () => void;
   /** Lets the app put the caret here from a keyboard shortcut. */
   filterRef?: Ref<HTMLInputElement>;
@@ -49,6 +50,7 @@ export function Toolbar({
   duplicatesOpen = false,
   onToggleLicenses,
   licensesOpen = false,
+  onCompareDependencies,
   onExportReport,
   filterRef,
 }: Props) {
@@ -237,6 +239,16 @@ export function Toolbar({
             title="Check every package's license against your allow/deny list"
           >
             <Icon name="law" /> Licenses
+          </button>
+        )}
+        {onCompareDependencies && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={onCompareDependencies}
+            title="Compare dependencies with another branch"
+          >
+            <Icon name="git-compare" /> Compare with…
           </button>
         )}
         <button

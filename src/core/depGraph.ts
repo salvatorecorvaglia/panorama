@@ -17,6 +17,8 @@ import { normalizeName as normalizePythonName } from '../providers/python/index.
 import { providerFor } from '../providers/registry.js';
 import type {
   Dependency,
+  DependencyDiffEntry,
+  DependencyDiffResult,
   DepNode,
   DuplicateVersionGroup,
   DuplicateVersionResult,
@@ -689,21 +691,63 @@ async function collectVersions(
   ecosystem: Ecosystem,
   ctx: ProviderContext,
 ): Promise<VersionMap | undefined> {
+  return collectVersionsFrom(dir, ecosystem, (absolutePath) =>
+    ctx.readFile(absolutePath),
+  );
+}
+
+/**
+ * The same lookup as `collectVersions`, but through a caller-supplied reader
+ * instead of `ProviderContext.readFile` — what lets `diffLockfileVersions`'s
+ * caller read a lockfile out of Git history instead of off disk, reusing
+ * every format's parser rather than a second copy of each.
+ */
+export async function collectVersionsFrom(
+  dir: string,
+  ecosystem: Ecosystem,
+  readFile: (absolutePath: string) => Promise<string | null | undefined>,
+): Promise<VersionMap | undefined> {
+  for (const format of lockfileFormatsFor(ecosystem)) {
+    const text = await readFile(path.join(dir, format.file));
+    if (!text) continue;
+    const result = format.parse(text);
+    if (result) return result;
+  }
+  return undefined;
+}
+
+interface LockfileFormat {
+  file: string;
+  parse: (text: string) => VersionMap | undefined;
+}
+
+/**
+ * Every lockfile format `collectVersionsFrom` knows how to read, in the
+ * order they are tried. Node tries all three package managers in turn since
+ * a workspace declares no fixed choice; Python tries both because a project
+ * can be uv- or Poetry-managed with no marker outside the lockfile itself.
+ */
+function lockfileFormatsFor(ecosystem: Ecosystem): LockfileFormat[] {
   switch (ecosystem) {
     case 'node':
-      return (
-        (await npmLockVersions(dir, ctx)) ??
-        (await pnpmLockVersions(dir, ctx)) ??
-        (await yarnLockVersions(dir, ctx))
-      );
+      return [
+        { file: 'package-lock.json', parse: parseNpmLockVersions },
+        { file: 'pnpm-lock.yaml', parse: parsePnpmLockVersions },
+        { file: 'yarn.lock', parse: parseYarnLockVersions },
+      ];
     case 'cargo':
-      return cargoLockVersions(dir, ctx);
+      return [{ file: 'Cargo.lock', parse: parseCargoLockVersions }];
     case 'composer':
-      return composerLockVersions(dir, ctx);
+      return [{ file: 'composer.lock', parse: parseComposerLockVersions }];
     case 'python':
-      return pythonLockVersions(dir, ctx);
+      return [
+        { file: 'uv.lock', parse: parsePythonLockVersions },
+        { file: 'poetry.lock', parse: parsePythonLockVersions },
+      ];
     default:
-      return undefined;
+      // Go, Maven and Gradle: see `findDuplicateVersions`'s doc comment for
+      // why each is left out.
+      return [];
   }
 }
 
@@ -713,13 +757,7 @@ function addVersion(map: VersionMap, name: string, version: string): void {
   else map.set(name, new Set([version]));
 }
 
-async function npmLockVersions(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<VersionMap | undefined> {
-  const text = await ctx.readFile(path.join(dir, 'package-lock.json'));
-  if (!text) return undefined;
-
+function parseNpmLockVersions(text: string): VersionMap | undefined {
   try {
     const lock = JSON.parse(text) as {
       packages?: Record<string, { version?: string }>;
@@ -739,13 +777,7 @@ async function npmLockVersions(
   }
 }
 
-async function pnpmLockVersions(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<VersionMap | undefined> {
-  const text = await ctx.readFile(path.join(dir, 'pnpm-lock.yaml'));
-  if (!text) return undefined;
-
+function parsePnpmLockVersions(text: string): VersionMap | undefined {
   let doc: {
     packages?: Record<string, unknown>;
     snapshots?: Record<string, unknown>;
@@ -766,13 +798,7 @@ async function pnpmLockVersions(
   return versions.size > 0 ? versions : undefined;
 }
 
-async function yarnLockVersions(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<VersionMap | undefined> {
-  const text = await ctx.readFile(path.join(dir, 'yarn.lock'));
-  if (!text) return undefined;
-
+function parseYarnLockVersions(text: string): VersionMap | undefined {
   const versions: VersionMap = new Map();
   for (const block of text.split(/\n\s*\n/)) {
     const lines = block.split(/\r?\n/).filter((line) => line.trim() !== '');
@@ -795,13 +821,7 @@ async function yarnLockVersions(
   return versions.size > 0 ? versions : undefined;
 }
 
-async function cargoLockVersions(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<VersionMap | undefined> {
-  const text = await ctx.readFile(path.join(dir, 'Cargo.lock'));
-  if (!text) return undefined;
-
+function parseCargoLockVersions(text: string): VersionMap | undefined {
   try {
     const versions: VersionMap = new Map();
     for (const block of splitTomlPackageBlocks(text)) {
@@ -815,13 +835,7 @@ async function cargoLockVersions(
   }
 }
 
-async function composerLockVersions(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<VersionMap | undefined> {
-  const text = await ctx.readFile(path.join(dir, 'composer.lock'));
-  if (!text) return undefined;
-
+function parseComposerLockVersions(text: string): VersionMap | undefined {
   try {
     const lock = JSON.parse(text) as {
       packages?: Array<{ name: string; version?: string }>;
@@ -840,23 +854,71 @@ async function composerLockVersions(
   }
 }
 
-async function pythonLockVersions(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<VersionMap | undefined> {
-  for (const lockName of ['uv.lock', 'poetry.lock']) {
-    const text = await ctx.readFile(path.join(dir, lockName));
-    if (!text) continue;
-
-    const versions: VersionMap = new Map();
-    for (const block of splitTomlPackageBlocks(text)) {
-      const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
-      const version = /^version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
-      if (name && version) {
-        addVersion(versions, normalizePythonName(name), version);
-      }
+function parsePythonLockVersions(text: string): VersionMap | undefined {
+  const versions: VersionMap = new Map();
+  for (const block of splitTomlPackageBlocks(text)) {
+    const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+    const version = /^version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+    if (name && version) {
+      addVersion(versions, normalizePythonName(name), version);
     }
-    if (versions.size > 0) return versions;
   }
-  return undefined;
+  return versions.size > 0 ? versions : undefined;
+}
+
+/**
+ * Compares two lockfile version maps — typically "this ref" vs "the working
+ * tree" — and reports what changed. `undefined` on either side means the
+ * lockfile could not be read there (missing, or an unsupported ecosystem),
+ * distinguished from "read and found equal" the same way
+ * `DuplicateVersionResult.checked` does.
+ */
+export function diffLockfileVersions(
+  before: VersionMap | undefined,
+  after: VersionMap | undefined,
+): DependencyDiffResult {
+  if (!before || !after) {
+    return { checked: false, added: [], removed: [], changed: [] };
+  }
+
+  const added: DependencyDiffEntry[] = [];
+  const removed: DependencyDiffEntry[] = [];
+  const changed: DependencyDiffEntry[] = [];
+
+  const names = new Set([...before.keys(), ...after.keys()]);
+  for (const name of names) {
+    const beforeVersions = before.get(name);
+    const afterVersions = after.get(name);
+
+    if (!beforeVersions) {
+      added.push({
+        name,
+        before: undefined,
+        after: [...afterVersions!].sort(),
+      });
+      continue;
+    }
+    if (!afterVersions) {
+      removed.push({
+        name,
+        before: [...beforeVersions].sort(),
+        after: undefined,
+      });
+      continue;
+    }
+
+    const beforeSorted = [...beforeVersions].sort();
+    const afterSorted = [...afterVersions].sort();
+    if (beforeSorted.join(',') !== afterSorted.join(',')) {
+      changed.push({ name, before: beforeSorted, after: afterSorted });
+    }
+  }
+
+  const byName = (a: DependencyDiffEntry, b: DependencyDiffEntry) =>
+    a.name.localeCompare(b.name);
+  added.sort(byName);
+  removed.sort(byName);
+  changed.sort(byName);
+
+  return { checked: true, added, removed, changed };
 }

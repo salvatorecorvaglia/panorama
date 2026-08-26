@@ -374,4 +374,62 @@ describe('PanelManager message handling', () => {
       intercept.restore();
     }
   });
+
+  /*
+   * A dependency with no `meta` yet (details never fetched) has no
+   * repository to check, so this proves the message is wired end to end
+   * without ever reaching the network — the changelog fetch itself is
+   * covered by `changelog.test.ts`, which can script GitHub's response.
+   */
+  it('answers "requestChangelog" without a network call when no repository is known', async () => {
+    manager = makeManager();
+
+    const dep: Dependency = {
+      key: 'k',
+      name: 'demo-pkg',
+      ecosystem: 'node',
+      scope: 'prod',
+      declared: '^1.0.0',
+      installed: '1.0.0',
+      latest: '2.0.0',
+      updateKind: 'major',
+      vulnerabilities: [],
+      manifestPath: '/does/not/matter/package.json',
+      projectLabel: 'demo',
+    };
+    manager.setResult({
+      groups: [
+        {
+          label: 'demo',
+          manifestPath: '/does/not/matter/package.json',
+          ecosystem: 'node',
+          toolchain: 'npm',
+          dependencies: [dep],
+        },
+      ],
+      summary: {
+        totalDependencies: 1,
+        outdated: 1,
+        vulnerable: 0,
+        deprecated: 0,
+        stale: false,
+      },
+    });
+
+    const intercept = interceptNextPanel();
+    try {
+      manager.reveal();
+      const { receive, posted } = await intercept.ready;
+      receive({ type: 'ready' });
+      await waitForMessage(posted, 'state');
+
+      receive({ type: 'requestChangelog', depKey: 'k' });
+      const response = await waitForMessage(posted, 'changelogEntries');
+
+      assert.equal(response.depKey, 'k');
+      assert.equal(response.entries, undefined);
+    } finally {
+      intercept.restore();
+    }
+  });
 });

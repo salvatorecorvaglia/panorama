@@ -33,6 +33,8 @@ function renderDrawer(
     <DetailDrawer
       dep={dep()}
       why={undefined}
+      changelogEntries={undefined}
+      changelogLoaded={false}
       reveal="details"
       onClose={() => {}}
       onUpdate={() => {}}
@@ -62,6 +64,8 @@ describe('versions', () => {
       <DetailDrawer
         dep={dep({ installed: '18.0.0', wanted: '18.3.1', latest: '19.0.0' })}
         why={undefined}
+        changelogEntries={undefined}
+        changelogLoaded={false}
         reveal="details"
         onClose={() => {}}
         onUpdate={() => {}}
@@ -218,6 +222,99 @@ describe('links', () => {
   });
 });
 
+describe("what's changed", () => {
+  const withUpdateAndRepo = dep({
+    latest: '19.0.0',
+    updateKind: 'major',
+    meta: { name: 'react', repository: 'https://github.com/facebook/react' },
+  });
+
+  it('does not render for a package with no available update', () => {
+    renderDrawer({ dep: dep({ updateKind: 'none' }) });
+    expect(screen.queryByText(/What.s changed/i)).toBeNull();
+  });
+
+  it('does not render before a repository is known', () => {
+    renderDrawer({
+      dep: dep({ latest: '19.0.0', updateKind: 'major' }),
+    });
+    expect(screen.queryByText(/What.s changed/i)).toBeNull();
+  });
+
+  it('shows a loading state while the host has not answered yet', () => {
+    renderDrawer({
+      dep: withUpdateAndRepo,
+      changelogEntries: undefined,
+      changelogLoaded: false,
+    });
+    expect(screen.getByText(/What.s changed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Loading/i)).toBeInTheDocument();
+  });
+
+  it('hides the section once the host reports the repository is not on GitHub', () => {
+    renderDrawer({
+      dep: withUpdateAndRepo,
+      changelogEntries: undefined,
+      changelogLoaded: true,
+    });
+    expect(screen.queryByText(/What.s changed/i)).toBeNull();
+  });
+
+  it('says so when the host found no release notes for this update', () => {
+    renderDrawer({
+      dep: withUpdateAndRepo,
+      changelogEntries: [],
+      changelogLoaded: true,
+    });
+    expect(
+      screen.getByText(/No release notes found for this update/i),
+    ).toBeInTheDocument();
+  });
+
+  it('lists the fetched entries and opens one through the host', async () => {
+    renderDrawer({
+      dep: withUpdateAndRepo,
+      changelogEntries: [
+        {
+          version: 'v19.0.0',
+          title: 'React 19',
+          body: 'Highlights here',
+          publishedAt: '2026-01-01T00:00:00Z',
+          url: 'https://github.com/facebook/react/releases/tag/v19.0.0',
+        },
+      ],
+      changelogLoaded: true,
+    });
+
+    expect(screen.getByText('React 19')).toBeInTheDocument();
+    expect(screen.getByText('Highlights here')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'React 19' }));
+    expect(posted).toContainEqual({
+      type: 'openExternal',
+      url: 'https://github.com/facebook/react/releases/tag/v19.0.0',
+    });
+  });
+
+  it('falls back to the tag as a title when the release has none of its own', () => {
+    renderDrawer({
+      dep: withUpdateAndRepo,
+      changelogEntries: [
+        {
+          version: 'v19.0.0',
+          title: undefined,
+          body: '',
+          publishedAt: undefined,
+          url: 'https://github.com/facebook/react/releases/tag/v19.0.0',
+        },
+      ],
+      changelogLoaded: true,
+    });
+    expect(screen.getByRole('button', { name: 'v19.0.0' })).toBeInTheDocument();
+    expect(screen.getByText(/No description provided/i)).toBeInTheDocument();
+  });
+});
+
 describe('the why tree', () => {
   it('distinguishes resolving from having no answer', () => {
     const { rerender } = renderDrawer({ why: undefined });
@@ -227,6 +324,8 @@ describe('the why tree', () => {
       <DetailDrawer
         dep={dep()}
         why={{ roots: [], source: 'lockfile' }}
+        changelogEntries={undefined}
+        changelogLoaded={false}
         reveal="details"
         onClose={() => {}}
         onUpdate={() => {}}
@@ -249,6 +348,8 @@ describe('the why tree', () => {
       <DetailDrawer
         dep={dep()}
         why={{ roots, source: 'registry' }}
+        changelogEntries={undefined}
+        changelogLoaded={false}
         reveal="details"
         onClose={() => {}}
         onUpdate={() => {}}

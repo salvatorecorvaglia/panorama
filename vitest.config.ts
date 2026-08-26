@@ -53,6 +53,7 @@ export default defineConfig({
         'src/core/watcher.ts',
         'src/core/workspace.ts',
         'src/ui/dependencyMutator.ts',
+        'src/ui/gitDiff.ts',
         'src/ui/panelManager.ts',
         'src/ui/sidebarProvider.ts',
         'src/ui/terminalRunner.ts',

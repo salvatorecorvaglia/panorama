@@ -234,6 +234,42 @@ export interface LicenseSummary {
   groups: LicenseGroup[];
 }
 
+/** One GitHub release, standing in for a changelog entry. */
+export interface ChangelogEntry {
+  /** The release's tag name, verbatim — not necessarily a bare version. */
+  version: string;
+  publishedAt: string | undefined;
+  /** The release title, when it says more than the tag already does. */
+  title: string | undefined;
+  /** Markdown release notes, as GitHub returns them. */
+  body: string;
+  url: string;
+}
+
+/** A package resolved at a different version (or not at all) on either side
+ * of a dependency diff. */
+export interface DependencyDiffEntry {
+  name: string;
+  /** Undefined when the package is not present on that side of the diff. */
+  before: string[] | undefined;
+  after: string[] | undefined;
+}
+
+export interface DependencyDiffResult {
+  /** False when the lockfile could not be read on one or both sides. */
+  checked: boolean;
+  added: DependencyDiffEntry[];
+  removed: DependencyDiffEntry[];
+  changed: DependencyDiffEntry[];
+}
+
+/** One project's dependency diff, for the panel's aggregate view. */
+export interface ProjectDependencyDiff extends DependencyDiffResult {
+  manifestPath: string;
+  projectLabel: string;
+  ecosystem: Ecosystem;
+}
+
 export interface ScanSummary {
   totalDependencies: number;
   outdated: number;

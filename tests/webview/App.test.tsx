@@ -365,6 +365,86 @@ describe('detail metadata', () => {
       expect(screen.getAllByText('1.0 KB').length).toBeGreaterThan(0);
     });
   });
+
+  it('requests the changelog once a repository is known for an outdated package', async () => {
+    // `group()`'s react has updateKind "major", so a repository is the only
+    // missing ingredient.
+    renderLoaded();
+    await userEvent.click(screen.getByText('react'));
+
+    send({
+      type: 'depDetails',
+      depKey: 'react',
+      meta: { name: 'react', repository: 'https://github.com/facebook/react' },
+    });
+
+    expect(posted).toContainEqual({
+      type: 'requestChangelog',
+      depKey: 'react',
+    });
+  });
+
+  it('does not request a changelog for a package with no update', async () => {
+    renderLoaded([
+      {
+        ...group(),
+        dependencies: [
+          {
+            ...group().dependencies[0],
+            updateKind: 'none' as const,
+            latest: undefined,
+          },
+        ],
+      },
+    ]);
+    await userEvent.click(screen.getByText('react'));
+
+    send({
+      type: 'depDetails',
+      depKey: 'react',
+      meta: { name: 'react', repository: 'https://github.com/facebook/react' },
+    });
+
+    expect(
+      posted.filter(
+        (m) => (m as { type?: string }).type === 'requestChangelog',
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+describe('dependency diff', () => {
+  it('asks the host to compare when the toolbar button is clicked', async () => {
+    renderLoaded();
+    await userEvent.click(
+      screen.getByRole('button', { name: /Compare with/i }),
+    );
+    expect(posted).toContainEqual({ type: 'requestDependencyDiff' });
+  });
+
+  it('opens the panel once the host answers with a ref and results', async () => {
+    renderLoaded();
+    send({
+      type: 'dependencyDiff',
+      ref: 'origin/main',
+      results: [
+        {
+          manifestPath: '/p/package.json',
+          projectLabel: 'app',
+          ecosystem: 'node',
+          checked: true,
+          added: [{ name: 'left-pad', before: undefined, after: ['1.0.0'] }],
+          removed: [],
+          changed: [],
+        },
+      ],
+    });
+
+    expect(
+      screen.getByText(/Comparing with origin\/main/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText('left-pad')).toBeInTheDocument();
+  });
 });
 
 describe('selection', () => {

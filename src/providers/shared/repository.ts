@@ -54,6 +54,26 @@ export function normalizeRepositoryUrl(
 }
 
 /**
+ * Splits a normalised GitHub repository URL into owner/repo, for the GitHub
+ * Releases API. Undefined for every other forge — GitLab and Bitbucket have
+ * their own release APIs this does not attempt to speak.
+ */
+export function githubRepoFromUrl(
+  repository: string | undefined,
+): { owner: string; repo: string } | undefined {
+  if (!repository) return undefined;
+  try {
+    const url = new URL(repository);
+    if (url.hostname !== 'github.com') return undefined;
+    const [owner, repo] = url.pathname.replace(/^\//, '').split('/');
+    if (!owner || !repo) return undefined;
+    return { owner, repo };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Best-effort changelog link. For GitHub and GitLab the releases page is more
  * reliably present than a CHANGELOG file, so we prefer it.
  */

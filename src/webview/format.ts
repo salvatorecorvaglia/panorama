@@ -47,3 +47,15 @@ export function formatDownloads(downloads: number | undefined): string {
 export function updateClass(kind: UpdateKind): string {
   return `update--${kind === 'unknown' ? 'none' : kind}`;
 }
+
+/** An ISO timestamp as a short, locale-formatted date, or empty for none. */
+export function formatDate(iso: string | undefined): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}

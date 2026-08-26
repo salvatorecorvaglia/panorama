@@ -8,17 +8,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { HostMessage } from '../core/protocol.js';
 import type {
+  ChangelogEntry,
   Dependency,
   DepNode,
   DepScope,
   Ecosystem,
   LicenseSummary,
+  ProjectDependencyDiff,
   ProjectDuplicateVersions,
   ProjectGroup,
   ScanSummary,
   SearchResult,
 } from '../core/types.js';
 import { ALL_SCOPES, hasUpdate } from '../core/vocabulary.js';
+import { DependencyDiffPanel } from './DependencyDiffPanel.js';
 import { DepTable, type SortState } from './DepTable.js';
 import { DetailDrawer } from './DetailDrawer.js';
 import { DuplicatesPanel } from './DuplicatesPanel.js';
@@ -119,6 +122,15 @@ export function App() {
   const [whyByKey, setWhyByKey] = useState<
     Record<string, { roots: DepNode[]; source: 'lockfile' | 'registry' }>
   >({});
+  /**
+   * depKey -> the changelog entries fetched for it, or undefined when the
+   * host looked and found nothing to show. A key's mere presence (checked
+   * with `in`, not a truthiness test) is what tells "answered, nothing to
+   * show" apart from "not asked yet" — see `DetailDrawer`'s `changelogLoaded`.
+   */
+  const [changelogByKey, setChangelogByKey] = useState<
+    Record<string, ChangelogEntry[] | undefined>
+  >({});
 
   const [duplicatesOpen, setDuplicatesOpen] = useState(false);
   const [duplicatesLoading, setDuplicatesLoading] = useState(false);
@@ -130,6 +142,20 @@ export function App() {
   const [licensesLoading, setLicensesLoading] = useState(false);
   const [licenseSummary, setLicenseSummary] = useState<
     LicenseSummary | undefined
+  >();
+
+  /*
+   * No loading flag: the wait for a ref is a native quick-pick, which is
+   * already its own visible "waiting for you" — a webview spinner under it
+   * would just be a second one. The panel itself only ever opens once a
+   * result lands, so cancelling the picker leaves nothing stuck open.
+   */
+  const [dependencyDiffOpen, setDependencyDiffOpen] = useState(false);
+  const [dependencyDiffRef, setDependencyDiffRef] = useState<
+    string | undefined
+  >();
+  const [dependencyDiffResults, setDependencyDiffResults] = useState<
+    ProjectDependencyDiff[] | undefined
   >();
 
   const [installOpen, setInstallOpen] = useState(false);
@@ -281,6 +307,7 @@ export function App() {
            * looks stale. The drawer re-requests on demand.
            */
           setWhyByKey({});
+          setChangelogByKey({});
           break;
         }
 
@@ -309,6 +336,14 @@ export function App() {
               (metaVersionsRef.current.get(dep.key) ?? 0) + 1,
             );
             setRenderTick((tick) => tick + 1);
+            /*
+             * Only once the repository is known, and only for a package that
+             * actually has an update to preview — a package already current
+             * has no "between" for the changelog to describe.
+             */
+            if (dep.meta.repository && hasUpdate(dep)) {
+              post({ type: 'requestChangelog', depKey: dep.key });
+            }
             break;
           }
           break;
@@ -354,6 +389,19 @@ export function App() {
         case 'licenseSummary':
           setLicenseSummary(message.summary);
           setLicensesLoading(false);
+          break;
+
+        case 'changelogEntries':
+          setChangelogByKey((current) => ({
+            ...current,
+            [message.depKey]: message.entries,
+          }));
+          break;
+
+        case 'dependencyDiff':
+          setDependencyDiffRef(message.ref);
+          setDependencyDiffResults(message.results);
+          setDependencyDiffOpen(true);
           break;
 
         case 'error':
@@ -554,6 +602,15 @@ export function App() {
     />
   ) : null;
 
+  const dependencyDiffPanel = dependencyDiffOpen ? (
+    <DependencyDiffPanel
+      gitRef={dependencyDiffRef}
+      results={dependencyDiffResults}
+      onCompareAgain={() => post({ type: 'requestDependencyDiff' })}
+      onClose={() => setDependencyDiffOpen(false)}
+    />
+  ) : null;
+
   const searchPanel = installOpen ? (
     <SearchInstall
       groups={groups}
@@ -681,6 +738,7 @@ export function App() {
         onToggleDuplicates={() => setDuplicatesOpen((open) => !open)}
         licensesOpen={licensesOpen}
         onToggleLicenses={() => setLicensesOpen((open) => !open)}
+        onCompareDependencies={() => post({ type: 'requestDependencyDiff' })}
         onExportReport={() => post({ type: 'exportReport' })}
         onRefresh={() => post({ type: 'refresh' })}
         onCheckUpdates={() => post({ type: 'checkUpdates' })}
@@ -697,6 +755,7 @@ export function App() {
       {searchPanel}
       {duplicatesPanel}
       {licensesPanel}
+      {dependencyDiffPanel}
 
       <div className="app__body">
         <div className="app__main">
@@ -729,6 +788,8 @@ export function App() {
           <DetailDrawer
             dep={selected}
             why={whyByKey[selected.key]}
+            changelogEntries={changelogByKey[selected.key]}
+            changelogLoaded={selected.key in changelogByKey}
             reveal={revealSection}
             onClose={() => setSelectedKey(undefined)}
             onUpdate={handleUpdate}

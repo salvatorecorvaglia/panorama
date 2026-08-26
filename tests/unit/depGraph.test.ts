@@ -8,6 +8,8 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  collectVersionsFrom,
+  diffLockfileVersions,
   explainDependency,
   findDuplicateVersions,
 } from '../../src/core/depGraph.js';
@@ -546,5 +548,106 @@ version = "3.0.0"
       expect(result.checked).toBe(false);
       expect(result.groups).toEqual([]);
     }
+  });
+});
+
+describe('collectVersionsFrom', () => {
+  it('reads through a caller-supplied reader instead of ProviderContext', async () => {
+    const files: Record<string, string> = {
+      '/p/package-lock.json': JSON.stringify({
+        packages: {
+          '': { dependencies: { chalk: '^4.0.0' } },
+          'node_modules/chalk': { version: '4.1.2' },
+        },
+      }),
+    };
+    const versions = await collectVersionsFrom(
+      '/p',
+      'node',
+      async (absolutePath) => files[absolutePath] ?? null,
+    );
+    expect(versions?.get('chalk')).toEqual(new Set(['4.1.2']));
+  });
+
+  it('returns undefined when the reader has nothing for any candidate file', async () => {
+    const versions = await collectVersionsFrom(
+      '/p',
+      'node',
+      async () => undefined,
+    );
+    expect(versions).toBeUndefined();
+  });
+});
+
+describe('diffLockfileVersions', () => {
+  it('reports unchecked when either side could not be read', () => {
+    const map = new Map([['a', new Set(['1.0.0'])]]);
+    expect(diffLockfileVersions(undefined, map)).toEqual({
+      checked: false,
+      added: [],
+      removed: [],
+      changed: [],
+    });
+    expect(diffLockfileVersions(map, undefined)).toEqual({
+      checked: false,
+      added: [],
+      removed: [],
+      changed: [],
+    });
+  });
+
+  it('reports a package present only on the "after" side as added', () => {
+    const before = new Map();
+    const after = new Map([['react', new Set(['18.0.0'])]]);
+    const result = diffLockfileVersions(before, after);
+    expect(result.checked).toBe(true);
+    expect(result.added).toEqual([
+      { name: 'react', before: undefined, after: ['18.0.0'] },
+    ]);
+    expect(result.removed).toEqual([]);
+    expect(result.changed).toEqual([]);
+  });
+
+  it('reports a package present only on the "before" side as removed', () => {
+    const before = new Map([['left-pad', new Set(['1.0.0'])]]);
+    const after = new Map();
+    const result = diffLockfileVersions(before, after);
+    expect(result.removed).toEqual([
+      { name: 'left-pad', before: ['1.0.0'], after: undefined },
+    ]);
+  });
+
+  it('reports a version change for a package present on both sides', () => {
+    const before = new Map([['react', new Set(['18.0.0'])]]);
+    const after = new Map([['react', new Set(['19.0.0'])]]);
+    const result = diffLockfileVersions(before, after);
+    expect(result.changed).toEqual([
+      { name: 'react', before: ['18.0.0'], after: ['19.0.0'] },
+    ]);
+  });
+
+  it('reports nothing for a package resolved the same way on both sides', () => {
+    const before = new Map([['react', new Set(['18.0.0'])]]);
+    const after = new Map([['react', new Set(['18.0.0'])]]);
+    const result = diffLockfileVersions(before, after);
+    expect(result.added).toEqual([]);
+    expect(result.removed).toEqual([]);
+    expect(result.changed).toEqual([]);
+  });
+
+  it('treats an unordered version set as equal regardless of insertion order', () => {
+    const before = new Map([['a', new Set(['1.0.0', '2.0.0'])]]);
+    const after = new Map([['a', new Set(['2.0.0', '1.0.0'])]]);
+    expect(diffLockfileVersions(before, after).changed).toEqual([]);
+  });
+
+  it('sorts every bucket alphabetically by name', () => {
+    const before = new Map();
+    const after = new Map([
+      ['zeta', new Set(['1.0.0'])],
+      ['alpha', new Set(['1.0.0'])],
+    ]);
+    const result = diffLockfileVersions(before, after);
+    expect(result.added.map((entry) => entry.name)).toEqual(['alpha', 'zeta']);
   });
 });

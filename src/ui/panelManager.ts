@@ -10,7 +10,13 @@
 
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { explainDependency, findDuplicateVersions } from '../core/depGraph.js';
+import { fetchChangelog } from '../core/changelog.js';
+import {
+  collectVersionsFrom,
+  diffLockfileVersions,
+  explainDependency,
+  findDuplicateVersions,
+} from '../core/depGraph.js';
 import { findDeclaration } from '../core/findDeclaration.js';
 import { buildLicenseSummary } from '../core/licensePolicy.js';
 import type { HostMessage, WebviewMessage } from '../core/protocol.js';
@@ -27,6 +33,7 @@ import { validateVersion } from '../providers/provider.js';
 import { providerFor, providerForPath } from '../providers/registry.js';
 import { mapWithConcurrency } from '../providers/shared/concurrency.js';
 import { DependencyMutator } from './dependencyMutator.js';
+import { findSingleRepository, gitFileReader, pickRef } from './gitDiff.js';
 import { TerminalRunner } from './terminalRunner.js';
 import {
   buildContentSecurityPolicy,
@@ -281,6 +288,14 @@ export class PanelManager implements vscode.Disposable {
 
       case 'requestLicenses':
         await this.handleLicenses();
+        return;
+
+      case 'requestChangelog':
+        await this.handleChangelog(message.depKey);
+        return;
+
+      case 'requestDependencyDiff':
+        await this.handleDependencyDiff();
         return;
 
       case 'openExternal':
@@ -779,6 +794,80 @@ export class PanelManager implements vscode.Disposable {
       this.post({ type: 'licenseSummary', summary });
     } catch (error) {
       if (controller.signal.aborted) return;
+      this.post({ type: 'error', message: describeError(error) });
+    }
+  }
+
+  /**
+   * GitHub releases between a dependency's installed and target version.
+   *
+   * `entries: undefined` covers "not a GitHub repository" and "details
+   * have not been fetched yet, so there is no repository to check" — both
+   * are "nothing to show", not a failure, so neither posts an `error`.
+   */
+  private async handleChangelog(depKey: string): Promise<void> {
+    const found = this.findDependency(depKey);
+    if (!found) return;
+
+    const repository = found.dep.meta?.repository;
+    const target = found.dep.latest;
+    if (!repository || !target) {
+      this.post({ type: 'changelogEntries', depKey, entries: undefined });
+      return;
+    }
+
+    try {
+      const entries = await fetchChangelog(
+        repository,
+        found.dep.installed,
+        target,
+        this.ctx,
+      );
+      this.post({ type: 'changelogEntries', depKey, entries });
+    } catch (error) {
+      this.post({ type: 'error', message: describeError(error) });
+    }
+  }
+
+  /**
+   * Compares every project's lockfile against a Git ref the user picks.
+   *
+   * The ref picker is a native quick-pick, not webview UI — the same reason
+   * `panorama.updateAll`'s project picker is native — so this needs no
+   * request/response round trip just to ask which ref, only to report back
+   * once one is chosen (or nothing at all, if the picker was dismissed).
+   */
+  private async handleDependencyDiff(): Promise<void> {
+    const found = await findSingleRepository();
+    if (!found.ok) {
+      this.post({ type: 'notice', message: found.message });
+      return;
+    }
+
+    const ref = await pickRef(found.repository);
+    if (!ref) return;
+
+    try {
+      const readAtRef = gitFileReader(found.repository, ref);
+      const results = await Promise.all(
+        this.latest.groups.map(async (group) => {
+          const dir = path.dirname(group.manifestPath);
+          const [before, after] = await Promise.all([
+            collectVersionsFrom(dir, group.ecosystem, readAtRef),
+            collectVersionsFrom(dir, group.ecosystem, (absolutePath) =>
+              this.ctx.readFile(absolutePath),
+            ),
+          ]);
+          return {
+            manifestPath: group.manifestPath,
+            projectLabel: group.label,
+            ecosystem: group.ecosystem,
+            ...diffLockfileVersions(before, after),
+          };
+        }),
+      );
+      this.post({ type: 'dependencyDiff', ref, results });
+    } catch (error) {
       this.post({ type: 'error', message: describeError(error) });
     }
   }

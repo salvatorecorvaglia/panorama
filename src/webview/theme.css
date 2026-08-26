@@ -789,6 +789,37 @@ button.danger.ghost {
   word-break: break-word;
 }
 
+.changelog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--panorama-space-4);
+  /* Long release notes should scroll within the drawer, not push the rest of
+     it out of reach. */
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.changelog__entry {
+  border-left: 2px solid var(--vscode-panel-border);
+  padding-left: var(--panorama-space-3);
+}
+
+.changelog__entry-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--panorama-space-2);
+  font-weight: 600;
+}
+
+.changelog__entry-body {
+  margin-top: var(--panorama-space-1);
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--panorama-text-md);
+  /* Release notes are plain text, verbatim from the maintainer — this is
+     what lets their own line breaks and lists still read as such. */
+  white-space: pre-wrap;
+}
+
 a,
 .link {
   color: var(--vscode-textLink-foreground);

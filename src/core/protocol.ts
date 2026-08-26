@@ -6,11 +6,13 @@
  */
 
 import type {
+  ChangelogEntry,
   DepNode,
   DepScope,
   Ecosystem,
   LicenseSummary,
   PackageMeta,
+  ProjectDependencyDiff,
   ProjectDuplicateVersions,
   ProjectGroup,
   ScanSummary,
@@ -82,6 +84,14 @@ export type WebviewMessage =
    * only when the user opens the panel or asks it to refresh.
    */
   | { type: 'requestLicenses' }
+  /** GitHub releases between a dependency's installed and target version. */
+  | { type: 'requestChangelog'; depKey: string }
+  /**
+   * Compares every project's lockfile against a Git ref the user picks from
+   * a native quick-pick — there is no webview form for ref selection, the
+   * same reasoning `panorama.updateAll`'s project quick-pick already follows.
+   */
+  | { type: 'requestDependencyDiff' }
   | { type: 'exportReport' }
   | { type: 'openExternal'; url: string }
   | { type: 'openManifest'; manifestPath: string; packageName?: string };
@@ -118,6 +128,22 @@ export type HostMessage =
     }
   | { type: 'duplicateVersions'; results: ProjectDuplicateVersions[] }
   | { type: 'licenseSummary'; summary: LicenseSummary }
+  /**
+   * `entries` is undefined when the dependency's repository is not on
+   * GitHub — nothing to show, not a failure; an `error` message covers an
+   * actual fetch failure instead.
+   */
+  | {
+      type: 'changelogEntries';
+      depKey: string;
+      entries: ChangelogEntry[] | undefined;
+    }
+  | {
+      type: 'dependencyDiff';
+      /** The Git ref everything was compared against, for the panel's heading. */
+      ref: string;
+      results: ProjectDependencyDiff[];
+    }
   | { type: 'error'; message: string }
   | { type: 'notice'; message: string }
   /** Opens the registry search UI — fired by the `panorama.searchInstall` command. */
