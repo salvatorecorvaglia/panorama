@@ -138,9 +138,12 @@ function buildMarkdownReport(
   return lines.join('\n');
 }
 
-/** Escapes the one character that would break a Markdown table cell. */
+/** Escapes characters that would break a Markdown table cell. */
 function escapeCell(value: string): string {
-  return value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, ' ');
 }
 
 function buildJsonReport(

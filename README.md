@@ -12,17 +12,21 @@
 - ⚡ **Panel-First Interface**:
   - **React Webview Panel** (`panorama.open`): Interactive, virtualized UI built with React, Vite, and TanStack Virtual for deep dependency analysis, search, sorting, and filtering. This is where dependencies are read and acted on.
   - **Activity Bar View** (`panorama.sidebar`): A compact launcher for the panel. Its title bar carries the toolbar actions — open, search, check updates, refresh and update all — so they are one click away without the panel being open.
-- 🛡️ **Security Vulnerability Audits**: Automated security scans powered by [OSV.dev](https://osv.dev) to detect known CVEs and advisories affecting your direct and transitive dependencies.
-- 🔄 **Smart Update Checks & One-Click Upgrades**: Highlights outdated packages with semver diff indicators (`major`, `minor`, `patch`) and updates dependencies directly from the interface.
+  - **Inline CodeLenses**: Manifest files show a CodeLens above each dependency with an available update and/or known vulnerabilities, so status is visible without opening the panel — clicking one jumps straight to that dependency's details.
+- 🛡️ **Security Vulnerability Audits**: Automated security scans powered by [OSV.dev](https://osv.dev) to detect known CVEs and advisories affecting your direct and transitive dependencies, surfaced both in the panel and as Problems-panel diagnostics on open manifest files.
+- 🔄 **Smart Update Checks & One-Click Upgrades**: Highlights outdated packages with semver diff indicators (`major`, `minor`, `patch`) and updates dependencies directly from the interface. The detail drawer shows GitHub release notes ("What's Changed") between the installed and target version before you upgrade.
+- 🧬 **Duplicate Version Detection**: A dedicated panel checks each project's lockfile for packages resolved at more than one version at once (npm, pnpm, yarn, Cargo, Composer, poetry/uv).
+- ⚖️ **License Metadata & Policy**: Registry-reported license info per package, plus a "License summary" panel that groups every dependency by license and flags violations of configurable allow/deny lists.
+- 🔀 **Compare Dependencies With a Branch**: Pick a Git ref and see what every project's lockfile would add, remove, or change versions on relative to the working tree — a PR's or branch's dependency impact at a glance.
+- 📤 **Export Dependency Report**: Write the current scan — outdated packages, known vulnerabilities, and duplicate versions — to a Markdown or JSON file for sharing outside the editor.
 - 📏 **Package Size Tracking**: Tracks unpacked size or download size for packages across Node (npm), Rust (Cargo), and Python (PyPI) registries.
-
 - 🔍 **Registry Search & Package Installation**: Search public registries (npm, PyPI, Crates.io, Packagist, Maven Central) and install packages into your manifests without leaving VS Code.
 - 🌲 **"Why Is This Installed?" Dependency Inspector**: Inspect transitive dependencies and trace exact resolution paths.
 - 📁 **Monorepo & Multi-Root Support**: Automatically discovers and aggregates nested manifest files across complex monorepos and multi-root workspaces with `.gitignore` and glob exclusion awareness.
 - ♿ **Accessible & Keyboard-First UI**: Roving `tabindex` table navigation, global `Ctrl+F` / `Cmd+F` search shortcut, dismissable overlays (`Escape` key & backdrop dismissal for drawers/modals), ARIA live progress indicators, and high-contrast theme focus rings.
 - 🚀 **High Performance & Shared Caching**: Built-in HTTP caching layer across registry queries and concurrent background manifest scanning.
 - 🔔 **Error Notification Queue**: Queued toast notification system for managing host and registry errors without silent dropping.
-- ⚙️ **Custom Registries & Proxy Overrides**: Configure private registries per ecosystem (npm, PyPI, Crates.io, Packagist, Go Proxy, Maven Central) and custom `User-Agent` contact headers. Registry overrides are ignored in untrusted workspaces.
+- ⚙️ **Custom Registries & Proxy Overrides**: Configure private registries per ecosystem (npm, PyPI, Crates.io, Packagist, Go Proxy, Maven Central), including authenticated overrides via an environment-variable-held bearer token, and custom `User-Agent` contact headers. Registry overrides are ignored in untrusted workspaces.
 
 ---
 

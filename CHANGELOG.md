@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-08-26
+
 ### Added
 
 - **Inline Update & Vulnerability CodeLenses**: Manifest files (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `composer.json`, `pom.xml`, `build.gradle(.kts)`) now show a CodeLens above each dependency with an available update and/or known vulnerabilities, so that status is visible without opening the Panorama panel. Clicking a lens opens the panel on that dependency's details.
@@ -199,7 +201,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First implementation of Panorama.
 
-[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.2.0...v2.3.0
