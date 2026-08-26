@@ -75,6 +75,17 @@ interface PackumentVersion {
   homepage?: string;
   repository?: string | { url?: string };
   author?: string | { name?: string };
+  /** Modern packages report a bare SPDX string; old ones a `{ type }` object. */
+  license?: string | { type?: string };
+  /** Older still: an array of `{ type }`, from before `license` was singular. */
+  licenses?: Array<{ type?: string }>;
+}
+
+/** Every shape npm has used for a package's license, oldest first. */
+function licenseFromPackument(version: PackumentVersion): string | undefined {
+  if (typeof version.license === 'string') return version.license;
+  if (version.license?.type) return version.license.type;
+  return version.licenses?.[0]?.type;
 }
 
 export class NodeProvider implements EcosystemProvider {
@@ -369,6 +380,7 @@ export class NodeProvider implements EcosystemProvider {
           typeof version.author === 'string'
             ? version.author
             : version.author?.name,
+        license: licenseFromPackument(version),
       };
     });
   }

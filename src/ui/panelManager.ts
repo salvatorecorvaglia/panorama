@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { explainDependency, findDuplicateVersions } from '../core/depGraph.js';
 import { findDeclaration } from '../core/findDeclaration.js';
+import { buildLicenseSummary } from '../core/licensePolicy.js';
 import type { HostMessage, WebviewMessage } from '../core/protocol.js';
 import type { Scanner, ScanResult } from '../core/scanner.js';
 import type {
@@ -24,6 +25,7 @@ import { hasUpdate } from '../core/vocabulary.js';
 import type { ProviderContext } from '../providers/provider.js';
 import { validateVersion } from '../providers/provider.js';
 import { providerFor, providerForPath } from '../providers/registry.js';
+import { mapWithConcurrency } from '../providers/shared/concurrency.js';
 import { DependencyMutator } from './dependencyMutator.js';
 import { TerminalRunner } from './terminalRunner.js';
 import {
@@ -47,6 +49,8 @@ export class PanelManager implements vscode.Disposable {
   private readonly searches = new Map<string, AbortController>();
   /** The in-flight "why is this installed" resolution, if any. */
   private whyRequest: AbortController | undefined;
+  /** The in-flight workspace-wide license check, if any. */
+  private licenseRequest: AbortController | undefined;
   private readonly terminal = new TerminalRunner();
   private busy = false;
   /** False between creating a panel and the React app announcing itself. */
@@ -273,6 +277,10 @@ export class PanelManager implements vscode.Disposable {
 
       case 'requestDuplicates':
         await this.handleDuplicates();
+        return;
+
+      case 'requestLicenses':
+        await this.handleLicenses();
         return;
 
       case 'openExternal':
@@ -716,6 +724,61 @@ export class PanelManager implements vscode.Disposable {
       );
       this.post({ type: 'duplicateVersions', results });
     } catch (error) {
+      this.post({ type: 'error', message: describeError(error) });
+    }
+  }
+
+  /**
+   * Fetches license metadata for every unique package across the workspace
+   * and groups them against the configured allow/deny list.
+   *
+   * Unlike `handleDuplicates` this does reach the network — once per unique
+   * package — so, like `handleWhy`, a second request supersedes the first
+   * rather than letting both race to post a result.
+   */
+  private async handleLicenses(): Promise<void> {
+    this.licenseRequest?.abort();
+    const controller = new AbortController();
+    this.licenseRequest = controller;
+
+    try {
+      // Keyed by ecosystem+name so a package several projects share is only
+      // ever fetched once, regardless of how many manifests declare it.
+      const unique = new Map<string, { name: string; ecosystem: Ecosystem }>();
+      for (const group of this.latest.groups) {
+        for (const dep of group.dependencies) {
+          unique.set(`${dep.ecosystem}::${dep.name}`, {
+            name: dep.name,
+            ecosystem: dep.ecosystem,
+          });
+        }
+      }
+
+      const packages: Array<{ name: string; license: string | undefined }> = [];
+      await mapWithConcurrency([...unique.values()], 6, async (entry) => {
+        if (controller.signal.aborted) return;
+        try {
+          const meta = await providerFor(entry.ecosystem).fetchMetadata(
+            entry.name,
+            this.ctx,
+            controller.signal,
+          );
+          packages.push({ name: entry.name, license: meta?.license });
+        } catch {
+          packages.push({ name: entry.name, license: undefined });
+        }
+      });
+
+      if (controller.signal.aborted) return;
+
+      const config = vscode.workspace.getConfiguration('panorama');
+      const summary = buildLicenseSummary(packages, {
+        allow: config.get<string[]>('licenseAllowList', []),
+        deny: config.get<string[]>('licenseDenyList', []),
+      });
+      this.post({ type: 'licenseSummary', summary });
+    } catch (error) {
+      if (controller.signal.aborted) return;
       this.post({ type: 'error', message: describeError(error) });
     }
   }

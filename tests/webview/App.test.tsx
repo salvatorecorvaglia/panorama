@@ -270,6 +270,74 @@ describe('duplicate versions', () => {
   });
 });
 
+describe('license summary', () => {
+  it('requests a check when the panel opens and shows what comes back', async () => {
+    renderLoaded();
+    await userEvent.click(screen.getByRole('button', { name: /Licenses/i }));
+    expect(posted).toContainEqual({ type: 'requestLicenses' });
+
+    send({
+      type: 'licenseSummary',
+      summary: {
+        groups: [{ license: 'MIT', packageNames: ['react'], flagged: false }],
+      },
+    });
+
+    const panel = screen.getByRole('region', { name: /License summary/i });
+    expect(within(panel).getByText('MIT')).toBeInTheDocument();
+    expect(within(panel).getByText('react')).toBeInTheDocument();
+  });
+
+  it('does not re-check automatically when a new scan lands', async () => {
+    // Unlike duplicate versions, this reaches the network per package, so a
+    // rescan must not silently trigger a fresh round of registry calls.
+    renderLoaded();
+    await userEvent.click(screen.getByRole('button', { name: /Licenses/i }));
+    const before = posted.length;
+
+    send({ type: 'state', groups: [group()], summary: EMPTY_SUMMARY });
+
+    expect(posted.length).toBe(before);
+  });
+
+  it('re-checks when Refresh is clicked', async () => {
+    renderLoaded();
+    await userEvent.click(screen.getByRole('button', { name: /Licenses/i }));
+    // The Refresh button is disabled while a check is in flight, so the
+    // first (loading) response has to land before it can be clicked again.
+    send({ type: 'licenseSummary', summary: { groups: [] } });
+    const before = posted.length;
+
+    // Scoped to the panel: the main toolbar has its own "Refresh" button
+    // with the same accessible name, for rescanning manifests instead.
+    const panel = screen.getByRole('region', { name: /License summary/i });
+    await userEvent.click(
+      within(panel).getByRole('button', { name: /^Refresh$/i }),
+    );
+
+    expect(posted.length).toBeGreaterThan(before);
+    expect(posted.at(-1)).toEqual({ type: 'requestLicenses' });
+  });
+
+  it('flags a license the policy denies', async () => {
+    renderLoaded();
+    await userEvent.click(screen.getByRole('button', { name: /Licenses/i }));
+    send({
+      type: 'licenseSummary',
+      summary: {
+        groups: [
+          { license: 'GPL-3.0', packageNames: ['copyleft-pkg'], flagged: true },
+        ],
+      },
+    });
+
+    expect(screen.getByText(/flagged/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/uses a license your policy flags/i),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('export report', () => {
   it('asks the host to export when the toolbar button is clicked', async () => {
     renderLoaded();

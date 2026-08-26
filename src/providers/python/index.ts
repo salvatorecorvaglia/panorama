@@ -56,8 +56,35 @@ interface PyPiResponse {
     author?: string;
     project_urls?: Record<string, string>;
     requires_dist?: string[];
+    /** Free text — a full license's worth, in the worst case — not an identifier. */
+    license?: string;
+    /** `"License :: OSI Approved :: MIT License"` and the like. */
+    classifiers?: string[];
   };
   urls?: Array<{ size?: number; packagetype?: string }>;
+}
+
+/**
+ * PyPI's `info.license` is free text a maintainer typed by hand — some paste
+ * the entire license body into it — so it is trusted only when it is short
+ * enough to plausibly be a name. `classifiers` is a controlled vocabulary and
+ * tried first for that reason; its trailing segment is the readable part
+ * (`"License :: OSI Approved :: MIT License"` -> `"MIT License"`).
+ */
+function licenseFromPyPi(info: PyPiResponse['info']): string | undefined {
+  const classifier = info.classifiers?.find((entry) =>
+    entry.startsWith('License ::'),
+  );
+  if (classifier) {
+    const parts = classifier.split('::').map((part) => part.trim());
+    const last = parts[parts.length - 1];
+    if (last && last !== 'OSI Approved') return last;
+  }
+
+  const raw = info.license?.trim();
+  if (raw && raw.length <= 40 && !raw.includes('\n')) return raw;
+
+  return undefined;
 }
 
 /** PEP 691 simple index — the closest thing PyPI has to a package list. */
@@ -405,6 +432,7 @@ export class PythonProvider implements EcosystemProvider {
           ? `Yanked from PyPI${response.info.yanked_reason ? `: ${response.info.yanked_reason}` : ''}`
           : undefined,
         author: response.info.author,
+        license: licenseFromPyPi(response.info),
       };
     });
   }

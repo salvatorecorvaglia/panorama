@@ -51,6 +51,8 @@ interface CrateResponse {
     num: string;
     yanked: boolean;
     crate_size?: number;
+    /** An SPDX expression, e.g. `"MIT OR Apache-2.0"`. */
+    license?: string;
   }>;
 }
 
@@ -218,6 +220,7 @@ export class CargoProvider implements EcosystemProvider {
         changelogUrl: changelogUrlFor(repository),
         sizeBytes: newest?.crate_size,
         downloads: response.crate.downloads,
+        license: newest?.license,
       };
     });
   }

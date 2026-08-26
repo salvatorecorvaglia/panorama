@@ -9,6 +9,7 @@ import type {
   DepNode,
   DepScope,
   Ecosystem,
+  LicenseSummary,
   PackageMeta,
   ProjectDuplicateVersions,
   ProjectGroup,
@@ -71,6 +72,16 @@ export type WebviewMessage =
    * to resolve the way a mutating action like `updateAll` has.
    */
   | { type: 'requestDuplicates' }
+  /**
+   * Fetches license metadata for every unique package across the workspace
+   * and groups them against `panorama.licenseAllowList`/`licenseDenyList`.
+   *
+   * Unlike `requestDuplicates` this does reach the network — once per unique
+   * package, cached the same as any other metadata fetch — so unlike the
+   * duplicate-version check it is not re-run automatically on every rescan,
+   * only when the user opens the panel or asks it to refresh.
+   */
+  | { type: 'requestLicenses' }
   | { type: 'exportReport' }
   | { type: 'openExternal'; url: string }
   | { type: 'openManifest'; manifestPath: string; packageName?: string };
@@ -106,6 +117,7 @@ export type HostMessage =
       source: 'lockfile' | 'registry';
     }
   | { type: 'duplicateVersions'; results: ProjectDuplicateVersions[] }
+  | { type: 'licenseSummary'; summary: LicenseSummary }
   | { type: 'error'; message: string }
   | { type: 'notice'; message: string }
   /** Opens the registry search UI — fired by the `panorama.searchInstall` command. */

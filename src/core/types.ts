@@ -98,6 +98,13 @@ export interface PackageMeta {
   author?: string;
   /** Weekly/recent downloads, where the registry reports it. */
   downloads?: number;
+  /**
+   * The license identifier as the registry reports it — usually but not
+   * always a valid SPDX expression, since registries do not enforce the
+   * grammar. Absence means the registry did not report one, not that the
+   * package is unlicensed.
+   */
+  license?: string;
 }
 
 export interface Dependency {
@@ -212,6 +219,19 @@ export interface ProjectDuplicateVersions extends DuplicateVersionResult {
   manifestPath: string;
   projectLabel: string;
   ecosystem: Ecosystem;
+}
+
+/** Every package sharing one license, for the workspace-wide license summary. */
+export interface LicenseGroup {
+  /** `undefined` groups every package Panorama could not attribute a license to. */
+  license: string | undefined;
+  packageNames: string[];
+  /** True when this license fails the configured allow/deny policy. */
+  flagged: boolean;
+}
+
+export interface LicenseSummary {
+  groups: LicenseGroup[];
 }
 
 export interface ScanSummary {

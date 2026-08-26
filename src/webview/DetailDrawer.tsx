@@ -177,6 +177,12 @@ export function DetailDrawer({
         <dl>
           <dt>Size</dt>
           <dd>{formatBytes(dep.meta?.sizeBytes)}</dd>
+          {dep.meta?.license && (
+            <>
+              <dt>License</dt>
+              <dd>{dep.meta.license}</dd>
+            </>
+          )}
           {dep.meta?.author && (
             <>
               <dt>Author</dt>

@@ -71,6 +71,8 @@ interface P2Response {
       homepage?: string;
       source?: { url?: string };
       abandoned?: boolean | string;
+      /** An SPDX identifier per declared license, e.g. `["MIT"]`. */
+      license?: string[];
     }>
   >;
 }
@@ -237,6 +239,9 @@ export class ComposerProvider implements EcosystemProvider {
             : typeof latest.abandoned === 'string'
               ? `Abandoned — use ${latest.abandoned} instead`
               : 'This package is abandoned',
+        license: latest.license?.length
+          ? latest.license.join(' OR ')
+          : undefined,
       };
     });
   }

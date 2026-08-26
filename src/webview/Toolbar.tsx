@@ -26,6 +26,8 @@ interface Props {
   installOpen: boolean;
   onToggleDuplicates?: () => void;
   duplicatesOpen?: boolean;
+  onToggleLicenses?: () => void;
+  licensesOpen?: boolean;
   onExportReport?: () => void;
   /** Lets the app put the caret here from a keyboard shortcut. */
   filterRef?: Ref<HTMLInputElement>;
@@ -45,6 +47,8 @@ export function Toolbar({
   installOpen,
   onToggleDuplicates,
   duplicatesOpen = false,
+  onToggleLicenses,
+  licensesOpen = false,
   onExportReport,
   filterRef,
 }: Props) {
@@ -221,6 +225,18 @@ export function Toolbar({
             title="Find packages resolved at more than one version at once"
           >
             <Icon name="layers" /> Duplicate versions
+          </button>
+        )}
+        {onToggleLicenses && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={onToggleLicenses}
+            aria-expanded={licensesOpen}
+            aria-controls="panorama-licenses-panel"
+            title="Check every package's license against your allow/deny list"
+          >
+            <Icon name="law" /> Licenses
           </button>
         )}
         <button

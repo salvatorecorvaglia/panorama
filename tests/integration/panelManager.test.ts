@@ -348,4 +348,30 @@ describe('PanelManager message handling', () => {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
   });
+
+  /*
+   * "requestLicenses" fetches each package's metadata over the network, which
+   * this suite cannot exercise — CI may have no egress at all. An empty
+   * result still proves the message is wired end to end without a single
+   * registry call, since there is nothing to fetch.
+   */
+  it('answers "requestLicenses" with an empty summary when there is nothing to check', async () => {
+    manager = makeManager();
+    manager.setResult(emptyScanResult());
+
+    const intercept = interceptNextPanel();
+    try {
+      manager.reveal();
+      const { receive, posted } = await intercept.ready;
+      receive({ type: 'ready' });
+      await waitForMessage(posted, 'state');
+
+      receive({ type: 'requestLicenses' });
+      const response = await waitForMessage(posted, 'licenseSummary');
+
+      assert.deepEqual(response.summary, { groups: [] });
+    } finally {
+      intercept.restore();
+    }
+  });
 });

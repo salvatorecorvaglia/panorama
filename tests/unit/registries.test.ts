@@ -381,3 +381,109 @@ describe('registryOverride wiring', () => {
     expect(getJson.mock.calls[1][0]).toMatch(/^https:\/\/search\.maven\.org\//);
   });
 });
+
+/*
+ * One test per provider that reports a license, pinning the shape each
+ * registry actually uses — npm's has drifted across three formats over the
+ * years, PyPI's free-text field is untrustworthy on its own, and Packagist's
+ * is an array even when there is exactly one license.
+ */
+describe('license extraction', () => {
+  it('NodeProvider reads the modern bare-string form', async () => {
+    const { ctx } = withResponse({
+      version: '1.0.0',
+      license: 'MIT',
+    });
+    const meta = await new NodeProvider().fetchMetadata('left-pad', ctx);
+    expect(meta?.license).toBe('MIT');
+  });
+
+  it('NodeProvider falls back to the legacy { type } object', async () => {
+    const { ctx } = withResponse({
+      version: '1.0.0',
+      license: { type: 'ISC' },
+    });
+    const meta = await new NodeProvider().fetchMetadata('old-pkg', ctx);
+    expect(meta?.license).toBe('ISC');
+  });
+
+  it('NodeProvider falls back to the even older licenses array', async () => {
+    const { ctx } = withResponse({
+      version: '1.0.0',
+      licenses: [{ type: 'BSD-3-Clause' }],
+    });
+    const meta = await new NodeProvider().fetchMetadata('ancient-pkg', ctx);
+    expect(meta?.license).toBe('BSD-3-Clause');
+  });
+
+  it('PythonProvider prefers the classifiers over free-text license', async () => {
+    const { ctx } = withResponse({
+      info: {
+        name: 'requests',
+        version: '2.31.0',
+        classifiers: [
+          'Programming Language :: Python :: 3',
+          'License :: OSI Approved :: Apache Software License',
+        ],
+        license: 'a very long hand-pasted license body that is not a name',
+      },
+    });
+    const meta = await new PythonProvider().fetchMetadata('requests', ctx);
+    expect(meta?.license).toBe('Apache Software License');
+  });
+
+  it('PythonProvider falls back to a short free-text license with no classifier', async () => {
+    const { ctx } = withResponse({
+      info: { name: 'demo', version: '1.0.0', license: 'MIT' },
+    });
+    const meta = await new PythonProvider().fetchMetadata('demo', ctx);
+    expect(meta?.license).toBe('MIT');
+  });
+
+  it('PythonProvider reports no license rather than a pasted-in license body', async () => {
+    const { ctx } = withResponse({
+      info: {
+        name: 'demo',
+        version: '1.0.0',
+        license: 'Copyright (c) 2024...\nPermission is hereby granted...',
+      },
+    });
+    const meta = await new PythonProvider().fetchMetadata('demo', ctx);
+    expect(meta?.license).toBeUndefined();
+  });
+
+  it("CargoProvider reads the newest version's license expression", async () => {
+    const { ctx } = withResponse({
+      crate: { name: 'serde' },
+      versions: [{ num: '1.0.0', yanked: false, license: 'MIT OR Apache-2.0' }],
+    });
+    const meta = await new CargoProvider().fetchMetadata('serde', ctx);
+    expect(meta?.license).toBe('MIT OR Apache-2.0');
+  });
+
+  it('ComposerProvider joins a multi-license array with OR', async () => {
+    const { ctx } = withResponse({
+      packages: {
+        'vendor/pkg': [
+          {
+            name: 'vendor/pkg',
+            version: '1.0.0',
+            license: ['MIT', 'Apache-2.0'],
+          },
+        ],
+      },
+    });
+    const meta = await new ComposerProvider().fetchMetadata('vendor/pkg', ctx);
+    expect(meta?.license).toBe('MIT OR Apache-2.0');
+  });
+
+  it('ComposerProvider reports no license for an empty array', async () => {
+    const { ctx } = withResponse({
+      packages: {
+        'vendor/pkg': [{ name: 'vendor/pkg', version: '1.0.0', license: [] }],
+      },
+    });
+    const meta = await new ComposerProvider().fetchMetadata('vendor/pkg', ctx);
+    expect(meta?.license).toBeUndefined();
+  });
+});

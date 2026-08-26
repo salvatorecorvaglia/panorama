@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Vulnerability Diagnostics**: Dependencies with known vulnerabilities are now also reported as Problems-panel diagnostics on their declaration line, for open manifest files.
 - **Duplicate Version Detection**: A new "Duplicate versions" panel checks each project's lockfile (npm, pnpm, yarn, Cargo, Composer, poetry/uv) for packages resolved at more than one version at once, listing every project and version group found. Go, Maven and Gradle are reported as unchecked rather than clean, since none has a lockfile Panorama can trust for this.
 - **Export Dependency Report**: A new "Export report" action (toolbar button and `panorama.exportReport` command) writes the current scan — outdated packages, known vulnerabilities and duplicate versions, per project — to a Markdown or JSON file the user chooses, for sharing outside the editor or attaching to a PR.
+- **License Metadata & Policy**: Package metadata now includes the registry-reported license (npm, PyPI, Crates.io, Packagist), shown in the dependency detail drawer. A new "License summary" panel checks every unique package in the workspace and groups them by license, flagging any that violate the new `panorama.licenseAllowList`/`licenseDenyList` settings. Go, Maven and Gradle packages are grouped as unknown rather than guessed, since none of their registries expose a license Panorama can attribute with confidence.
 
 ## [2.5.0] - 2026-08-25
 

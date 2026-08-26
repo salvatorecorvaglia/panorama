@@ -12,6 +12,7 @@ import type {
   DepNode,
   DepScope,
   Ecosystem,
+  LicenseSummary,
   ProjectDuplicateVersions,
   ProjectGroup,
   ScanSummary,
@@ -22,6 +23,7 @@ import { DepTable, type SortState } from './DepTable.js';
 import { DetailDrawer } from './DetailDrawer.js';
 import { DuplicatesPanel } from './DuplicatesPanel.js';
 import { Icon } from './Icon.js';
+import { LicenseSummaryPanel } from './LicenseSummaryPanel.js';
 import { SearchInstall } from './SearchInstall.js';
 import { type Filters, Toolbar } from './Toolbar.js';
 import { loadState, onHostMessage, post, saveState } from './vscodeApi.js';
@@ -122,6 +124,12 @@ export function App() {
   const [duplicatesLoading, setDuplicatesLoading] = useState(false);
   const [duplicateResults, setDuplicateResults] = useState<
     ProjectDuplicateVersions[] | undefined
+  >();
+
+  const [licensesOpen, setLicensesOpen] = useState(false);
+  const [licensesLoading, setLicensesLoading] = useState(false);
+  const [licenseSummary, setLicenseSummary] = useState<
+    LicenseSummary | undefined
   >();
 
   const [installOpen, setInstallOpen] = useState(false);
@@ -343,6 +351,11 @@ export function App() {
           setDuplicatesLoading(false);
           break;
 
+        case 'licenseSummary':
+          setLicenseSummary(message.summary);
+          setLicensesLoading(false);
+          break;
+
         case 'error':
           setErrors((current) => {
             // A repeat of the message already on screen is not new information.
@@ -466,6 +479,23 @@ export function App() {
     post({ type: 'requestDuplicates' });
   }, [duplicatesOpen, groups]);
 
+  /*
+   * Runs once when the panel opens. Unlike the duplicate-version check this
+   * reaches the network per package, so — deliberately unlike that effect —
+   * it does not also re-run on every rescan; the panel's own Refresh button
+   * covers "check again".
+   */
+  useEffect(() => {
+    if (!licensesOpen) return;
+    setLicensesLoading(true);
+    post({ type: 'requestLicenses' });
+  }, [licensesOpen]);
+
+  const handleRefreshLicenses = useCallback(() => {
+    setLicensesLoading(true);
+    post({ type: 'requestLicenses' });
+  }, []);
+
   // `toVersion` lets the drawer offer the in-range upgrade as well as the
   // latest; the table's Update button has only one target and omits it.
   const handleUpdate = useCallback((dep: Dependency, toVersion?: string) => {
@@ -512,6 +542,15 @@ export function App() {
       results={duplicateResults}
       loading={duplicatesLoading}
       onClose={() => setDuplicatesOpen(false)}
+    />
+  ) : null;
+
+  const licensesPanel = licensesOpen ? (
+    <LicenseSummaryPanel
+      summary={licenseSummary}
+      loading={licensesLoading}
+      onRefresh={handleRefreshLicenses}
+      onClose={() => setLicensesOpen(false)}
     />
   ) : null;
 
@@ -640,6 +679,8 @@ export function App() {
         onToggleInstall={() => setInstallOpen((open) => !open)}
         duplicatesOpen={duplicatesOpen}
         onToggleDuplicates={() => setDuplicatesOpen((open) => !open)}
+        licensesOpen={licensesOpen}
+        onToggleLicenses={() => setLicensesOpen((open) => !open)}
         onExportReport={() => post({ type: 'exportReport' })}
         onRefresh={() => post({ type: 'refresh' })}
         onCheckUpdates={() => post({ type: 'checkUpdates' })}
@@ -655,6 +696,7 @@ export function App() {
 
       {searchPanel}
       {duplicatesPanel}
+      {licensesPanel}
 
       <div className="app__body">
         <div className="app__main">

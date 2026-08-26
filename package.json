@@ -227,6 +227,22 @@
           "type": "string",
           "default": "",
           "description": "Optional contact email included in the User-Agent sent to registries. Packagist requests one so they can reach you about unusual traffic."
+        },
+        "panorama.licenseAllowList": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "If non-empty, only these licenses (e.g. \"MIT\", \"Apache-2.0\") pass the License summary check — everything else, including an unrecognized license, is flagged. Takes precedence over licenseDenyList."
+        },
+        "panorama.licenseDenyList": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Licenses (e.g. \"GPL-3.0\") to flag in the License summary check. Ignored when licenseAllowList is set."
         }
       }
     }
