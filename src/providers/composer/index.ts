@@ -183,7 +183,7 @@ export class ComposerProvider implements EcosystemProvider {
         const repo = ctx.registryOverride('composer') ?? DEFAULT_REPO;
         const response = await ctx.http.getJson<P2Response>(
           `${repo}/p2/${encodePackageName(name)}.json`,
-          { signal },
+          { signal, headers: ctx.registryAuthHeaders('composer') },
         );
         const releases = response.packages[name] ?? [];
         const abandoned = releases[0]?.abandoned;
@@ -221,7 +221,7 @@ export class ComposerProvider implements EcosystemProvider {
       const repo = ctx.registryOverride('composer') ?? DEFAULT_REPO;
       const response = await ctx.http.getJson<P2Response>(
         `${repo}/p2/${encodePackageName(name)}.json`,
-        { signal },
+        { signal, headers: ctx.registryAuthHeaders('composer') },
       );
       const latest = response.packages[name]?.[0];
       if (!latest) return undefined;
@@ -264,7 +264,7 @@ export class ComposerProvider implements EcosystemProvider {
     const packagist = ctx.registryOverride('composer') ?? DEFAULT_PACKAGIST;
     const response = await ctx.http.getJson<SearchResponse>(
       `${packagist}/search.json?q=${encodeURIComponent(query)}&per_page=25`,
-      { signal },
+      { signal, headers: ctx.registryAuthHeaders('composer') },
     );
 
     return response.results.map((entry) => ({

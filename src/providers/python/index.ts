@@ -382,7 +382,10 @@ export class PythonProvider implements EcosystemProvider {
           files?: Array<{ filename?: string; size?: number }>;
         }>(`${index}/simple/${encodeURIComponent(normalizeName(name))}/`, {
           signal,
-          headers: { Accept: 'application/vnd.pypi.simple.v1+json' },
+          headers: {
+            Accept: 'application/vnd.pypi.simple.v1+json',
+            ...ctx.registryAuthHeaders('python'),
+          },
         });
         const versions = simple.versions ?? [];
         const lastFile = simple.files?.[simple.files.length - 1];
@@ -405,7 +408,7 @@ export class PythonProvider implements EcosystemProvider {
     return fetchMetadataWithCache(key, ctx, async () => {
       const response = await ctx.http.getJson<PyPiResponse>(
         `${index}/pypi/${encodeURIComponent(name)}/json`,
-        { signal },
+        { signal, headers: ctx.registryAuthHeaders('python') },
       );
       const urls = response.info.project_urls ?? {};
       const repository = normalizeRepositoryUrl(
@@ -510,7 +513,10 @@ export class PythonProvider implements EcosystemProvider {
     try {
       const response = await ctx.http.getJson<SimpleIndex>(`${index}/simple/`, {
         signal,
-        headers: { Accept: 'application/vnd.pypi.simple.v1+json' },
+        headers: {
+          Accept: 'application/vnd.pypi.simple.v1+json',
+          ...ctx.registryAuthHeaders('python'),
+        },
         timeoutMs: 60_000,
         /*
          * Keeping this out of `globalState` is only half the job: the ETag

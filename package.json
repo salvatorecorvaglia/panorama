@@ -218,9 +218,29 @@
         "panorama.registryOverrides": {
           "type": "object",
           "default": {},
-          "description": "Override registry base URLs per ecosystem, e.g. { \"npm\": \"https://registry.mycompany.com\" }. Ignored in untrusted workspaces.",
+          "description": "Override registry base URLs per ecosystem. A value can be a bare URL, e.g. { \"npm\": \"https://registry.mycompany.com\" }, or an object naming an environment variable that holds a bearer token for that registry, e.g. { \"npm\": { \"url\": \"https://registry.mycompany.com\", \"tokenEnvVar\": \"COMPANY_NPM_TOKEN\" } } — Panorama reads the token from that variable at request time and never stores it. Ignored in untrusted workspaces.",
           "additionalProperties": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "tokenEnvVar": {
+                    "type": "string",
+                    "description": "Name of an environment variable holding a bearer token for this registry. The variable itself must be set wherever VS Code runs, e.g. in your shell profile."
+                  }
+                },
+                "required": [
+                  "url"
+                ],
+                "additionalProperties": false
+              }
+            ]
           }
         },
         "panorama.contactEmail": {

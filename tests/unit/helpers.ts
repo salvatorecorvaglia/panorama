@@ -53,6 +53,7 @@ export function makeContext(
         ),
       ),
     registryOverride: () => undefined,
+    registryAuthHeaders: () => undefined,
     preferredToolchain: () => 'auto',
   };
 }

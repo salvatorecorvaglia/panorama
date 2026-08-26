@@ -129,14 +129,16 @@ export class GoProvider implements EcosystemProvider {
         const escaped = escapeModulePath(name);
         // @latest is authoritative and cheap; @v/list gives the full history but
         // omits versions the proxy has not cached, so we merge both.
+        const headers = ctx.registryAuthHeaders('golang');
         const [latest, list] = await Promise.all([
           ctx.http
             .getJson<{ Version: string }>(`${proxy}/${escaped}/@latest`, {
               signal,
+              headers,
             })
             .catch(() => undefined),
           ctx.http
-            .getText(`${proxy}/${escaped}/@v/list`, { signal })
+            .getText(`${proxy}/${escaped}/@v/list`, { signal, headers })
             .catch(() => ''),
         ]);
 
@@ -198,7 +200,7 @@ export class GoProvider implements EcosystemProvider {
       const proxy = ctx.registryOverride('golang') ?? DEFAULT_PROXY;
       const latest = await ctx.http.getJson<{ Version: string }>(
         `${proxy}/${escapeModulePath(trimmed)}/@latest`,
-        { signal },
+        { signal, headers: ctx.registryAuthHeaders('golang') },
       );
       return [
         {

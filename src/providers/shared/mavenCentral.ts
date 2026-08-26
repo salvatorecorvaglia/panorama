@@ -71,7 +71,10 @@ export async function fetchMavenVersions(
       const url =
         `${solr}?q=g:${encodeURIComponent(coordinate.groupId)}+AND+a:${encodeURIComponent(coordinate.artifactId)}` +
         `&core=gav&rows=200&wt=json`;
-      const response = await ctx.http.getJson<SolrResponse>(url, { signal });
+      const response = await ctx.http.getJson<SolrResponse>(url, {
+        signal,
+        headers: ctx.registryAuthHeaders(ecosystem),
+      });
 
       const versions = response.response.docs
         .map((doc) => doc.v)
@@ -136,7 +139,7 @@ export async function searchMavenCentral(
   const solr = ctx.registryOverride(ecosystem) ?? DEFAULT_SOLR;
   const response = await ctx.http.getJson<SolrResponse>(
     `${solr}?q=${q}&rows=25&wt=json`,
-    { signal },
+    { signal, headers: ctx.registryAuthHeaders(ecosystem) },
   );
 
   return response.response.docs.map((doc) => ({

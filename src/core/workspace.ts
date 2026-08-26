@@ -9,7 +9,11 @@ import * as vscode from 'vscode';
 import type { ProviderContext } from '../providers/provider.js';
 import type { TtlCache } from './cache.js';
 import type { HttpClient } from './http.js';
-import { resolveRegistryOverride } from './registryOverride.js';
+import {
+  type RegistryOverrideValue,
+  resolveRegistryAuthHeaders,
+  resolveRegistryOverride,
+} from './registryOverride.js';
 import type { Ecosystem } from './types.js';
 
 export function createProviderContext(
@@ -46,8 +50,20 @@ export function createProviderContext(
       // workspace is untrusted — this only ever sees a value the user opted into.
       const overrides = vscode.workspace
         .getConfiguration('panorama')
-        .get<Record<string, string>>('registryOverrides', {});
+        .get<Record<string, RegistryOverrideValue>>('registryOverrides', {});
       return resolveRegistryOverride(overrides, ecosystem);
+    },
+
+    registryAuthHeaders(
+      ecosystem: Ecosystem,
+    ): Record<string, string> | undefined {
+      // Same restriction as registryOverride — this is a sub-field of the
+      // same setting, not a separate one, so it inherits the same trust gate
+      // without needing its own entry in restrictedConfigurations.
+      const overrides = vscode.workspace
+        .getConfiguration('panorama')
+        .get<Record<string, RegistryOverrideValue>>('registryOverrides', {});
+      return resolveRegistryAuthHeaders(overrides, ecosystem);
     },
 
     preferredToolchain(ecosystem: Ecosystem): string {

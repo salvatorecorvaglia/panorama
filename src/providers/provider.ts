@@ -26,6 +26,14 @@ export interface ProviderContext {
   exists(absolutePath: string): Promise<boolean>;
   /** Per-ecosystem registry base URL overrides from settings. */
   registryOverride(ecosystem: Ecosystem): string | undefined;
+  /**
+   * The `Authorization` header for a private registry override, when one is
+   * configured with a `tokenEnvVar` and that environment variable is set.
+   * Undefined otherwise — including when `registryOverride` itself would
+   * return undefined, so a bad URL can never leave a token pointed at the
+   * public registry.
+   */
+  registryAuthHeaders(ecosystem: Ecosystem): Record<string, string> | undefined;
   /** User's forced toolchain choice, or 'auto'. */
   preferredToolchain(ecosystem: Ecosystem): string;
 }

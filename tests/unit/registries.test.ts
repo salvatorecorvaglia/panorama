@@ -487,3 +487,97 @@ describe('license extraction', () => {
     expect(meta?.license).toBeUndefined();
   });
 });
+
+/*
+ * One test per provider (plus Maven Central, shared by Maven and Gradle)
+ * pinning that a configured `registryAuthHeaders` actually reaches the
+ * outgoing request — the config plumbing is covered by
+ * `registryOverride.test.ts`, but only these prove a provider does not
+ * silently drop the header on its way to `ctx.http`.
+ */
+describe('authenticated registry overrides', () => {
+  function withAuth(body: unknown) {
+    const ctx = makeContext();
+    // Typed with the options parameter too, so `mock.calls[n][1]` — the
+    // headers a call actually sent — typechecks.
+    const getJson = vi.fn(
+      (_url: string, _options?: { headers?: Record<string, string> }) =>
+        Promise.resolve(body),
+    );
+    const getText = vi.fn(
+      (_url: string, _options?: { headers?: Record<string, string> }) =>
+        Promise.resolve(''),
+    );
+    return {
+      ctx: {
+        ...ctx,
+        http: { ...ctx.http, getJson, getText } as never,
+        registryOverride: () => 'https://registry.internal',
+        registryAuthHeaders: () => ({ Authorization: 'Bearer secret-value' }),
+      },
+      getJson,
+      getText,
+    };
+  }
+
+  it('NodeProvider.fetchVersions attaches the header', async () => {
+    const { ctx, getJson } = withAuth({ versions: {} });
+    await new NodeProvider().fetchVersions(['left-pad'], ctx);
+    expect(getJson.mock.calls[0][1]?.headers?.Authorization).toBe(
+      'Bearer secret-value',
+    );
+  });
+
+  it('NodeProvider.fetchMetadata attaches the header', async () => {
+    const { ctx, getJson } = withAuth({ version: '1.0.0' });
+    await new NodeProvider().fetchMetadata('left-pad', ctx);
+    expect(getJson.mock.calls[0][1]?.headers?.Authorization).toBe(
+      'Bearer secret-value',
+    );
+  });
+
+  it('PythonProvider.fetchVersions attaches the header', async () => {
+    const { ctx, getJson } = withAuth({ versions: [] });
+    await new PythonProvider().fetchVersions(['requests'], ctx);
+    expect(getJson.mock.calls[0][1]?.headers?.Authorization).toBe(
+      'Bearer secret-value',
+    );
+  });
+
+  it('CargoProvider.fetchVersions attaches the header', async () => {
+    const { ctx, getJson } = withAuth({ crate: { name: 'serde' } });
+    await new CargoProvider().fetchVersions(['serde'], ctx);
+    expect(getJson.mock.calls[0][1]?.headers?.Authorization).toBe(
+      'Bearer secret-value',
+    );
+  });
+
+  it('ComposerProvider.fetchVersions attaches the header', async () => {
+    const { ctx, getJson } = withAuth({ packages: {} });
+    await new ComposerProvider().fetchVersions(['vendor/pkg'], ctx);
+    expect(getJson.mock.calls[0][1]?.headers?.Authorization).toBe(
+      'Bearer secret-value',
+    );
+  });
+
+  it('GoProvider.fetchVersions attaches the header to both requests', async () => {
+    const { ctx, getJson, getText } = withAuth({ Version: 'v1.0.0' });
+    await new GoProvider().fetchVersions(['github.com/foo/bar'], ctx);
+    expect(getJson.mock.calls[0][1]?.headers?.Authorization).toBe(
+      'Bearer secret-value',
+    );
+    expect(getText.mock.calls[0][1]?.headers?.Authorization).toBe(
+      'Bearer secret-value',
+    );
+  });
+
+  it('fetchMavenVersions attaches the header', async () => {
+    const { ctx, getJson } = withAuth({
+      response: { numFound: 0, docs: [] },
+    });
+    await fetchMavenVersions(['g:a'], 'maven', ctx);
+    expect(getJson.mock.calls[0][1]?.headers?.Authorization).toBe(
+      'Bearer secret-value',
+    );
+  });
+});

@@ -317,8 +317,11 @@ export class NodeProvider implements EcosystemProvider {
           `${registry}/${encodeName(name)}`,
           {
             signal,
-            // The abbreviated document drops README and other bulk.
-            headers: { Accept: 'application/vnd.npm.install-v1+json' },
+            headers: {
+              // The abbreviated document drops README and other bulk.
+              Accept: 'application/vnd.npm.install-v1+json',
+              ...ctx.registryAuthHeaders('node'),
+            },
           },
         );
         const versions = Object.keys(packument.versions ?? {});
@@ -358,7 +361,7 @@ export class NodeProvider implements EcosystemProvider {
       // need here (repository, homepage, description).
       const version = await ctx.http.getJson<PackumentVersion>(
         `${registry}/${encodeName(name)}/latest`,
-        { signal },
+        { signal, headers: ctx.registryAuthHeaders('node') },
       );
       if (!version) return undefined;
 
@@ -405,7 +408,10 @@ export class NodeProvider implements EcosystemProvider {
       }>;
     }
 
-    const response = await ctx.http.getJson<SearchResponse>(url, { signal });
+    const response = await ctx.http.getJson<SearchResponse>(url, {
+      signal,
+      headers: ctx.registryAuthHeaders('node'),
+    });
     return response.objects.map((entry) => ({
       name: entry.package.name,
       version: entry.package.version,

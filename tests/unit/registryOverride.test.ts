@@ -5,7 +5,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { resolveRegistryOverride } from '../../src/core/registryOverride.js';
+import {
+  resolveRegistryAuthHeaders,
+  resolveRegistryOverride,
+} from '../../src/core/registryOverride.js';
 
 describe('resolveRegistryOverride', () => {
   it('returns undefined when nothing is configured for the ecosystem', () => {
@@ -77,5 +80,83 @@ describe('resolveRegistryOverride', () => {
       resolveRegistryOverride({ cargo: 'not a url' }, 'cargo'),
     ).toBeUndefined();
     expect(resolveRegistryOverride({ cargo: '' }, 'cargo')).toBeUndefined();
+  });
+
+  it('reads the URL out of the object form the same way as the bare string', () => {
+    expect(
+      resolveRegistryOverride(
+        { cargo: { url: 'https://cargo.internal/', tokenEnvVar: 'X' } },
+        'cargo',
+      ),
+    ).toBe('https://cargo.internal');
+  });
+});
+
+describe('resolveRegistryAuthHeaders', () => {
+  it('returns undefined when no override is configured', () => {
+    expect(resolveRegistryAuthHeaders({}, 'cargo')).toBeUndefined();
+  });
+
+  it('returns undefined for a bare-string override with no token', () => {
+    expect(
+      resolveRegistryAuthHeaders({ cargo: 'https://cargo.internal' }, 'cargo'),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when tokenEnvVar is set but the variable is not', () => {
+    expect(
+      resolveRegistryAuthHeaders(
+        {
+          cargo: {
+            url: 'https://cargo.internal',
+            tokenEnvVar: 'MISSING_TOKEN',
+          },
+        },
+        'cargo',
+        {},
+      ),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined for an empty or whitespace-only token', () => {
+    expect(
+      resolveRegistryAuthHeaders(
+        { cargo: { url: 'https://cargo.internal', tokenEnvVar: 'TOK' } },
+        'cargo',
+        { TOK: '   ' },
+      ),
+    ).toBeUndefined();
+  });
+
+  it('builds a Bearer Authorization header from the named environment variable', () => {
+    expect(
+      resolveRegistryAuthHeaders(
+        { cargo: { url: 'https://cargo.internal', tokenEnvVar: 'TOK' } },
+        'cargo',
+        { TOK: 'secret-value' },
+      ),
+    ).toEqual({ Authorization: 'Bearer secret-value' });
+  });
+
+  it('resolves through the ecosystem alias, matching resolveRegistryOverride', () => {
+    expect(
+      resolveRegistryAuthHeaders(
+        { npm: { url: 'https://npm.internal', tokenEnvVar: 'TOK' } },
+        'node',
+        { TOK: 'secret-value' },
+      ),
+    ).toEqual({ Authorization: 'Bearer secret-value' });
+  });
+
+  it('never sends a token alongside a URL that fails its own scheme check', () => {
+    // A malformed override URL means the caller falls back to the *public*
+    // registry — a token must not ride along to wherever that ends up.
+    expect(
+      resolveRegistryAuthHeaders(
+        { cargo: { url: 'ftp://cargo.internal', tokenEnvVar: 'TOK' } },
+        'cargo',
+        { TOK: 'secret-value' },
+      ),
+    ).toBeUndefined();
   });
 });

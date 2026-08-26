@@ -174,7 +174,7 @@ export class CargoProvider implements EcosystemProvider {
         const registry = ctx.registryOverride('cargo') ?? DEFAULT_REGISTRY;
         const response = await ctx.http.getJson<CrateResponse>(
           `${registry}/api/v1/crates/${encodeURIComponent(name)}`,
-          { signal },
+          { signal, headers: ctx.registryAuthHeaders('cargo') },
         );
         const latestNum =
           response.crate.max_stable_version ?? response.crate.newest_version;
@@ -207,7 +207,7 @@ export class CargoProvider implements EcosystemProvider {
       const registry = ctx.registryOverride('cargo') ?? DEFAULT_REGISTRY;
       const response = await ctx.http.getJson<CrateResponse>(
         `${registry}/api/v1/crates/${encodeURIComponent(name)}`,
-        { signal },
+        { signal, headers: ctx.registryAuthHeaders('cargo') },
       );
       const newest = response.versions?.[0];
       const repository = normalizeRepositoryUrl(response.crate.repository);
@@ -244,7 +244,7 @@ export class CargoProvider implements EcosystemProvider {
     const registry = ctx.registryOverride('cargo') ?? DEFAULT_REGISTRY;
     const response = await ctx.http.getJson<SearchResponse>(
       `${registry}/api/v1/crates?q=${encodeURIComponent(query)}&per_page=25`,
-      { signal },
+      { signal, headers: ctx.registryAuthHeaders('cargo') },
     );
 
     return response.crates.map((crate) => ({
