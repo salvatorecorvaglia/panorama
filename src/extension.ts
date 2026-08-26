@@ -14,6 +14,9 @@ import { ScanQueue } from './core/scanQueue.js';
 import type { Dependency } from './core/types.js';
 import { ManifestWatcher } from './core/watcher.js';
 import { createProviderContext } from './core/workspace.js';
+import { manifestGlob } from './providers/registry.js';
+import { DepCodeLensProvider } from './ui/depCodeLens.js';
+import { DepDiagnostics } from './ui/depDiagnostics.js';
 import { PanelManager } from './ui/panelManager.js';
 import { SidebarViewProvider } from './ui/sidebarProvider.js';
 
@@ -83,12 +86,17 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
   statusBar.name = 'Panorama Dependencies';
   statusBar.command = 'panorama.open';
 
+  const codeLensProvider = new DepCodeLensProvider(() => panel.currentResult);
+  const diagnostics = new DepDiagnostics();
+
   const panel = new PanelManager(
     context.extensionUri,
     scanner,
     providerContext,
     (result) => {
       updateStatusBar(statusBar, result);
+      codeLensProvider.refresh();
+      diagnostics.refresh(result);
     },
   );
 
@@ -164,6 +172,29 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     statusBar,
     panel,
     watcher,
+    diagnostics,
+
+    vscode.languages.registerCodeLensProvider(
+      { pattern: manifestGlob() },
+      codeLensProvider,
+    ),
+
+    // Opening a manifest that was not among the documents already open when
+    // the last scan landed is the one case `diagnostics.refresh` would
+    // otherwise miss, since it only walks `workspace.textDocuments`.
+    vscode.workspace.onDidOpenTextDocument(() => {
+      diagnostics.refresh(panel.currentResult);
+    }),
+
+    // CodeLens-only: hidden from the command palette (see menus.commandPalette
+    // in package.json), since it exists purely to give a lens something to
+    // invoke.
+    vscode.commands.registerCommand(
+      'panorama.focusDependencyFromLens',
+      (depKey: string) => {
+        panel.revealDependency(depKey, 'details');
+      },
+    ),
 
     vscode.commands.registerCommand('panorama.open', () => {
       panel.reveal();

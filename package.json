@@ -84,6 +84,11 @@
         "title": "Why Is This Installed?",
         "category": "Panorama",
         "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "panorama.focusDependencyFromLens",
+        "title": "Focus Dependency (from CodeLens)",
+        "category": "Panorama"
       }
     ],
     "viewsContainers": {
@@ -107,6 +112,12 @@
       ]
     },
     "menus": {
+      "commandPalette": [
+        {
+          "command": "panorama.focusDependencyFromLens",
+          "when": "false"
+        }
+      ],
       "view/title": [
         {
           "command": "panorama.open",

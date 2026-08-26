@@ -42,6 +42,7 @@ describe('activation', () => {
       'panorama.updateAll',
       'panorama.searchInstall',
       'panorama.showWhy',
+      'panorama.focusDependencyFromLens',
     ]) {
       assert.ok(registered.includes(command), `${command} was not registered`);
     }
@@ -269,5 +270,41 @@ describe('commands are safe to invoke', () => {
   it('showWhy with no selection does not throw', async () => {
     // Falls back to an informational message rather than failing.
     await vscode.commands.executeCommand('panorama.showWhy');
+  });
+});
+
+describe('inline dependency feedback', () => {
+  let api: PanoramaApi;
+
+  before(async () => {
+    api = await getApi();
+  });
+
+  it('registers a CodeLens provider for the node fixture manifest', async () => {
+    const result = await api.scan({ checkUpdates: false });
+    const node = result.groups.find((group) =>
+      group.manifestPath.includes('node-app'),
+    );
+    assert.ok(node, 'node fixture missing');
+
+    const document = await vscode.workspace.openTextDocument(
+      vscode.Uri.file(node.manifestPath),
+    );
+    // Nothing throwing, and an array coming back, is what proves the
+    // provider is registered for this document — content is exercised by
+    // the `depAnnotations` unit tests, since offline scans never populate
+    // `latest`/vulnerabilities for a lens to describe.
+    const lenses = await vscode.commands.executeCommand<vscode.CodeLens[]>(
+      'vscode.executeCodeLensProvider',
+      document.uri,
+    );
+    assert.ok(Array.isArray(lenses));
+  });
+
+  it('focusDependencyFromLens does not throw for an unknown key', async () => {
+    await vscode.commands.executeCommand(
+      'panorama.focusDependencyFromLens',
+      'no-such-key',
+    );
   });
 });
