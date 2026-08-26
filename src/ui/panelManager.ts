@@ -10,7 +10,7 @@
 
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { explainDependency } from '../core/depGraph.js';
+import { explainDependency, findDuplicateVersions } from '../core/depGraph.js';
 import { findDeclaration } from '../core/findDeclaration.js';
 import type { HostMessage, WebviewMessage } from '../core/protocol.js';
 import type { Scanner, ScanResult } from '../core/scanner.js';
@@ -265,6 +265,10 @@ export class PanelManager implements vscode.Disposable {
 
       case 'requestWhy':
         await this.handleWhy(message.depKey);
+        return;
+
+      case 'requestDuplicates':
+        await this.handleDuplicates();
         return;
 
       case 'openExternal':
@@ -678,6 +682,36 @@ export class PanelManager implements vscode.Disposable {
       // A superseded request is the expected outcome of clicking the next row,
       // not something to put in front of the user.
       if (controller.signal.aborted) return;
+      this.post({ type: 'error', message: describeError(error) });
+    }
+  }
+
+  /**
+   * Checks every project's lockfile for packages resolved at more than one
+   * version at once.
+   *
+   * Unlike `handleWhy`, this touches only the local filesystem — no registry
+   * fallback to race against — so there is nothing here worth cancelling.
+   */
+  private async handleDuplicates(): Promise<void> {
+    try {
+      const results = await Promise.all(
+        this.latest.groups.map(async (group) => {
+          const result = await findDuplicateVersions(
+            group.manifestPath,
+            group.ecosystem,
+            this.ctx,
+          );
+          return {
+            manifestPath: group.manifestPath,
+            projectLabel: group.label,
+            ecosystem: group.ecosystem,
+            ...result,
+          };
+        }),
+      );
+      this.post({ type: 'duplicateVersions', results });
+    } catch (error) {
       this.post({ type: 'error', message: describeError(error) });
     }
   }

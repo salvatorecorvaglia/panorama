@@ -15,7 +15,13 @@ import type { ProviderContext } from '../providers/provider.js';
 // normalisers that must agree exactly are two that can silently stop agreeing.
 import { normalizeName as normalizePythonName } from '../providers/python/index.js';
 import { providerFor } from '../providers/registry.js';
-import type { Dependency, DepNode, Ecosystem } from './types.js';
+import type {
+  Dependency,
+  DepNode,
+  DuplicateVersionGroup,
+  DuplicateVersionResult,
+  Ecosystem,
+} from './types.js';
 
 const MAX_DEPTH = 8;
 
@@ -214,16 +220,31 @@ async function buildPnpmGraph(
   return graph.size > 0 ? graph : undefined;
 }
 
-/** `/@scope/name@1.2.3(peer@1)` and `name@1.2.3` both reduce to the bare name. */
-function pnpmNameFromKey(key: string): string | undefined {
+/**
+ * Splits a pnpm-lock.yaml package key into its name and resolved version.
+ *
+ * `/@scope/name@1.2.3(peer@1)` and `name@1.2.3` both reduce to
+ * `{ name: '@scope/name' | 'name', version: '1.2.3' }`.
+ */
+function splitPnpmKey(key: string): {
+  name: string | undefined;
+  version: string | undefined;
+} {
   let rest = key.startsWith('/') ? key.slice(1) : key;
   // Drop the peer-dependency suffix pnpm appends in parentheses.
   const paren = rest.indexOf('(');
   if (paren >= 0) rest = rest.slice(0, paren);
 
   const at = rest.lastIndexOf('@');
-  if (at <= 0) return rest || undefined;
-  return rest.slice(0, at) || undefined;
+  if (at <= 0) return { name: rest || undefined, version: undefined };
+  return {
+    name: rest.slice(0, at) || undefined,
+    version: rest.slice(at + 1) || undefined,
+  };
+}
+
+function pnpmNameFromKey(key: string): string | undefined {
+  return splitPnpmKey(key).name;
 }
 
 /**
@@ -622,4 +643,220 @@ async function buildFromDepsDev(
   } catch {
     return [];
   }
+}
+
+/** name -> every version at which the lockfile resolves it. */
+type VersionMap = Map<string, Set<string>>;
+
+/**
+ * Packages resolved at more than one version at once within a single
+ * project — every extra copy adds to install size, and which one a given
+ * import actually resolves to can depend on where in the tree it was
+ * required from. Read from whichever lockfile exists, the same per-ecosystem
+ * discovery `explainDependency` uses — deliberately a second, independent
+ * pass over that file rather than a shared one, so this stays free to change
+ * without touching the "why" walk's tested behaviour.
+ *
+ * Go is left unchecked even though `go.sum` lists every module@version pair:
+ * it records hashes for every version that ever appeared anywhere in the
+ * module graph's history, not the versions minimal version selection
+ * actually chose, so nearly every module would read as "duplicated" whether
+ * or not the build contains more than one copy. Maven and Gradle have no
+ * lockfile in the general case, matching `buildForwardGraph`.
+ */
+export async function findDuplicateVersions(
+  manifestPath: string,
+  ecosystem: Ecosystem,
+  ctx: ProviderContext,
+): Promise<DuplicateVersionResult> {
+  const dir = path.dirname(manifestPath);
+  const versions = await collectVersions(dir, ecosystem, ctx);
+  if (!versions) return { checked: false, groups: [] };
+
+  const groups: DuplicateVersionGroup[] = [];
+  for (const [name, versionSet] of versions) {
+    if (versionSet.size > 1) {
+      groups.push({ name, versions: [...versionSet].sort() });
+    }
+  }
+  groups.sort((a, b) => a.name.localeCompare(b.name));
+
+  return { checked: true, groups };
+}
+
+async function collectVersions(
+  dir: string,
+  ecosystem: Ecosystem,
+  ctx: ProviderContext,
+): Promise<VersionMap | undefined> {
+  switch (ecosystem) {
+    case 'node':
+      return (
+        (await npmLockVersions(dir, ctx)) ??
+        (await pnpmLockVersions(dir, ctx)) ??
+        (await yarnLockVersions(dir, ctx))
+      );
+    case 'cargo':
+      return cargoLockVersions(dir, ctx);
+    case 'composer':
+      return composerLockVersions(dir, ctx);
+    case 'python':
+      return pythonLockVersions(dir, ctx);
+    default:
+      return undefined;
+  }
+}
+
+function addVersion(map: VersionMap, name: string, version: string): void {
+  const set = map.get(name);
+  if (set) set.add(version);
+  else map.set(name, new Set([version]));
+}
+
+async function npmLockVersions(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<VersionMap | undefined> {
+  const text = await ctx.readFile(path.join(dir, 'package-lock.json'));
+  if (!text) return undefined;
+
+  try {
+    const lock = JSON.parse(text) as {
+      packages?: Record<string, { version?: string }>;
+    };
+    const versions: VersionMap = new Map();
+    for (const [key, entry] of Object.entries(lock.packages ?? {})) {
+      if (!entry.version) continue;
+      const name = npmLockName(key);
+      // The root project and workspace members collapse onto `__root__` in
+      // `npmLockName`; neither is "an installed dependency with a version".
+      if (name === '__root__') continue;
+      addVersion(versions, name, entry.version);
+    }
+    return versions;
+  } catch {
+    return undefined;
+  }
+}
+
+async function pnpmLockVersions(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<VersionMap | undefined> {
+  const text = await ctx.readFile(path.join(dir, 'pnpm-lock.yaml'));
+  if (!text) return undefined;
+
+  let doc: {
+    packages?: Record<string, unknown>;
+    snapshots?: Record<string, unknown>;
+  };
+  try {
+    doc = (parseYaml(text) ?? {}) as typeof doc;
+  } catch {
+    return undefined;
+  }
+
+  const versions: VersionMap = new Map();
+  for (const section of [doc.packages, doc.snapshots]) {
+    for (const key of Object.keys(section ?? {})) {
+      const { name, version } = splitPnpmKey(key);
+      if (name && version) addVersion(versions, name, version);
+    }
+  }
+  return versions.size > 0 ? versions : undefined;
+}
+
+async function yarnLockVersions(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<VersionMap | undefined> {
+  const text = await ctx.readFile(path.join(dir, 'yarn.lock'));
+  if (!text) return undefined;
+
+  const versions: VersionMap = new Map();
+  for (const block of text.split(/\n\s*\n/)) {
+    const lines = block.split(/\r?\n/).filter((line) => line.trim() !== '');
+    if (lines.length === 0) continue;
+
+    const header = lines[0].trim();
+    if (header.startsWith('#') || !header.endsWith(':')) continue;
+
+    const firstSpec = header
+      .slice(0, -1)
+      .split(',')[0]
+      .trim()
+      .replace(/^['"]|['"]$/g, '');
+    const name = yarnNameFromSpec(firstSpec);
+    if (!name) continue;
+
+    const versionMatch = /^\s*version\s+"?([^"\s]+)"?\s*$/m.exec(block);
+    if (versionMatch) addVersion(versions, name, versionMatch[1]);
+  }
+  return versions.size > 0 ? versions : undefined;
+}
+
+async function cargoLockVersions(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<VersionMap | undefined> {
+  const text = await ctx.readFile(path.join(dir, 'Cargo.lock'));
+  if (!text) return undefined;
+
+  try {
+    const versions: VersionMap = new Map();
+    for (const block of splitTomlPackageBlocks(text)) {
+      const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+      const version = /^version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+      if (name && version) addVersion(versions, name, version);
+    }
+    return versions;
+  } catch {
+    return undefined;
+  }
+}
+
+async function composerLockVersions(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<VersionMap | undefined> {
+  const text = await ctx.readFile(path.join(dir, 'composer.lock'));
+  if (!text) return undefined;
+
+  try {
+    const lock = JSON.parse(text) as {
+      packages?: Array<{ name: string; version?: string }>;
+      'packages-dev'?: Array<{ name: string; version?: string }>;
+    };
+    const versions: VersionMap = new Map();
+    for (const entry of [
+      ...(lock.packages ?? []),
+      ...(lock['packages-dev'] ?? []),
+    ]) {
+      if (entry.version) addVersion(versions, entry.name, entry.version);
+    }
+    return versions;
+  } catch {
+    return undefined;
+  }
+}
+
+async function pythonLockVersions(
+  dir: string,
+  ctx: ProviderContext,
+): Promise<VersionMap | undefined> {
+  for (const lockName of ['uv.lock', 'poetry.lock']) {
+    const text = await ctx.readFile(path.join(dir, lockName));
+    if (!text) continue;
+
+    const versions: VersionMap = new Map();
+    for (const block of splitTomlPackageBlocks(text)) {
+      const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+      const version = /^version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
+      if (name && version) {
+        addVersion(versions, normalizePythonName(name), version);
+      }
+    }
+    if (versions.size > 0) return versions;
+  }
+  return undefined;
 }

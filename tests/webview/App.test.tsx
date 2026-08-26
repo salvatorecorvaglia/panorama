@@ -206,6 +206,70 @@ describe('the why tree cache', () => {
   });
 });
 
+describe('duplicate versions', () => {
+  it('requests a check when the panel opens and shows what comes back', async () => {
+    renderLoaded();
+    await userEvent.click(
+      screen.getByRole('button', { name: /Duplicate versions/i }),
+    );
+    expect(posted).toContainEqual({ type: 'requestDuplicates' });
+
+    send({
+      type: 'duplicateVersions',
+      results: [
+        {
+          manifestPath: '/p/package.json',
+          projectLabel: 'app',
+          ecosystem: 'node',
+          checked: true,
+          groups: [{ name: 'ansi-styles', versions: ['3.2.1', '4.3.0'] }],
+        },
+      ],
+    });
+
+    expect(screen.getByText('ansi-styles')).toBeInTheDocument();
+    expect(screen.getByText('3.2.1')).toBeInTheDocument();
+    expect(screen.getByText('4.3.0')).toBeInTheDocument();
+  });
+
+  it('re-checks when a new scan lands while the panel stays open', async () => {
+    renderLoaded();
+    await userEvent.click(
+      screen.getByRole('button', { name: /Duplicate versions/i }),
+    );
+    // The click itself already posted one request; a rescan must post another.
+    const before = posted.length;
+
+    send({ type: 'state', groups: [group()], summary: EMPTY_SUMMARY });
+
+    expect(posted.length).toBeGreaterThan(before);
+    expect(posted.at(-1)).toEqual({ type: 'requestDuplicates' });
+  });
+
+  it('says so when every checked project is clean', async () => {
+    renderLoaded();
+    await userEvent.click(
+      screen.getByRole('button', { name: /Duplicate versions/i }),
+    );
+    send({
+      type: 'duplicateVersions',
+      results: [
+        {
+          manifestPath: '/p/package.json',
+          projectLabel: 'app',
+          ecosystem: 'node',
+          checked: true,
+          groups: [],
+        },
+      ],
+    });
+
+    expect(
+      screen.getByText(/No duplicate versions found/i),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('detail metadata', () => {
   it('merges into the open row without reordering the table', async () => {
     // A row that gains a size while sorted by Size must not jump out from

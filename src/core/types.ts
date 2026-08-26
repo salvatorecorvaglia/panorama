@@ -187,6 +187,33 @@ export interface DepNode {
   truncated?: boolean;
 }
 
+/** A package resolved at more than one version at once within a project. */
+export interface DuplicateVersionGroup {
+  name: string;
+  /** Distinct resolved versions, ascending lexicographically. */
+  versions: string[];
+}
+
+export interface DuplicateVersionResult {
+  /**
+   * False when no reliable local source of resolved versions exists — no
+   * lockfile on disk, or an ecosystem (Go, Maven, Gradle) with no lockfile
+   * `findDuplicateVersions` trusts for this. Distinguishing "not checked"
+   * from "checked, nothing duplicated" matters: collapsing them into one
+   * empty `groups` array would let a project no one could actually check
+   * read as clean.
+   */
+  checked: boolean;
+  groups: DuplicateVersionGroup[];
+}
+
+/** One project's duplicate-version check, for the panel's aggregate view. */
+export interface ProjectDuplicateVersions extends DuplicateVersionResult {
+  manifestPath: string;
+  projectLabel: string;
+  ecosystem: Ecosystem;
+}
+
 export interface ScanSummary {
   totalDependencies: number;
   outdated: number;

@@ -7,7 +7,10 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { explainDependency } from '../../src/core/depGraph.js';
+import {
+  explainDependency,
+  findDuplicateVersions,
+} from '../../src/core/depGraph.js';
 import type { Dependency } from '../../src/core/types.js';
 import { makeContext } from './helpers.js';
 
@@ -361,5 +364,187 @@ describe('graceful degradation', () => {
     // The registry path is unreachable in tests, so this must fall back cleanly.
     expect(result.source).toBe('registry');
     expect(result.roots).toEqual([]);
+  });
+});
+
+describe('findDuplicateVersions', () => {
+  it('flags a package resolved at two versions in an npm lockfile', async () => {
+    const ctx = makeContext({
+      '/p/package-lock.json': JSON.stringify({
+        packages: {
+          '': { dependencies: { a: '^1.0.0', b: '^1.0.0' } },
+          'node_modules/a': {
+            version: '1.0.0',
+            dependencies: { 'ansi-styles': '^3.0.0' },
+          },
+          'node_modules/a/node_modules/ansi-styles': { version: '3.2.1' },
+          'node_modules/ansi-styles': { version: '4.3.0' },
+          'node_modules/b': { version: '1.0.0' },
+        },
+      }),
+    });
+
+    const result = await findDuplicateVersions('/p/package.json', 'node', ctx);
+    expect(result.checked).toBe(true);
+    expect(result.groups).toEqual([
+      { name: 'ansi-styles', versions: ['3.2.1', '4.3.0'] },
+    ]);
+  });
+
+  it('finds nothing to report when every package resolves once', async () => {
+    const ctx = makeContext({
+      '/p/package-lock.json': JSON.stringify({
+        packages: {
+          '': { dependencies: { chalk: '^4.0.0' } },
+          'node_modules/chalk': { version: '4.1.2' },
+        },
+      }),
+    });
+
+    const result = await findDuplicateVersions('/p/package.json', 'node', ctx);
+    expect(result.checked).toBe(true);
+    expect(result.groups).toEqual([]);
+  });
+
+  it('flags a duplicate in the pnpm snapshots layout, from the key alone', async () => {
+    const ctx = makeContext({
+      '/p/pnpm-lock.yaml': `lockfileVersion: '9.0'
+
+snapshots:
+
+  a@1.0.0:
+    dependencies:
+      ansi-styles: 3.2.1
+
+  ansi-styles@3.2.1: {}
+
+  ansi-styles@4.3.0: {}
+`,
+    });
+
+    const result = await findDuplicateVersions('/p/package.json', 'node', ctx);
+    expect(result.checked).toBe(true);
+    expect(result.groups).toEqual([
+      { name: 'ansi-styles', versions: ['3.2.1', '4.3.0'] },
+    ]);
+  });
+
+  it('flags a duplicate across yarn.lock blocks', async () => {
+    const ctx = makeContext({
+      '/p/yarn.lock': `# yarn lockfile v1
+
+
+ansi-styles@^3.0.0:
+  version "3.2.1"
+  resolved "https://registry.yarnpkg.com/ansi-styles/-/ansi-styles-3.2.1.tgz"
+
+ansi-styles@^4.1.0:
+  version "4.3.0"
+  resolved "https://registry.yarnpkg.com/ansi-styles/-/ansi-styles-4.3.0.tgz"
+`,
+    });
+
+    const result = await findDuplicateVersions('/p/package.json', 'node', ctx);
+    expect(result.checked).toBe(true);
+    expect(result.groups).toEqual([
+      { name: 'ansi-styles', versions: ['3.2.1', '4.3.0'] },
+    ]);
+  });
+
+  it('flags a duplicate across Cargo.lock package entries', async () => {
+    const ctx = makeContext({
+      '/p/Cargo.lock': `[[package]]
+name = "tokio"
+version = "1.35.1"
+dependencies = [
+ "windows-sys",
+]
+
+[[package]]
+name = "windows-sys"
+version = "0.48.0"
+
+[[package]]
+name = "windows-sys"
+version = "0.52.0"
+`,
+    });
+
+    const result = await findDuplicateVersions('/p/Cargo.toml', 'cargo', ctx);
+    expect(result.checked).toBe(true);
+    expect(result.groups).toEqual([
+      { name: 'windows-sys', versions: ['0.48.0', '0.52.0'] },
+    ]);
+  });
+
+  it('flags a duplicate across composer.lock packages and packages-dev', async () => {
+    const ctx = makeContext({
+      '/p/composer.lock': JSON.stringify({
+        packages: [{ name: 'psr/log', version: '3.0.0' }],
+        'packages-dev': [{ name: 'psr/log', version: '2.0.0' }],
+      }),
+    });
+
+    const result = await findDuplicateVersions(
+      '/p/composer.json',
+      'composer',
+      ctx,
+    );
+    expect(result.checked).toBe(true);
+    expect(result.groups).toEqual([
+      { name: 'psr/log', versions: ['2.0.0', '3.0.0'] },
+    ]);
+  });
+
+  it('flags a duplicate in a poetry.lock, normalising PEP 503 names', async () => {
+    const ctx = makeContext({
+      '/p/poetry.lock': `[[package]]
+name = "flask"
+version = "3.0.0"
+
+[package.dependencies]
+Jinja2 = ">=3.1"
+
+[[package]]
+name = "Jinja2"
+version = "3.1.2"
+
+[[package]]
+name = "jinja2"
+version = "3.0.0"
+`,
+    });
+
+    const result = await findDuplicateVersions(
+      '/p/pyproject.toml',
+      'python',
+      ctx,
+    );
+    expect(result.checked).toBe(true);
+    expect(result.groups).toEqual([
+      { name: 'jinja2', versions: ['3.0.0', '3.1.2'] },
+    ]);
+  });
+
+  it('reports unchecked, not clean, when no lockfile exists', async () => {
+    const result = await findDuplicateVersions(
+      '/p/package.json',
+      'node',
+      makeContext({}),
+    );
+    expect(result.checked).toBe(false);
+    expect(result.groups).toEqual([]);
+  });
+
+  it('reports unchecked for ecosystems with no trustworthy local lockfile', async () => {
+    for (const ecosystem of ['golang', 'maven', 'gradle'] as const) {
+      const result = await findDuplicateVersions(
+        '/p/manifest',
+        ecosystem,
+        makeContext({ '/p/go.sum': 'irrelevant' }),
+      );
+      expect(result.checked).toBe(false);
+      expect(result.groups).toEqual([]);
+    }
   });
 });

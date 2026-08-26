@@ -24,6 +24,8 @@ interface Props {
   onUpdateAll?: (manifestPath?: string) => void;
   onToggleInstall: () => void;
   installOpen: boolean;
+  onToggleDuplicates?: () => void;
+  duplicatesOpen?: boolean;
   /** Lets the app put the caret here from a keyboard shortcut. */
   filterRef?: Ref<HTMLInputElement>;
 }
@@ -40,6 +42,8 @@ export function Toolbar({
   onUpdateAll,
   onToggleInstall,
   installOpen,
+  onToggleDuplicates,
+  duplicatesOpen = false,
   filterRef,
 }: Props) {
   const toggleScope = (scope: DepScope) => {
@@ -205,6 +209,18 @@ export function Toolbar({
         >
           <Icon name="cloud-download" /> Check updates
         </button>
+        {onToggleDuplicates && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={onToggleDuplicates}
+            aria-expanded={duplicatesOpen}
+            aria-controls="panorama-duplicates-panel"
+            title="Find packages resolved at more than one version at once"
+          >
+            <Icon name="layers" /> Duplicate versions
+          </button>
+        )}
         <button
           type="button"
           className="secondary"

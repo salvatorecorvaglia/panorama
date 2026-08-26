@@ -12,6 +12,7 @@ import type {
   DepNode,
   DepScope,
   Ecosystem,
+  ProjectDuplicateVersions,
   ProjectGroup,
   ScanSummary,
   SearchResult,
@@ -19,6 +20,7 @@ import type {
 import { ALL_SCOPES, hasUpdate } from '../core/vocabulary.js';
 import { DepTable, type SortState } from './DepTable.js';
 import { DetailDrawer } from './DetailDrawer.js';
+import { DuplicatesPanel } from './DuplicatesPanel.js';
 import { Icon } from './Icon.js';
 import { SearchInstall } from './SearchInstall.js';
 import { type Filters, Toolbar } from './Toolbar.js';
@@ -115,6 +117,12 @@ export function App() {
   const [whyByKey, setWhyByKey] = useState<
     Record<string, { roots: DepNode[]; source: 'lockfile' | 'registry' }>
   >({});
+
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+  const [duplicatesLoading, setDuplicatesLoading] = useState(false);
+  const [duplicateResults, setDuplicateResults] = useState<
+    ProjectDuplicateVersions[] | undefined
+  >();
 
   const [installOpen, setInstallOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -330,6 +338,11 @@ export function App() {
           }));
           break;
 
+        case 'duplicateVersions':
+          setDuplicateResults(message.results);
+          setDuplicatesLoading(false);
+          break;
+
         case 'error':
           setErrors((current) => {
             // A repeat of the message already on screen is not new information.
@@ -438,6 +451,21 @@ export function App() {
     }
   }, [installOpen, activeRequestId]);
 
+  /*
+   * Runs the check whenever the panel opens, and again whenever a new scan
+   * lands while it stays open — the previous answer describes a lockfile
+   * that may no longer be the one on disk (an install, an update, a lockfile
+   * written by something else). `groups` only changes via a `state` message,
+   * which is exactly a rescan, so it belongs in the dependency list even
+   * though the body never reads it.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
+  useEffect(() => {
+    if (!duplicatesOpen) return;
+    setDuplicatesLoading(true);
+    post({ type: 'requestDuplicates' });
+  }, [duplicatesOpen, groups]);
+
   // `toVersion` lets the drawer offer the in-range upgrade as well as the
   // latest; the table's Update button has only one target and omits it.
   const handleUpdate = useCallback((dep: Dependency, toVersion?: string) => {
@@ -478,6 +506,14 @@ export function App() {
   // A command asked to reveal a row; once the table has moved there, forget it,
   // or the next unrelated re-render would drag the viewport back.
   const handleScrollHandled = useCallback(() => setScrollToKey(undefined), []);
+
+  const duplicatesPanel = duplicatesOpen ? (
+    <DuplicatesPanel
+      results={duplicateResults}
+      loading={duplicatesLoading}
+      onClose={() => setDuplicatesOpen(false)}
+    />
+  ) : null;
 
   const searchPanel = installOpen ? (
     <SearchInstall
@@ -602,6 +638,8 @@ export function App() {
         busyLabel={busyLabel}
         installOpen={installOpen}
         onToggleInstall={() => setInstallOpen((open) => !open)}
+        duplicatesOpen={duplicatesOpen}
+        onToggleDuplicates={() => setDuplicatesOpen((open) => !open)}
         onRefresh={() => post({ type: 'refresh' })}
         onCheckUpdates={() => post({ type: 'checkUpdates' })}
         // No manifest means "the user has not chosen a project yet"; the host
@@ -615,6 +653,7 @@ export function App() {
       {banners}
 
       {searchPanel}
+      {duplicatesPanel}
 
       <div className="app__body">
         <div className="app__main">

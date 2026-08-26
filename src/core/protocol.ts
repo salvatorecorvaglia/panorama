@@ -10,6 +10,7 @@ import type {
   DepScope,
   Ecosystem,
   PackageMeta,
+  ProjectDuplicateVersions,
   ProjectGroup,
   ScanSummary,
   SearchResult,
@@ -63,6 +64,13 @@ export type WebviewMessage =
   | { type: 'bulkUninstall'; depKeys: string[] }
   | { type: 'requestDetails'; depKey: string }
   | { type: 'requestWhy'; depKey: string }
+  /**
+   * Checks every project's lockfile for packages resolved at more than one
+   * version at once. Unscoped, unlike `requestWhy`: it is a read-only,
+   * local-only check (no registry call), so there is no per-project ambiguity
+   * to resolve the way a mutating action like `updateAll` has.
+   */
+  | { type: 'requestDuplicates' }
   | { type: 'openExternal'; url: string }
   | { type: 'openManifest'; manifestPath: string; packageName?: string };
 
@@ -96,6 +104,7 @@ export type HostMessage =
       roots: DepNode[];
       source: 'lockfile' | 'registry';
     }
+  | { type: 'duplicateVersions'; results: ProjectDuplicateVersions[] }
   | { type: 'error'; message: string }
   | { type: 'notice'; message: string }
   /** Opens the registry search UI — fired by the `panorama.searchInstall` command. */

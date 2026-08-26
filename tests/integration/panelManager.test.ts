@@ -285,4 +285,67 @@ describe('PanelManager message handling', () => {
     manager = makeManager();
     assert.deepEqual(manager.currentResult, emptyScanResult());
   });
+
+  it('answers "requestDuplicates" from a real lockfile on disk', async () => {
+    manager = makeManager();
+
+    const tmpDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'panorama-panel-duplicates-'),
+    );
+    const manifestPath = path.join(tmpDir, 'package.json');
+    await fs.writeFile(manifestPath, '{"name":"demo","dependencies":{}}\n');
+    await fs.writeFile(
+      path.join(tmpDir, 'package-lock.json'),
+      JSON.stringify({
+        packages: {
+          '': { dependencies: { a: '^1.0.0' } },
+          'node_modules/a': {
+            version: '1.0.0',
+            dependencies: { 'ansi-styles': '^3.0.0' },
+          },
+          'node_modules/a/node_modules/ansi-styles': { version: '3.2.1' },
+          'node_modules/ansi-styles': { version: '4.3.0' },
+        },
+      }),
+    );
+
+    manager.setResult({
+      groups: [
+        {
+          label: 'demo',
+          manifestPath,
+          ecosystem: 'node',
+          toolchain: 'npm',
+          dependencies: [],
+        },
+      ],
+      summary: {
+        totalDependencies: 0,
+        outdated: 0,
+        vulnerable: 0,
+        deprecated: 0,
+        stale: false,
+      },
+    });
+
+    const intercept = interceptNextPanel();
+    try {
+      manager.reveal();
+      const { receive, posted } = await intercept.ready;
+      receive({ type: 'ready' });
+      await waitForMessage(posted, 'state');
+
+      receive({ type: 'requestDuplicates' });
+      const response = await waitForMessage(posted, 'duplicateVersions');
+
+      assert.equal(response.results.length, 1);
+      assert.equal(response.results[0]?.checked, true);
+      assert.deepEqual(response.results[0]?.groups, [
+        { name: 'ansi-styles', versions: ['3.2.1', '4.3.0'] },
+      ]);
+    } finally {
+      intercept.restore();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
