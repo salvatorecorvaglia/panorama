@@ -640,6 +640,7 @@ export function App() {
         onToggleInstall={() => setInstallOpen((open) => !open)}
         duplicatesOpen={duplicatesOpen}
         onToggleDuplicates={() => setDuplicatesOpen((open) => !open)}
+        onExportReport={() => post({ type: 'exportReport' })}
         onRefresh={() => post({ type: 'refresh' })}
         onCheckUpdates={() => post({ type: 'checkUpdates' })}
         // No manifest means "the user has not chosen a project yet"; the host

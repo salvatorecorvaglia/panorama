@@ -26,6 +26,7 @@ interface Props {
   installOpen: boolean;
   onToggleDuplicates?: () => void;
   duplicatesOpen?: boolean;
+  onExportReport?: () => void;
   /** Lets the app put the caret here from a keyboard shortcut. */
   filterRef?: Ref<HTMLInputElement>;
 }
@@ -44,6 +45,7 @@ export function Toolbar({
   installOpen,
   onToggleDuplicates,
   duplicatesOpen = false,
+  onExportReport,
   filterRef,
 }: Props) {
   const toggleScope = (scope: DepScope) => {
@@ -230,6 +232,17 @@ export function Toolbar({
         >
           <Icon name="refresh" /> Refresh
         </button>
+        {onExportReport && (
+          <button
+            type="button"
+            className="secondary"
+            onClick={onExportReport}
+            disabled={busy}
+            title="Save the current outdated, vulnerable and duplicate-version findings as a file"
+          >
+            <Icon name="export" /> Export report
+          </button>
+        )}
       </div>
 
       {/* Filter Chips & Summary Row */}

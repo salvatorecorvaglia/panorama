@@ -270,6 +270,16 @@ describe('duplicate versions', () => {
   });
 });
 
+describe('export report', () => {
+  it('asks the host to export when the toolbar button is clicked', async () => {
+    renderLoaded();
+    await userEvent.click(
+      screen.getByRole('button', { name: /Export report/i }),
+    );
+    expect(posted).toContainEqual({ type: 'exportReport' });
+  });
+});
+
 describe('detail metadata', () => {
   it('merges into the open row without reordering the table', async () => {
     // A row that gains a size while sorted by Size must not jump out from

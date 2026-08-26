@@ -10,6 +10,9 @@
  */
 
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 import type { PanoramaApi } from '../../src/extension.js';
 
@@ -306,5 +309,66 @@ describe('inline dependency feedback', () => {
       'panorama.focusDependencyFromLens',
       'no-such-key',
     );
+  });
+});
+
+describe('export report', () => {
+  it('writes a Markdown report to the chosen location', async () => {
+    const api = await getApi();
+    await api.scan({ checkUpdates: false });
+
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'panorama-export-'));
+    const target = vscode.Uri.file(path.join(tmpDir, 'report.md'));
+
+    // `showQuickPick` and `showSaveDialog` are modal prompts that would hang
+    // the headless test host forever waiting for a click, so they are
+    // intercepted for the duration of this command — the same technique
+    // `panelManager.test.ts` uses for `createWebviewPanel`.
+    const originalQuickPick = vscode.window.showQuickPick;
+    const originalSaveDialog = vscode.window.showSaveDialog;
+    const originalInfoMessage = vscode.window.showInformationMessage;
+
+    (
+      vscode.window as { showQuickPick: typeof vscode.window.showQuickPick }
+    ).showQuickPick = (async (
+      items: readonly unknown[] | Thenable<readonly unknown[]>,
+    ) => {
+      const resolved = await items;
+      return resolved[0];
+    }) as typeof vscode.window.showQuickPick;
+
+    (
+      vscode.window as { showSaveDialog: typeof vscode.window.showSaveDialog }
+    ).showSaveDialog = (async () =>
+      target) as typeof vscode.window.showSaveDialog;
+
+    (
+      vscode.window as {
+        showInformationMessage: typeof vscode.window.showInformationMessage;
+      }
+    ).showInformationMessage = (async () =>
+      undefined) as typeof vscode.window.showInformationMessage;
+
+    try {
+      await vscode.commands.executeCommand('panorama.exportReport');
+      const content = await fs.readFile(target.fsPath, 'utf8');
+      assert.match(content, /# Panorama Dependency Report/);
+      assert.match(content, /## Summary/);
+    } finally {
+      (
+        vscode.window as { showQuickPick: typeof vscode.window.showQuickPick }
+      ).showQuickPick = originalQuickPick;
+      (
+        vscode.window as {
+          showSaveDialog: typeof vscode.window.showSaveDialog;
+        }
+      ).showSaveDialog = originalSaveDialog;
+      (
+        vscode.window as {
+          showInformationMessage: typeof vscode.window.showInformationMessage;
+        }
+      ).showInformationMessage = originalInfoMessage;
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });

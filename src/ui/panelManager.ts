@@ -206,6 +206,10 @@ export class PanelManager implements vscode.Disposable {
         await vscode.commands.executeCommand('panorama.checkUpdates');
         return;
 
+      case 'exportReport':
+        await vscode.commands.executeCommand('panorama.exportReport');
+        return;
+
       case 'search':
         await this.handleSearch(
           message.query,

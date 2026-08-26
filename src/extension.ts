@@ -8,12 +8,15 @@
 
 import * as vscode from 'vscode';
 import { TtlCache } from './core/cache.js';
+import { findDuplicateVersions } from './core/depGraph.js';
 import { HttpClient } from './core/http.js';
+import { buildReport, type ReportFormat } from './core/report.js';
 import { Scanner, type ScanResult } from './core/scanner.js';
 import { ScanQueue } from './core/scanQueue.js';
-import type { Dependency } from './core/types.js';
+import type { Dependency, ProjectDuplicateVersions } from './core/types.js';
 import { ManifestWatcher } from './core/watcher.js';
 import { createProviderContext } from './core/workspace.js';
+import type { ProviderContext } from './providers/provider.js';
 import { manifestGlob } from './providers/registry.js';
 import { DepCodeLensProvider } from './ui/depCodeLens.js';
 import { DepDiagnostics } from './ui/depDiagnostics.js';
@@ -230,6 +233,60 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       await panel.updateAll(target.manifestPath);
     }),
 
+    vscode.commands.registerCommand('panorama.exportReport', async () => {
+      const result = panel.currentResult;
+      if (result.groups.length === 0) {
+        void vscode.window.showInformationMessage(
+          'Panorama has not found any manifests yet.',
+        );
+        return;
+      }
+
+      const format = await pickReportFormat();
+      if (!format) return;
+
+      // Local-only and cheap (no registry call), so gathering it fresh for
+      // every export is simpler than caching an answer that may already be
+      // stale by the time someone reads the report.
+      const duplicates = await collectDuplicateVersions(
+        result.groups,
+        providerContext,
+      );
+
+      const content = buildReport(
+        result.groups,
+        result.summary,
+        duplicates,
+        {
+          generatedAt: new Date().toISOString(),
+          workspaceName: vscode.workspace.name,
+        },
+        format,
+      );
+
+      const extension = format === 'json' ? 'json' : 'md';
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
+      const target = await vscode.window.showSaveDialog({
+        defaultUri: workspaceFolder
+          ? vscode.Uri.joinPath(workspaceFolder, `panorama-report.${extension}`)
+          : undefined,
+        filters: format === 'json' ? { JSON: ['json'] } : { Markdown: ['md'] },
+      });
+      if (!target) return;
+
+      await vscode.workspace.fs.writeFile(target, Buffer.from(content, 'utf8'));
+
+      const openAction = 'Open';
+      const choice = await vscode.window.showInformationMessage(
+        `Panorama report saved to ${vscode.workspace.asRelativePath(target)}`,
+        openAction,
+      );
+      if (choice === openAction) {
+        const document = await vscode.workspace.openTextDocument(target);
+        await vscode.window.showTextDocument(document);
+      }
+    }),
+
     // Invoked from the command palette, which carries no argument — the row
     // the user last opened in the drawer is the selection it acts on.
     vscode.commands.registerCommand('panorama.showWhy', () => {
@@ -325,6 +382,45 @@ async function pickGroup(groups: ScanResult['groups']) {
     { title: 'Which project do you want to update?' },
   );
   return picked?.group;
+}
+
+async function pickReportFormat(): Promise<ReportFormat | undefined> {
+  const picked = await vscode.window.showQuickPick(
+    [
+      {
+        label: 'Markdown',
+        description: 'Readable — for sharing or a PR description',
+        format: 'markdown' as const,
+      },
+      {
+        label: 'JSON',
+        description: 'Structured — for scripts or other tools',
+        format: 'json' as const,
+      },
+    ],
+    { title: 'Export dependency report as…' },
+  );
+  return picked?.format;
+}
+
+/** Best-effort: a project whose ecosystem has no trustworthy lockfile just
+ * reports `checked: false` rather than failing the whole export. */
+async function collectDuplicateVersions(
+  groups: ScanResult['groups'],
+  ctx: ProviderContext,
+): Promise<ProjectDuplicateVersions[]> {
+  return Promise.all(
+    groups.map(async (group) => ({
+      manifestPath: group.manifestPath,
+      projectLabel: group.label,
+      ecosystem: group.ecosystem,
+      ...(await findDuplicateVersions(
+        group.manifestPath,
+        group.ecosystem,
+        ctx,
+      )),
+    })),
+  );
 }
 
 function updateStatusBar(item: vscode.StatusBarItem, result: ScanResult): void {

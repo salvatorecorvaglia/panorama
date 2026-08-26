@@ -71,6 +71,7 @@ export type WebviewMessage =
    * to resolve the way a mutating action like `updateAll` has.
    */
   | { type: 'requestDuplicates' }
+  | { type: 'exportReport' }
   | { type: 'openExternal'; url: string }
   | { type: 'openManifest'; manifestPath: string; packageName?: string };
 
