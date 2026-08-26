@@ -564,8 +564,7 @@ describe('collectVersionsFrom', () => {
     const versions = await collectVersionsFrom(
       '/p',
       'node',
-      async (absolutePath) =>
-        files[absolutePath.replace(/\\/g, '/')] ?? null,
+      async (absolutePath) => files[absolutePath.replace(/\\/g, '/')] ?? null,
     );
     expect(versions?.get('chalk')).toEqual(new Set(['4.1.2']));
   });
