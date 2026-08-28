@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-08-28
+
+### Added
+
+- **Toolbar Overflow Menu**: The four occasional toolbar actions — "Duplicate versions", "Licenses", "Compare with…" and "Export report" — moved behind a single "More" button. Seven equally weighted buttons wrapped to two lines and put Refresh in competition with Export report; what stays inline is now what gets used every session. The menu is a real `role="menu"` with the expected keyboard pattern (Up/Down, Home/End, Escape to close and return focus, Tab to dismiss), and its items are excluded from the toolbar's roving `tabindex` so Left/Right never walks into a popup that may not be open.
+- **Counts on the Filter Chips**: The `outdated`/`vulnerable`/`deprecated` counts now live on the filter chips they duplicated, instead of on a second set of KPI pills beside them. The pills were spans shaped exactly like the chips — same capsule, border, dot and words — so half the row responded to a click and half did not, with nothing to tell them apart. Each chip carries an `aria-label` spelling the count out ("outdated, 125 packages"), since the visible text alone announces as "outdated 125".
+- **Codicons in the Activity Bar View**: The view's three link buttons use VS Code's own codicons instead of emoji. `build:host` copies `codicon.css` and `codicon.ttf` into `dist/codicons`, because that view is a hand-written HTML document rather than part of the Vite bundle and `node_modules` is excluded from the published `.vsix`; `localResourceRoots` grants exactly that directory and nothing more.
+- **Severity-Coloured Target Versions**: The Latest column is now coloured by how big the jump is (major/minor/patch) rather than green-for-any-upgrade — green said "safe" beside a MAJOR badge saying the opposite. It also lets the Status badge stay on the worst problem: a package that is both vulnerable and a major behind reads VULNERABLE there and carries its magnitude here, stated in words in the cell's `title` since colour alone would not.
+- **Narrow-Layout Breakpoint**: A new 720px breakpoint for the panel dragged into the secondary sidebar. Below it, Scope is dropped (it is one badge, repeated in the drawer, and unlike the version columns nothing about it changes what you would do about a package) and the row actions keep their icons without their words — both buttons already carry an `aria-label`, so the name survives being unable to show it. Previously nothing happened below 1000px and the table kept an ~890px floor, scrolling sideways for good.
+
+### Changed
+
+- **One Overlay Panel at a Time**: The four overlay panels (search, duplicate versions, licenses, dependency diff) are now driven by a single `activePanel` value rather than a boolean each. With independent flags nothing closed one when another opened, so all four could be on screen at once — each capped at 45vh — and push the table out of view entirely. Being mutually exclusive by construction is also what keeps the toolbar's `aria-expanded` states honest, since they are read straight off that value.
+- **Remove Revealed on Hover, Focus and Selection**: A destructive action on every row at once is noise, and one stray click from something irreversible. Remove now appears on row hover, on focus within the row, and while the row's details are open — via `opacity` rather than `display`/`visibility`, so it stays focusable and stays in the accessibility tree while invisible.
+- **Fixed Action Slots**: The actions column is two fixed slots rather than a flex row, so Update and Remove land on the same x in every row. Remove used to slide left on every row with no update to offer, so a column of destructive buttons never shared an x-axis.
+- **Bulk Bar No Longer Covers the Last Rows**: The floating bulk action bar is absolutely positioned over the scroller, so the table now reserves space beneath it while a selection exists — it was covering the very rows, and the very buttons, the selection is about.
+- **Activity Bar View Uses Theme Tokens**: Replaced the hardcoded hex fallbacks throughout the view (`#cccccc`, `#181818`, `#38bdf8`, `rgba(...)` shadows and borders) with the VS Code theme tokens alone, and collapsed the 16px/12px/8px/6px radii that had accumulated there onto the same three-radius scale the panel uses.
+- **Panel Titles Are Headings**: The overlay panels' titles are `<h2>` rather than `<span>` — the panels are named regions, and a region whose contents outrank its own title is not an outline.
+- **Named Sizing Tokens in `theme.css`**: Logo size, checkbox size and column, dot size, action slot width and the grid's column tracks are now variables. Four different dot sizes and three different tile radii had made it into the file by being written into components instead.
+- **Dependency Bumps**: `fast-xml-parser` to `^5.11.1` and `@types/node` to `^26.4.0`.
+
+### Fixed
+
+- **Row Controls Inoperable From the Keyboard**: A row's `Enter`/`Space` handler called `preventDefault()` unconditionally, and keydown bubbles from the checkbox and the action buttons — so those keys cancelled the click they were about to synthesize on every control in the row, opening the detail drawer instead. `Enter` and `Space` now belong to the row only while the row itself holds focus. A child's own `stopPropagation` could not have helped, since it runs on the click this already cancelled.
+- **Thirty Tab Stops Between the Table and the Rest of the Panel**: The per-row checkbox and action buttons are native elements, so each carried an implicit tab stop and ten rendered rows put thirty of them in the sequence. They now carry `tabIndex={-1}` and are reached with Left/Right from the row that owns them, so the grid body is one tab stop whatever the row count. A group header's "Update All" is the deliberate exception — those rows are labels rather than stops, and there is one such button per project rather than one per row.
+- **Unlabelled Row Checkboxes**: Each row's checkbox now carries an `aria-label` naming what it selects; a screen reader previously announced every row's box identically, with nothing to tell them apart.
+- **Columns Shifted a Track When One Was Hidden**: `display: none` stops an element being a grid item, so dropping Size at a breakpoint left Status in Size's track and Actions in Status's, clipping both buttons against a track a fifth of the width they need. Each breakpoint now restates the tracks it still has.
+- **In-Flight Search Left Running**: The search request is now cancelled when the search panel stops being the open one, which includes another panel replacing it. Opening Licenses over a running search previously left the request live, with its result landing in a panel nobody is looking at.
+- **Dead Listener Broke the Author Link**: The Activity Bar view registered a click handler on a `link-license` element that no longer exists; the resulting `TypeError` meant the author link's handler was never registered at all.
+- **`prefers-reduced-motion` Ignored on the Update Buttons**: The primary Update / Update All buttons' hover transition arrived after that block was written, so the preference was honoured for the scan bar and quietly ignored on the one control anybody hovers repeatedly.
+- **Selected and Checked Rows Were Indistinguishable**: Bulk-set membership and "this row's details are open" both painted `list-inactiveSelectionBackground`, so three ticked rows and a fourth open in the drawer were four identically highlighted rows while the bulk bar said three. Membership now draws an inset accent bar, and forced-colours mode — where `box-shadow` is dropped — distinguishes the two with solid versus dashed outlines instead.
+
+### Removed
+
+- **KPI Pills for Outdated / Vulnerable / Deprecated**: Their counts moved onto the filter chips they duplicated. The workspace total, which has no chip of its own, stays.
+- **Unused `updateClass` Helper**: Removed `updateClass()` from `src/webview/format.ts` along with its now-unused `UpdateKind` import.
+
 ## [2.6.0] - 2026-08-26
 
 ### Added
@@ -201,7 +238,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First implementation of Panorama.
 
-[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.3.0...v2.4.0

@@ -20,7 +20,17 @@ Panorama is structured as a VS Code extension with a dual-layer architecture:
 
 - **Extension Host (`src/`)**: Written in TypeScript and compiled with `esbuild`. Responsible for scanning manifest files concurrently with `.gitignore` awareness (`src/core/workspaces.ts`), workspace file watching (`src/core/watcher.ts`), package manager CLI execution & terminal orchestration (`src/ui/dependencyMutator.ts`), shared registry API querying & HTTP caching (`src/providers/shared/cachedFetch.ts`), package size tracking, OSV.dev vulnerability auditing, license policy checks (`src/core/licensePolicy.ts`), manifest CodeLenses & Problems-panel diagnostics for outdated/vulnerable dependencies (`src/core/depAnnotations.ts`), dependency report export (`src/core/report.ts`), Git ref comparison for the "Compare with…" action (`src/ui/gitDiff.ts`), sidebar view provider (`panorama.sidebar`), and webview panel lifecycle & message routing (`src/ui/panelManager.ts`).
 
-- **Webview UI (`src/webview/`)**: React application built with TypeScript, Vite, and TanStack Virtual (`@tanstack/react-virtual`). Rendered inside a VS Code Webview panel (`panorama.open`) for deep, interactive dependency management with full accessibility support (roving `tabindex` table focus, global keyboard shortcuts, dismissable overlay management via `useDismissableOverlay`, error queuing toast alerts, and ARIA live progress indicators).
+- **Webview UI (`src/webview/`)**: React application built with TypeScript, Vite, and TanStack Virtual (`@tanstack/react-virtual`). Rendered inside a VS Code Webview panel (`panorama.open`) for deep, interactive dependency management with full accessibility support (roving `tabindex` table focus, global keyboard shortcuts, dismissable overlay management via `useDismissableOverlay`, the toolbar overflow menu's `role="menu"` keyboard pattern, error queuing toast alerts, and ARIA live progress indicators).
+
+### Webview conventions
+
+A few rules the webview is written to. They are easy to break by accident and cheap to keep:
+
+- **One overlay panel at a time**: search, duplicate versions, licenses and the dependency diff are driven by a single `activePanel` value in `App.tsx` (`PanelId`, exported from `Toolbar.tsx`), not a boolean each. Independent flags let all four stack over the table and made the toolbar's `aria-expanded` states something to maintain separately rather than derive.
+- **The dependency grid is one tab stop**: rows carry the roving `tabindex`; the controls inside a row (`checkbox`, Update, Remove) carry `tabIndex={-1}` and are reached with Left/Right from their row. A new native control inside a row needs `tabIndex={-1}`, or it multiplies tab stops by the row count. A group header's "Update All" is the deliberate exception — one per project, not one per row.
+- **Tokens, not literals, in `theme.css`**: colours come from the VS Code theme tokens or the severity map, and spacing, radii, control sizes and grid tracks come from the `--panorama-*` variables. This holds in `src/ui/sidebarProvider.ts` too — the Activity Bar view is a hand-written HTML document, so it restates the radius scale rather than inheriting it.
+- **Hiding a grid column means restating the tracks**: `display: none` stops an element being a grid item, so every cell after it shifts back one track. Each breakpoint in `theme.css` therefore redefines `--panorama-table-columns` with the columns it still has.
+- **Reveal-on-hover uses `opacity`**: never `display` or `visibility`, which would take the control out of the accessibility tree and out of the keyboard order the roving `tabindex` exists to provide.
 
 ---
 
@@ -65,7 +75,7 @@ This starts concurrent watch processes for both the Extension Host (`esbuild`) a
 | Script | Command | Description |
 | :--- | :--- | :--- |
 | `build` | `pnpm run build` | Builds both the extension host (`build:host`) and webview UI (`build:webview`). |
-| `build:host` | `pnpm run build:host` | Compiles extension host TypeScript source into `dist/extension.js` using `esbuild`. |
+| `build:host` | `pnpm run build:host` | Compiles extension host TypeScript source into `dist/extension.js` using `esbuild`, and copies the codicon font and stylesheet into `dist/codicons` for the Activity Bar view. |
 | `build:webview` | `pnpm run build:webview` | Bundles webview UI application into `dist/webview` using `vite`. |
 | `watch` | `pnpm run watch` | Watches for source changes and incrementally rebuilds host & webview assets. |
 | `typecheck` | `pnpm run typecheck` | Runs `tsc --noEmit` across both extension host and webview TypeScript configurations. |
