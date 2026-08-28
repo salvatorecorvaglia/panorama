@@ -18,6 +18,19 @@
  * holding the roving tabindex is focusable — making every gridcell a tab stop
  * would be the accessibility regression, not the fix. Everywhere else in the
  * webview those rules are enforced.
+ *
+ * That contract covers the controls *inside* a row too, which is what makes it
+ * more than a statement about the row elements. The checkbox and the two action
+ * buttons are native elements, so each carried an implicit tab stop of its own
+ * and ten rendered rows put thirty of them between Tab and the rest of the
+ * panel. They now carry `tabIndex={-1}` and are reached with Left/Right from
+ * the row that owns them, so the whole grid body is one tab stop whatever the
+ * row count.
+ *
+ * The one deliberate exception is a group header's "Update All": those rows are
+ * labels rather than stops, so the button is not in the roving sequence and
+ * keeps a normal tab stop. There is one per project rather than one per row, so
+ * it does not scale with the list the way the per-row controls did.
  */
 
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -349,7 +362,17 @@ export function DepTable({
      * whole grid's structure invalid — assistive technology counts children to
      * reconcile them against `aria-rowcount`.
      */
-    <div className="table__wrapper">
+    <div
+      /*
+       * The modifier is what lets the stylesheet keep the last rows clear of
+       * the floating bulk bar: the bar is absolutely positioned over the
+       * scroller, so without reserved space it covers the very rows — and the
+       * very buttons — the selection is about.
+       */
+      className={`table__wrapper ${
+        selectedDepKeys.size > 0 ? 'table__wrapper--bulk' : ''
+      }`}
+    >
       {selectedDepKeys.size > 0 && (
         <div
           className="table__bulk-bar"
@@ -633,6 +656,40 @@ const DepRow = memo(function DepRow({
       onFocus={() => onFocusRow(index)}
       onClick={() => onSelect(dep)}
       onKeyDown={(event) => {
+        const row = event.currentTarget;
+
+        /*
+         * Left/Right move between the row's own controls, which is how they
+         * are reached at all: they carry `tabIndex={-1}` so that the grid
+         * keeps a single tab stop. The row itself is the first stop, so
+         * ArrowLeft from the checkbox returns to it.
+         */
+        if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+          const stops: HTMLElement[] = [
+            row,
+            ...row.querySelectorAll<HTMLElement>('input, button'),
+          ];
+          const from = stops.indexOf(event.target as HTMLElement);
+          if (from < 0) return;
+          const next = stops[from + (event.key === 'ArrowRight' ? 1 : -1)];
+          if (!next) return;
+          // Also stops the grid scrolling sideways under the focus ring.
+          event.preventDefault();
+          next.focus();
+          return;
+        }
+
+        /*
+         * Enter and Space belong to the row only while the row itself holds
+         * focus. This guard is load-bearing: keydown bubbles from the
+         * checkbox and the action buttons, so calling `preventDefault()`
+         * unconditionally cancelled the click those keys were about to
+         * synthesize — leaving every control in the row inoperable from the
+         * keyboard and opening the drawer instead. A child's own
+         * `stopPropagation` cannot help, because it runs on the click that
+         * this already cancelled.
+         */
+        if (event.target !== row) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           onSelect(dep);
@@ -644,6 +701,13 @@ const DepRow = memo(function DepRow({
           type="checkbox"
           className="row-checkbox"
           checked={checked}
+          // Named after what it selects. Unlabelled, a screen reader announced
+          // every row's box identically, with nothing to tell 156 of them
+          // apart.
+          aria-label={`Select ${dep.name}`}
+          // Reached with Left/Right from the row, not with Tab — see the
+          // roving tabindex note at the top of this file.
+          tabIndex={-1}
           onClick={(e) => e.stopPropagation()}
           onChange={() => onToggleSelect?.(dep.key)}
         />
@@ -680,7 +744,26 @@ const DepRow = memo(function DepRow({
         {currentVersion(dep)}
       </div>
 
-      <div className="cell cell--latest" role="gridcell">
+      {/*
+       * The target version is coloured from the severity map by how big the
+       * jump is, not green-for-any-upgrade. Green said "safe" beside a MAJOR
+       * badge saying the opposite, and it was the only colour in the panel
+       * outside the map that `theme.css` calls the one definition of state.
+       *
+       * It is also what lets the Status badge stay on the worst problem: a
+       * package that is both vulnerable and a major behind reads VULNERABLE
+       * there, and the magnitude it used to lose is carried here. The `title`
+       * states it in words, since colour alone would not.
+       */}
+      <div
+        className="cell cell--latest"
+        role="gridcell"
+        title={
+          upgradeable && dep.latest
+            ? `${dep.updateKind} update available — ${dep.latest}`
+            : undefined
+        }
+      >
         {dep.lookupFailed ? (
           <span className="muted" title="Registry lookup failed">
             —
@@ -695,7 +778,7 @@ const DepRow = memo(function DepRow({
             <span
               className={
                 upgradeable && dep.latest
-                  ? 'version-latest--highlight'
+                  ? `version-latest--${dep.updateKind}`
                   : 'version-latest--current'
               }
             >
@@ -720,25 +803,37 @@ const DepRow = memo(function DepRow({
             className="btn-update-primary"
             aria-label={`Update ${dep.name} to ${dep.latest}`}
             title={`Update to ${dep.latest}`}
+            tabIndex={-1}
             onClick={(event) => {
               event.stopPropagation();
               onUpdate(dep);
             }}
           >
-            <Icon name="arrow-up" /> Update
+            <Icon name="arrow-up" />{' '}
+            <span className="row-action__label">Update</span>
           </button>
         )}
+        {/*
+         * Always rendered, and placed in the second slot explicitly so it sits
+         * on the same x whether or not the row above it had an update to
+         * offer. It is revealed on hover, on focus within the row, and while
+         * the row's details are open — the stylesheet does that with `opacity`
+         * rather than `display`, so it stays focusable and stays in the
+         * accessibility tree while invisible.
+         */}
         <button
           type="button"
-          className="ghost danger"
+          className="ghost danger row-action--remove"
           aria-label={`Remove ${dep.name} from this project`}
           title={`Remove ${dep.name} from this project`}
+          tabIndex={-1}
           onClick={(event) => {
             event.stopPropagation();
             onUninstall(dep);
           }}
         >
-          <Icon name="trash" /> Remove
+          <Icon name="trash" />{' '}
+          <span className="row-action__label">Remove</span>
         </button>
       </div>
     </div>

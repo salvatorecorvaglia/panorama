@@ -31,10 +31,13 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
   ): void {
     webviewView.webview.options = {
       enableScripts: true,
-      // Only the directory the view actually loads from. The whole extension
-      // directory was reachable before, which is a wider grant than a logo and
-      // a button need.
-      localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'resources')],
+      // Only the directories the view actually loads from. The whole extension
+      // directory was reachable before, which is a wider grant than a logo, a
+      // button and an icon font need.
+      localResourceRoots: [
+        vscode.Uri.joinPath(this.extensionUri, 'resources'),
+        vscode.Uri.joinPath(this.extensionUri, 'dist', 'codicons'),
+      ],
     };
 
     webviewView.webview.html = this.getHtmlForWebview(webviewView.webview);
@@ -63,6 +66,10 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       vscode.Uri.joinPath(this.extensionUri, 'resources', 'panorama.png'),
     );
 
+    const codiconUri = webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'dist', 'codicons', 'codicon.css'),
+    );
+
     const nonce = createNonce();
     const csp = buildContentSecurityPolicy(webview, nonce);
 
@@ -72,8 +79,21 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
+  <link href="${codiconUri}" rel="stylesheet" />
   <title>Panorama Sidebar</title>
   <style>
+    /*
+     * The panel's tokens, restated because this view is a hand-written
+     * document rather than part of the webview bundle. Kept to the same three
+     * radii the panel uses — this file had accumulated 16px, 12px, 8px and 6px
+     * between them.
+     */
+    :root {
+      --panorama-radius: 4px;
+      --panorama-radius-lg: 8px;
+      --panorama-radius-pill: 999px;
+    }
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -82,8 +102,8 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     body {
       font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
       font-size: var(--vscode-font-size, 13px);
-      color: var(--vscode-foreground, #cccccc);
-      background-color: var(--vscode-sideBar-background, #181818);
+      color: var(--vscode-foreground);
+      background-color: var(--vscode-sideBar-background);
       padding: 16px 12px;
       line-height: 1.4;
     }
@@ -102,29 +122,29 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       width: 72px;
       height: 72px;
       object-fit: contain;
-      border-radius: 16px;
-      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+      border-radius: var(--panorama-radius-lg);
+      box-shadow: 0 4px 14px var(--vscode-widget-shadow);
     }
     .title {
       font-size: 1.15em;
       font-weight: 700;
-      color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground, #ffffff));
+      color: var(--vscode-sideBarTitle-foreground, var(--vscode-foreground));
       margin-bottom: 6px;
     }
     .version-badge {
       display: inline-block;
       padding: 2px 10px;
-      background-color: var(--vscode-badge-background, rgba(2, 132, 199, 0.2));
-      color: var(--vscode-badge-foreground, #38bdf8);
-      border: 1px solid var(--vscode-badge-background, rgba(2, 132, 199, 0.4));
-      border-radius: 12px;
+      background-color: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      border: 1px solid var(--vscode-badge-background);
+      border-radius: var(--panorama-radius-pill);
       font-size: 0.82em;
       font-weight: 600;
       margin-bottom: 14px;
     }
     .description {
       font-size: 0.88em;
-      color: var(--vscode-descriptionForeground, #999999);
+      color: var(--vscode-descriptionForeground);
       margin-bottom: 18px;
       padding: 0 4px;
     }
@@ -135,23 +155,23 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       gap: 6px;
       width: 100%;
       padding: 9px 14px;
-      background: var(--vscode-button-background, #0284c7);
-      color: var(--vscode-button-foreground, #ffffff);
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
       border: none;
-      border-radius: 6px;
+      border-radius: var(--panorama-radius);
       font-size: 0.95em;
       font-weight: 600;
       cursor: pointer;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 2px 6px var(--vscode-widget-shadow);
       transition: background-color 0.15s ease;
     }
     .btn-primary:hover {
-      background: var(--vscode-button-hoverBackground, #0369a1);
+      background: var(--vscode-button-hoverBackground);
     }
     .divider {
       width: 100%;
       height: 1px;
-      background-color: var(--vscode-sideBar-border, var(--vscode-panel-border, rgba(255, 255, 255, 0.1)));
+      background-color: var(--vscode-sideBar-border, var(--vscode-panel-border));
       margin: 20px 0 16px 0;
       border: none;
     }
@@ -170,7 +190,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-descriptionForeground, #888888));
+      color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-descriptionForeground));
       margin-bottom: 10px;
     }
     .github-icon {
@@ -179,21 +199,21 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     .repo-card {
       width: 100%;
       padding: 10px 12px;
-      background: var(--vscode-sideBar-background, rgba(255, 255, 255, 0.04));
-      border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border, rgba(255, 255, 255, 0.1)));
-      border-radius: 8px;
+      background: var(--vscode-sideBar-background);
+      border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
+      border-radius: var(--panorama-radius-lg);
       margin-bottom: 12px;
       cursor: pointer;
       transition: background 0.15s ease, border-color 0.15s ease;
     }
     .repo-card:hover {
-      background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
-      border-color: var(--vscode-focusBorder, #0284c7);
+      background: var(--vscode-list-hoverBackground);
+      border-color: var(--vscode-focusBorder);
     }
     .repo-title {
       font-size: 0.9em;
       font-weight: 600;
-      color: var(--vscode-textLink-foreground, #38bdf8);
+      color: var(--vscode-textLink-foreground);
       display: flex;
       align-items: center;
       gap: 6px;
@@ -202,7 +222,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     }
     .repo-sub {
       font-size: 0.78em;
-      color: var(--vscode-descriptionForeground, #888888);
+      color: var(--vscode-descriptionForeground);
     }
     .github-links {
       width: 100%;
@@ -217,9 +237,9 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       width: 100%;
       padding: 6px 10px;
       background: transparent;
-      color: var(--vscode-foreground, #cccccc);
-      border: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.08));
-      border-radius: 6px;
+      color: var(--vscode-foreground);
+      border: 1px solid var(--vscode-widget-border);
+      border-radius: var(--panorama-radius);
       font-size: 0.85em;
       font-weight: 500;
       cursor: pointer;
@@ -227,18 +247,18 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       text-align: left;
     }
     .github-link-btn:hover {
-      background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
-      color: var(--vscode-foreground, #ffffff);
+      background: var(--vscode-list-hoverBackground);
+      color: var(--vscode-foreground);
     }
     .author-footer {
       margin-top: 16px;
       font-size: 0.8em;
-      color: var(--vscode-descriptionForeground, #888888);
+      color: var(--vscode-descriptionForeground);
       width: 100%;
       text-align: center;
     }
     .author-link {
-      color: var(--vscode-textLink-foreground, #38bdf8);
+      color: var(--vscode-textLink-foreground);
       cursor: pointer;
       text-decoration: none;
     }
@@ -283,13 +303,13 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
 
       <div class="github-links">
         <button type="button" class="github-link-btn" id="link-star">
-          <span>⭐</span> Star on GitHub
+          <span class="codicon codicon-star-full"></span> Star on GitHub
         </button>
         <button type="button" class="github-link-btn" id="link-issues">
-          <span>🐛</span> Report an Issue
+          <span class="codicon codicon-bug"></span> Report an Issue
         </button>
         <button type="button" class="github-link-btn" id="link-changelog">
-          <span>📜</span> Release Notes
+          <span class="codicon codicon-history"></span> Release Notes
         </button>
       </div>
 
@@ -319,9 +339,6 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     });
     document.getElementById('link-changelog').addEventListener('click', () => {
       vscode.postMessage({ type: 'openUrl', url: repoUrl + '/releases' });
-    });
-    document.getElementById('link-license').addEventListener('click', () => {
-      vscode.postMessage({ type: 'openUrl', url: repoUrl + '/blob/main/LICENSE' });
     });
     document.getElementById('link-author').addEventListener('click', () => {
       vscode.postMessage({ type: 'openUrl', url: 'https://github.com/salvatorecorvaglia' });

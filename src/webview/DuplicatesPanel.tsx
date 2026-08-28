@@ -45,7 +45,7 @@ export function DuplicatesPanel({ results, loading, onClose }: Props) {
     >
       <div className="toolbar">
         <div className="toolbar__row">
-          <span className="toolbar__title">Duplicate versions</span>
+          <h2 className="toolbar__title">Duplicate versions</h2>
           <div className="toolbar__spacer" />
           <button
             type="button"

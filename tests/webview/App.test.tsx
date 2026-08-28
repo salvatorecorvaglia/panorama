@@ -64,6 +64,25 @@ function renderLoaded(groups = [group()]) {
   return result;
 }
 
+/**
+ * Clicks a toolbar action, opening the overflow menu first when that is where
+ * the action lives now.
+ *
+ * Duplicate versions, Licenses, Compare with… and Export report moved behind
+ * one "More" button; the three actions used every session stayed inline. Tests
+ * that only care *that* an action runs should not have to know which side of
+ * that line it fell on.
+ */
+async function toolbarAction(name: RegExp) {
+  const inline = screen.queryByRole('button', { name });
+  if (inline) {
+    await userEvent.click(inline);
+    return;
+  }
+  await userEvent.click(screen.getByRole('button', { name: /^More$/i }));
+  await userEvent.click(await screen.findByRole('menuitem', { name }));
+}
+
 describe('handshake', () => {
   it('announces itself so the host knows it can post', () => {
     render(<App />);
@@ -209,9 +228,7 @@ describe('the why tree cache', () => {
 describe('duplicate versions', () => {
   it('requests a check when the panel opens and shows what comes back', async () => {
     renderLoaded();
-    await userEvent.click(
-      screen.getByRole('button', { name: /Duplicate versions/i }),
-    );
+    await toolbarAction(/Duplicate versions/i);
     expect(posted).toContainEqual({ type: 'requestDuplicates' });
 
     send({
@@ -234,9 +251,7 @@ describe('duplicate versions', () => {
 
   it('re-checks when a new scan lands while the panel stays open', async () => {
     renderLoaded();
-    await userEvent.click(
-      screen.getByRole('button', { name: /Duplicate versions/i }),
-    );
+    await toolbarAction(/Duplicate versions/i);
     // The click itself already posted one request; a rescan must post another.
     const before = posted.length;
 
@@ -248,9 +263,7 @@ describe('duplicate versions', () => {
 
   it('says so when every checked project is clean', async () => {
     renderLoaded();
-    await userEvent.click(
-      screen.getByRole('button', { name: /Duplicate versions/i }),
-    );
+    await toolbarAction(/Duplicate versions/i);
     send({
       type: 'duplicateVersions',
       results: [
@@ -273,7 +286,7 @@ describe('duplicate versions', () => {
 describe('license summary', () => {
   it('requests a check when the panel opens and shows what comes back', async () => {
     renderLoaded();
-    await userEvent.click(screen.getByRole('button', { name: /Licenses/i }));
+    await toolbarAction(/Licenses/i);
     expect(posted).toContainEqual({ type: 'requestLicenses' });
 
     send({
@@ -292,7 +305,7 @@ describe('license summary', () => {
     // Unlike duplicate versions, this reaches the network per package, so a
     // rescan must not silently trigger a fresh round of registry calls.
     renderLoaded();
-    await userEvent.click(screen.getByRole('button', { name: /Licenses/i }));
+    await toolbarAction(/Licenses/i);
     const before = posted.length;
 
     send({ type: 'state', groups: [group()], summary: EMPTY_SUMMARY });
@@ -302,7 +315,7 @@ describe('license summary', () => {
 
   it('re-checks when Refresh is clicked', async () => {
     renderLoaded();
-    await userEvent.click(screen.getByRole('button', { name: /Licenses/i }));
+    await toolbarAction(/Licenses/i);
     // The Refresh button is disabled while a check is in flight, so the
     // first (loading) response has to land before it can be clicked again.
     send({ type: 'licenseSummary', summary: { groups: [] } });
@@ -321,7 +334,7 @@ describe('license summary', () => {
 
   it('flags a license the policy denies', async () => {
     renderLoaded();
-    await userEvent.click(screen.getByRole('button', { name: /Licenses/i }));
+    await toolbarAction(/Licenses/i);
     send({
       type: 'licenseSummary',
       summary: {
@@ -341,9 +354,7 @@ describe('license summary', () => {
 describe('export report', () => {
   it('asks the host to export when the toolbar button is clicked', async () => {
     renderLoaded();
-    await userEvent.click(
-      screen.getByRole('button', { name: /Export report/i }),
-    );
+    await toolbarAction(/Export report/i);
     expect(posted).toContainEqual({ type: 'exportReport' });
   });
 });
@@ -416,9 +427,7 @@ describe('detail metadata', () => {
 describe('dependency diff', () => {
   it('asks the host to compare when the toolbar button is clicked', async () => {
     renderLoaded();
-    await userEvent.click(
-      screen.getByRole('button', { name: /Compare with/i }),
-    );
+    await toolbarAction(/Compare with/i);
     expect(posted).toContainEqual({ type: 'requestDependencyDiff' });
   });
 
@@ -753,5 +762,186 @@ describe('selection bookkeeping', () => {
     await userEvent.click(boxes[1]);
     await waitFor(() => expect(selectAllBox().indeterminate).toBe(false));
     expect(selectAllBox().checked).toBe(true);
+  });
+});
+
+/*
+ * One overlay panel at a time.
+ *
+ * Search, duplicates, licenses and the dependency diff were four independent
+ * booleans rendered as four siblings above the table, each capped at 45vh.
+ * Nothing closed one when another opened, so all four could be on screen at
+ * once and push the table out of view entirely. They are now a single
+ * `activePanel` value, which is also what makes the toolbar's aria-expanded
+ * states mutually exclusive rather than separately maintained.
+ */
+describe('panel exclusivity', () => {
+  const PANELS = {
+    search: /Package search/i,
+    duplicates: /Duplicate package versions/i,
+    licenses: /License summary/i,
+    diff: /Dependency changes/i,
+  };
+
+  /** Which overlay panels are currently on screen. */
+  function openPanels(): string[] {
+    return Object.entries(PANELS)
+      .filter(([, name]) => screen.queryByRole('region', { name }) !== null)
+      .map(([id]) => id);
+  }
+
+  const open = {
+    // The toggle relabels itself once the panel is open, so match either word.
+    search: () =>
+      userEvent.click(
+        screen.getByRole('button', { name: /Add package|Close search/i }),
+      ),
+    duplicates: () => toolbarAction(/Duplicate versions/i),
+    licenses: () => toolbarAction(/Licenses/i),
+  };
+
+  it('opens each panel on its own', async () => {
+    renderLoaded();
+
+    await open.duplicates();
+    expect(openPanels()).toEqual(['duplicates']);
+  });
+
+  it('closes the duplicates panel when licenses opens', async () => {
+    renderLoaded();
+
+    await open.duplicates();
+    await open.licenses();
+
+    expect(openPanels()).toEqual(['licenses']);
+  });
+
+  it('closes the licenses panel when search opens', async () => {
+    renderLoaded();
+
+    await open.licenses();
+    await open.search();
+
+    expect(openPanels()).toEqual(['search']);
+  });
+
+  it('closes an open panel when a diff result arrives', async () => {
+    renderLoaded();
+
+    await open.search();
+    send({ type: 'dependencyDiff', ref: 'origin/main', results: [] });
+
+    expect(openPanels()).toEqual(['diff']);
+  });
+
+  it('never leaves more than one panel on screen', async () => {
+    renderLoaded();
+
+    await open.search();
+    await open.duplicates();
+    await open.licenses();
+    send({ type: 'dependencyDiff', ref: 'origin/main', results: [] });
+
+    // Four panels at up to 45vh each is 180vh of overlay above a table that
+    // has nowhere left to render.
+    expect(openPanels()).toHaveLength(1);
+  });
+
+  /**
+   * Runs a real search and resolves once the host has been asked, so the
+   * cancellation tests below have something in flight to cancel.
+   */
+  async function startSearch() {
+    await open.search();
+    await userEvent.type(
+      screen.getByRole('searchbox', { name: /Search registries/i }),
+      'left-pad',
+    );
+    await waitFor(() =>
+      expect(
+        posted.some((m) => (m as { type?: string }).type === 'search'),
+      ).toBe(true),
+    );
+  }
+
+  function cancelled(): boolean {
+    return posted.some((m) => (m as { type?: string }).type === 'cancelSearch');
+  }
+
+  it('cancels an in-flight search when the panel is closed', async () => {
+    renderLoaded();
+    await startSearch();
+    expect(cancelled()).toBe(false);
+
+    await open.search(); // the toggle closes it again
+    await waitFor(() => expect(cancelled()).toBe(true));
+  });
+
+  it('cancels an in-flight search when another panel replaces it', async () => {
+    renderLoaded();
+    await startSearch();
+    expect(cancelled()).toBe(false);
+
+    // Search is no longer the open panel, so its request has to be dropped —
+    // otherwise the result lands in a panel nobody is looking at.
+    await open.licenses();
+    await waitFor(() => expect(cancelled()).toBe(true));
+    expect(openPanels()).toEqual(['licenses']);
+  });
+
+  it('re-checks duplicates on a rescan, but only while it is the open panel', async () => {
+    renderLoaded();
+    await open.duplicates();
+    const afterOpen = posted.length;
+
+    send({ type: 'state', groups: [group()], summary: EMPTY_SUMMARY });
+    expect(posted.at(-1)).toEqual({ type: 'requestDuplicates' });
+
+    // Switching away must stop the rescan hook firing for a closed panel.
+    await open.licenses();
+    const afterSwitch = posted.length;
+    send({ type: 'state', groups: [group()], summary: EMPTY_SUMMARY });
+    expect(
+      posted
+        .slice(afterSwitch)
+        .some((m) => (m as { type?: string }).type === 'requestDuplicates'),
+    ).toBe(false);
+    expect(afterOpen).toBeLessThan(posted.length);
+  });
+
+  it('does not refetch licenses on a rescan', async () => {
+    renderLoaded();
+    await open.licenses();
+    const after = posted.length;
+
+    // Deliberately unlike duplicates: this one reaches the network per
+    // package, so only the panel's own Refresh re-runs it.
+    send({ type: 'state', groups: [group()], summary: EMPTY_SUMMARY });
+    expect(
+      posted
+        .slice(after)
+        .some((m) => (m as { type?: string }).type === 'requestLicenses'),
+    ).toBe(false);
+  });
+
+  it('reports the expanded state of the compare action', async () => {
+    renderLoaded();
+    const toggleMore = () =>
+      userEvent.click(screen.getByRole('button', { name: /^More$/i }));
+
+    // It moved into the overflow menu, but it still has to say whether its
+    // panel is open — which is the thing it never did as a bare button.
+    await toggleMore();
+    expect(
+      screen.getByRole('menuitem', { name: /Compare with/i }),
+    ).toHaveAttribute('aria-expanded', 'false');
+    await toggleMore();
+
+    send({ type: 'dependencyDiff', ref: 'origin/main', results: [] });
+
+    await toggleMore();
+    expect(
+      screen.getByRole('menuitem', { name: /Compare with/i }),
+    ).toHaveAttribute('aria-expanded', 'true');
   });
 });

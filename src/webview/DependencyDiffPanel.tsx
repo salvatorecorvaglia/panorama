@@ -50,9 +50,9 @@ export function DependencyDiffPanel({
     >
       <div className="toolbar">
         <div className="toolbar__row">
-          <span className="toolbar__title">
+          <h2 className="toolbar__title">
             {gitRef ? `Comparing with ${gitRef}` : 'Dependency changes'}
-          </span>
+          </h2>
           <div className="toolbar__spacer" />
           <button type="button" className="secondary" onClick={onCompareAgain}>
             <Icon name="git-compare" /> Compare with…

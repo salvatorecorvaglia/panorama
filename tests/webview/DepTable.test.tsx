@@ -3,7 +3,13 @@
  * actions.
  */
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type {
@@ -552,5 +558,317 @@ describe('empty and loading states', () => {
     expect(screen.getByRole('status')).toHaveTextContent(
       /Reading your manifests/i,
     );
+  });
+});
+
+/*
+ * The row's keyboard contract.
+ *
+ * Every control in a row was once unreachable from the keyboard: the row's
+ * keydown handler called `preventDefault()` on Enter and Space to open the
+ * drawer, and because keydown bubbles from the row's children that also
+ * cancelled the click those keys synthesize on the focused checkbox or button.
+ *
+ * The first two tests are the behaviour that handler exists to provide; the
+ * rest are what it used to break, including the single-tab-stop contract the
+ * top of DepTable.tsx states.
+ */
+describe('row controls: keyboard and naming', () => {
+  /** The first dependency row, past the header. */
+  function firstRow(): HTMLElement {
+    return screen.getAllByRole('row')[1];
+  }
+
+  function rowCheckbox(): HTMLInputElement {
+    return within(firstRow()).getByRole('checkbox') as HTMLInputElement;
+  }
+
+  /**
+   * Elements inside the grid body that Tab can actually reach.
+   *
+   * `tabIndex` rather than the attribute: a `<button>` with no attribute at all
+   * still reports 0, and it is those implicit stops — one per control, per
+   * rendered row — that the roving tabindex is supposed to suppress.
+   */
+  function tabStopsInGridBody(): HTMLElement[] {
+    const body = screen.getByRole('rowgroup');
+    return [
+      ...body.querySelectorAll<HTMLElement>(
+        'a[href], button, input, select, textarea, [tabindex]',
+      ),
+    ].filter((element) => element.tabIndex >= 0);
+  }
+
+  function outdated() {
+    return group([
+      dep({
+        name: 'left-pad',
+        key: 'left-pad',
+        updateKind: 'major',
+        latest: '2.0.0',
+      }),
+    ]);
+  }
+
+  // ---- the row itself: must keep working ----
+
+  it('opens the drawer on Enter when the row itself holds focus', () => {
+    const onSelect = vi.fn();
+    renderTable([outdated()], undefined, { onSelect });
+
+    fireEvent.focus(screen.getByRole('rowgroup'));
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Enter' });
+
+    expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  it('opens the drawer on Space when the row itself holds focus', () => {
+    const onSelect = vi.fn();
+    renderTable([outdated()], undefined, { onSelect });
+
+    fireEvent.focus(screen.getByRole('rowgroup'));
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: ' ' });
+
+    expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  // ---- the controls inside it: currently unreachable ----
+
+  it('ticks the row checkbox on Space', async () => {
+    const onToggleSelectDep = vi.fn();
+    renderTable([outdated()], undefined, {
+      onToggleSelectDep,
+      selectedDepKeys: new Set<string>(),
+    });
+
+    rowCheckbox().focus();
+    await userEvent.keyboard(' ');
+
+    expect(onToggleSelectDep).toHaveBeenCalledWith('left-pad');
+  });
+
+  it('does not open the drawer when Space ticks the checkbox', async () => {
+    const onSelect = vi.fn();
+    renderTable([outdated()], undefined, {
+      onSelect,
+      onToggleSelectDep: noop,
+      selectedDepKeys: new Set<string>(),
+    });
+
+    rowCheckbox().focus();
+    await userEvent.keyboard(' ');
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('runs the row Update button on Enter', async () => {
+    const onUpdate = vi.fn();
+    renderTable([outdated()], undefined, { onUpdate });
+
+    screen.getByRole('button', { name: /Update left-pad/i }).focus();
+    await userEvent.keyboard('{Enter}');
+
+    expect(onUpdate).toHaveBeenCalledOnce();
+  });
+
+  it('runs the row Update button on Space', async () => {
+    const onUpdate = vi.fn();
+    renderTable([outdated()], undefined, { onUpdate });
+
+    screen.getByRole('button', { name: /Update left-pad/i }).focus();
+    await userEvent.keyboard(' ');
+
+    expect(onUpdate).toHaveBeenCalledOnce();
+  });
+
+  it('runs the row Remove button on Enter', async () => {
+    const onUninstall = vi.fn();
+    renderTable([outdated()], undefined, { onUninstall });
+
+    screen.getByRole('button', { name: /Remove left-pad/i }).focus();
+    await userEvent.keyboard('{Enter}');
+
+    expect(onUninstall).toHaveBeenCalledOnce();
+  });
+
+  it('names the row checkbox after the package it selects', () => {
+    renderTable([outdated()], undefined, {
+      onToggleSelectDep: noop,
+      selectedDepKeys: new Set<string>(),
+    });
+
+    // The header's select-all box is named, and changes wording under a
+    // filter. The per-row box it sits above says nothing at all, so a screen
+    // reader announces every one of them identically.
+    expect(rowCheckbox()).toHaveAccessibleName(/left-pad/i);
+  });
+
+  it('gives every control it renders an accessible name', () => {
+    renderTable([outdated()], undefined, {
+      onToggleSelectDep: noop,
+      selectedDepKeys: new Set<string>(),
+    });
+
+    const controls = [
+      ...screen
+        .getByRole('rowgroup')
+        .querySelectorAll<HTMLElement>('button, input'),
+    ];
+    expect(controls.length).toBeGreaterThan(0);
+    for (const control of controls) {
+      expect(control).toHaveAccessibleName();
+    }
+  });
+
+  it('walks the row\u2019s own controls with Left and Right', () => {
+    renderTable([outdated()], undefined, {
+      onToggleSelectDep: noop,
+      selectedDepKeys: new Set<string>(),
+    });
+
+    fireEvent.focus(screen.getByRole('rowgroup'));
+    const row = firstRow();
+    expect(document.activeElement).toBe(row);
+
+    // The row is the first stop, then its controls in DOM order.
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowRight',
+    });
+    expect(document.activeElement).toBe(rowCheckbox());
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowRight',
+    });
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: /Update left-pad/i }),
+    );
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowRight',
+    });
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: /Remove left-pad/i }),
+    );
+
+    // Past the last control there is nowhere to go, rather than wrapping.
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowRight',
+    });
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: /Remove left-pad/i }),
+    );
+
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowLeft',
+    });
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: /Update left-pad/i }),
+    );
+  });
+
+  it('returns focus to row level when arrowing down from a control', () => {
+    renderTable([
+      group(
+        ['a', 'b'].map((name) =>
+          dep({ name, key: name, updateKind: 'major', latest: '2.0.0' }),
+        ),
+      ),
+    ]);
+
+    fireEvent.focus(screen.getByRole('rowgroup'));
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowRight',
+    });
+    expect(document.activeElement).not.toBe(screen.getAllByRole('row')[1]);
+
+    // Row-to-row movement still belongs to the grid, from wherever focus sits.
+    fireEvent.keyDown(document.activeElement as HTMLElement, {
+      key: 'ArrowDown',
+    });
+    expect(
+      (document.activeElement as HTMLElement).getAttribute('data-row-index'),
+    ).toBe('1');
+  });
+
+  it('keeps the whole grid body to a single tab stop', () => {
+    renderTable([
+      group(
+        ['a', 'b', 'c', 'd', 'e'].map((name) =>
+          dep({ name, key: name, updateKind: 'major', latest: '2.0.0' }),
+        ),
+      ),
+    ]);
+
+    fireEvent.focus(screen.getByRole('rowgroup'));
+
+    // One roving stop for the grid, per the contract stated at the top of
+    // DepTable.tsx. Today each row contributes three more of its own.
+    expect(tabStopsInGridBody()).toHaveLength(1);
+  });
+});
+
+/*
+ * Row action layout.
+ *
+ * Two guarantees the stylesheet relies on, asserted here because jsdom applies
+ * no CSS: Remove is always rendered (it is revealed with `opacity`, never
+ * `display`, so hiding it must not mean removing it), and the wrapper carries
+ * the modifier that reserves space under the floating bulk bar.
+ */
+describe('row actions and bulk-bar clearance', () => {
+  function wrapper(container: HTMLElement): HTMLElement {
+    const found = container.querySelector<HTMLElement>('.table__wrapper');
+    if (!found) throw new Error('table wrapper not rendered');
+    return found;
+  }
+
+  it('renders Remove on every row, with or without an update to offer', () => {
+    renderTable([
+      group([
+        dep({ name: 'current', key: 'c', updateKind: 'none' }),
+        dep({
+          name: 'stale',
+          key: 's',
+          updateKind: 'major',
+          latest: '2.0.0',
+        }),
+      ]),
+    ]);
+
+    // The row with no update still gets a Remove, and it still sits in the
+    // second slot rather than sliding into the empty Update one.
+    for (const name of ['current', 'stale']) {
+      const button = screen.getByRole('button', {
+        name: new RegExp(`Remove ${name}`, 'i'),
+      });
+      expect(button).toHaveClass('row-action--remove');
+    }
+  });
+
+  it('keeps Remove focusable and named while it is visually hidden', () => {
+    renderTable([group([dep({ name: 'left-pad', key: 'left-pad' })])]);
+
+    // Nothing is hovered here, which is exactly the state the stylesheet
+    // renders at `opacity: 0` — it must still be reachable and announced.
+    const remove = screen.getByRole('button', { name: /Remove left-pad/i });
+    expect(remove).toHaveAccessibleName();
+    remove.focus();
+    expect(document.activeElement).toBe(remove);
+  });
+
+  it('reserves room under the bulk bar only while a selection exists', () => {
+    const { container: none } = renderTable([
+      group([dep({ name: 'a', key: 'a' })]),
+    ]);
+    expect(wrapper(none)).not.toHaveClass('table__wrapper--bulk');
+
+    cleanup();
+
+    const { container: some } = renderTable(
+      [group([dep({ name: 'a', key: 'a' })])],
+      undefined,
+      { selectedDepKeys: new Set(['a']), onToggleSelectDep: noop },
+    );
+    expect(wrapper(some)).toHaveClass('table__wrapper--bulk');
   });
 });

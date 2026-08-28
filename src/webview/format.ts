@@ -5,7 +5,7 @@
  * `core/vocabulary.ts` — this file is only about how the webview renders things.
  */
 
-import type { Ecosystem, UpdateKind } from '../core/types.js';
+import type { Ecosystem } from '../core/types.js';
 
 export const ECOSYSTEM_LABELS: Record<Ecosystem, string> = {
   node: 'npm',
@@ -42,10 +42,6 @@ export function formatDownloads(downloads: number | undefined): string {
   if (downloads >= 1_000_000) return `${(downloads / 1_000_000).toFixed(1)}M`;
   if (downloads >= 1_000) return `${Math.round(downloads / 1_000)}k`;
   return String(downloads);
-}
-
-export function updateClass(kind: UpdateKind): string {
-  return `update--${kind === 'unknown' ? 'none' : kind}`;
 }
 
 /** An ISO timestamp as a short, locale-formatted date, or empty for none. */

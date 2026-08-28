@@ -28,7 +28,7 @@ import { DuplicatesPanel } from './DuplicatesPanel.js';
 import { Icon } from './Icon.js';
 import { LicenseSummaryPanel } from './LicenseSummaryPanel.js';
 import { SearchInstall } from './SearchInstall.js';
-import { type Filters, Toolbar } from './Toolbar.js';
+import { type Filters, type PanelId, Toolbar } from './Toolbar.js';
 import { loadState, onHostMessage, post, saveState } from './vscodeApi.js';
 
 /**
@@ -132,13 +132,30 @@ export function App() {
     Record<string, ChangelogEntry[] | undefined>
   >({});
 
-  const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+  /*
+   * Which overlay panel is open, if any.
+   *
+   * One value rather than a boolean each, because the four panels are siblings
+   * above the table and each is capped at 45vh: with independent flags nothing
+   * closed one when another opened, so all four could be on screen at once and
+   * push the table out of view entirely. Making them mutually exclusive by
+   * construction is also what keeps the toolbar's `aria-expanded` states honest
+   * — they are read straight off this.
+   */
+  const [activePanel, setActivePanel] = useState<PanelId>(null);
+
+  /** Opens a panel, or closes it when it is already the open one. */
+  const togglePanel = useCallback((panel: Exclude<PanelId, null>) => {
+    setActivePanel((current) => (current === panel ? null : panel));
+  }, []);
+
+  const closePanel = useCallback(() => setActivePanel(null), []);
+
   const [duplicatesLoading, setDuplicatesLoading] = useState(false);
   const [duplicateResults, setDuplicateResults] = useState<
     ProjectDuplicateVersions[] | undefined
   >();
 
-  const [licensesOpen, setLicensesOpen] = useState(false);
   const [licensesLoading, setLicensesLoading] = useState(false);
   const [licenseSummary, setLicenseSummary] = useState<
     LicenseSummary | undefined
@@ -150,7 +167,6 @@ export function App() {
    * would just be a second one. The panel itself only ever opens once a
    * result lands, so cancelling the picker leaves nothing stuck open.
    */
-  const [dependencyDiffOpen, setDependencyDiffOpen] = useState(false);
   const [dependencyDiffRef, setDependencyDiffRef] = useState<
     string | undefined
   >();
@@ -158,7 +174,6 @@ export function App() {
     ProjectDependencyDiff[] | undefined
   >();
 
-  const [installOpen, setInstallOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchError, setSearchError] = useState<string | undefined>();
   /** Registries that did not answer, when others did. */
@@ -401,7 +416,7 @@ export function App() {
         case 'dependencyDiff':
           setDependencyDiffRef(message.ref);
           setDependencyDiffResults(message.results);
-          setDependencyDiffOpen(true);
+          setActivePanel('diff');
           break;
 
         case 'error':
@@ -420,7 +435,7 @@ export function App() {
           break;
 
         case 'focusSearch':
-          setInstallOpen(true);
+          setActivePanel('search');
           break;
 
         case 'focusDependency':
@@ -503,14 +518,19 @@ export function App() {
     [],
   );
 
-  // Cancel any in-flight search when the panel closes.
+  /*
+   * Cancel any in-flight search when the search panel stops being the open
+   * one — which now includes another panel replacing it, not just the user
+   * closing it. Without that, opening Licenses over a running search left the
+   * request live and its result landing in a panel nobody is looking at.
+   */
   useEffect(() => {
-    if (!installOpen && activeRequestId) {
+    if (activePanel !== 'search' && activeRequestId) {
       post({ type: 'cancelSearch', requestId: activeRequestId });
       setActiveRequestId(undefined);
       setSearching(false);
     }
-  }, [installOpen, activeRequestId]);
+  }, [activePanel, activeRequestId]);
 
   /*
    * Runs the check whenever the panel opens, and again whenever a new scan
@@ -522,22 +542,22 @@ export function App() {
    */
   // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
-    if (!duplicatesOpen) return;
+    if (activePanel !== 'duplicates') return;
     setDuplicatesLoading(true);
     post({ type: 'requestDuplicates' });
-  }, [duplicatesOpen, groups]);
+  }, [activePanel, groups]);
 
   /*
    * Runs once when the panel opens. Unlike the duplicate-version check this
    * reaches the network per package, so — deliberately unlike that effect —
-   * it does not also re-run on every rescan; the panel's own Refresh button
-   * covers "check again".
+   * `groups` stays out of the dependency list and a rescan does not refetch;
+   * the panel's own Refresh button covers "check again".
    */
   useEffect(() => {
-    if (!licensesOpen) return;
+    if (activePanel !== 'licenses') return;
     setLicensesLoading(true);
     post({ type: 'requestLicenses' });
-  }, [licensesOpen]);
+  }, [activePanel]);
 
   const handleRefreshLicenses = useCallback(() => {
     setLicensesLoading(true);
@@ -585,47 +605,51 @@ export function App() {
   // or the next unrelated re-render would drag the viewport back.
   const handleScrollHandled = useCallback(() => setScrollToKey(undefined), []);
 
-  const duplicatesPanel = duplicatesOpen ? (
-    <DuplicatesPanel
-      results={duplicateResults}
-      loading={duplicatesLoading}
-      onClose={() => setDuplicatesOpen(false)}
-    />
-  ) : null;
+  const duplicatesPanel =
+    activePanel === 'duplicates' ? (
+      <DuplicatesPanel
+        results={duplicateResults}
+        loading={duplicatesLoading}
+        onClose={closePanel}
+      />
+    ) : null;
 
-  const licensesPanel = licensesOpen ? (
-    <LicenseSummaryPanel
-      summary={licenseSummary}
-      loading={licensesLoading}
-      onRefresh={handleRefreshLicenses}
-      onClose={() => setLicensesOpen(false)}
-    />
-  ) : null;
+  const licensesPanel =
+    activePanel === 'licenses' ? (
+      <LicenseSummaryPanel
+        summary={licenseSummary}
+        loading={licensesLoading}
+        onRefresh={handleRefreshLicenses}
+        onClose={closePanel}
+      />
+    ) : null;
 
-  const dependencyDiffPanel = dependencyDiffOpen ? (
-    <DependencyDiffPanel
-      gitRef={dependencyDiffRef}
-      results={dependencyDiffResults}
-      onCompareAgain={() => post({ type: 'requestDependencyDiff' })}
-      onClose={() => setDependencyDiffOpen(false)}
-    />
-  ) : null;
+  const dependencyDiffPanel =
+    activePanel === 'diff' ? (
+      <DependencyDiffPanel
+        gitRef={dependencyDiffRef}
+        results={dependencyDiffResults}
+        onCompareAgain={() => post({ type: 'requestDependencyDiff' })}
+        onClose={closePanel}
+      />
+    ) : null;
 
-  const searchPanel = installOpen ? (
-    <SearchInstall
-      groups={groups}
-      results={searchResults}
-      error={searchError}
-      partialFailure={searchPartial}
-      searching={searching}
-      onSearch={handleSearch}
-      onInstall={(name, version, scope, manifestPath) =>
-        post({ type: 'install', name, version, scope, manifestPath })
-      }
-      onUninstall={handleUninstallByName}
-      onClose={() => setInstallOpen(false)}
-    />
-  ) : null;
+  const searchPanel =
+    activePanel === 'search' ? (
+      <SearchInstall
+        groups={groups}
+        results={searchResults}
+        error={searchError}
+        partialFailure={searchPartial}
+        searching={searching}
+        onSearch={handleSearch}
+        onInstall={(name, version, scope, manifestPath) =>
+          post({ type: 'install', name, version, scope, manifestPath })
+        }
+        onUninstall={handleUninstallByName}
+        onClose={closePanel}
+      />
+    ) : null;
 
   // Rendered only when there is something to say — an always-present wrapper
   // would leave a strip of padding above the table.
@@ -636,7 +660,7 @@ export function App() {
           <div className="banner__text">
             {error}
             {errors.length > 1 && (
-              <span className="muted banner__count">
+              <span className="muted">
                 {' '}
                 and {errors.length - 1} earlier{' '}
                 {errors.length === 2 ? 'error' : 'errors'}
@@ -707,11 +731,11 @@ export function App() {
             >
               Scan again
             </button>
-            {!installOpen && (
+            {activePanel !== 'search' && (
               <button
                 type="button"
                 className="empty__action secondary"
-                onClick={() => setInstallOpen(true)}
+                onClick={() => setActivePanel('search')}
               >
                 Search packages
               </button>
@@ -732,12 +756,10 @@ export function App() {
         summary={summary}
         busy={busy}
         busyLabel={busyLabel}
-        installOpen={installOpen}
-        onToggleInstall={() => setInstallOpen((open) => !open)}
-        duplicatesOpen={duplicatesOpen}
-        onToggleDuplicates={() => setDuplicatesOpen((open) => !open)}
-        licensesOpen={licensesOpen}
-        onToggleLicenses={() => setLicensesOpen((open) => !open)}
+        activePanel={activePanel}
+        onToggleInstall={() => togglePanel('search')}
+        onToggleDuplicates={() => togglePanel('duplicates')}
+        onToggleLicenses={() => togglePanel('licenses')}
         onCompareDependencies={() => post({ type: 'requestDependencyDiff' })}
         onExportReport={() => post({ type: 'exportReport' })}
         onRefresh={() => post({ type: 'refresh' })}
