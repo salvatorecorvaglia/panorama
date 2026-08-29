@@ -219,6 +219,79 @@ describe('PythonProvider.search', () => {
     return { ...ctx, http: { ...ctx.http, getJson } as never };
   }
 
+  /** The same routing, but with a populated project index to search. */
+  function withProjectIndex(names: string[]) {
+    const ctx = makeContext();
+    const getJson = vi.fn((url: string) => {
+      if (url.endsWith('/simple/')) {
+        return Promise.resolve({ projects: names.map((name) => ({ name })) });
+      }
+      // No exact hit, so the index fallback is the only source of results.
+      return Promise.reject(new Error('not found'));
+    });
+    return { ...ctx, http: { ...ctx.http, getJson } as never };
+  }
+
+  it('ranks prefix matches above substring matches from the project index', async () => {
+    /*
+     * The index is held as one newline-delimited string rather than half a
+     * million separate names, and scanned with `indexOf` rather than filtered.
+     * These assertions are about the behaviour that has to survive that: which
+     * names match, and in what order.
+     */
+    const provider = new PythonProvider();
+    const results = await provider.search(
+      'requests',
+      withProjectIndex([
+        'types-requests',
+        'requests-oauthlib',
+        'requests',
+        'requests-toolbelt',
+        'unrelated',
+      ]),
+    );
+
+    const names = results.map((result) => result.name);
+    // The exact name is offered by the registry lookup above, not the index,
+    // so the index fallback deliberately leaves it out.
+    expect(names).not.toContain('requests');
+    expect(names).not.toContain('unrelated');
+    // Prefix matches first, shorter first within each group.
+    expect(names).toEqual([
+      'requests-oauthlib',
+      'requests-toolbelt',
+      'types-requests',
+    ]);
+  });
+
+  it('normalises index names so an underscore query still matches', async () => {
+    // PEP 503 collapses `-_.` runs and lowercases; the index is stored in that
+    // form, so the query has to go through it too.
+    const provider = new PythonProvider();
+    const results = await provider.search(
+      'Typing_Extensions',
+      withProjectIndex(['typing-extensions-stub', 'typing_extensions']),
+    );
+
+    expect(results.map((result) => result.name)).toEqual([
+      'typing-extensions-stub',
+    ]);
+  });
+
+  it('finds nothing in an index that could not be fetched', async () => {
+    const provider = new PythonProvider();
+    const ctx = makeContext();
+    const failing = {
+      ...ctx,
+      http: {
+        ...ctx.http,
+        getJson: vi.fn(() => Promise.reject(new Error('offline'))),
+      } as never,
+    };
+
+    await expect(provider.search('requests', failing)).resolves.toEqual([]);
+  });
+
   it('offers the highest version, not the last one listed', async () => {
     const provider = new PythonProvider();
     // Deliberately unsorted, with the newest release in the middle and an

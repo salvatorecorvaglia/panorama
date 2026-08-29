@@ -347,39 +347,16 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * Node 20 has `AbortSignal.any`, but we keep a fallback for older hosts.
+ * Combines the caller's cancellation with this request's own timeout.
  *
- * The fallback detaches its listeners once any signal fires. Without that, a
- * caller's signal — which outlives a single request, and covers a whole scan —
- * accumulates one listener per request issued under it.
+ * This used to carry a hand-rolled fallback for hosts without
+ * `AbortSignal.any`. It was unreachable — `engines.node` requires 22.13, and
+ * the API has existed since Node 20 — and it leaked: it detached its listeners
+ * only when something aborted, so a request that simply *succeeded* left one
+ * listener behind on the caller's signal. That signal covers a whole scan, so
+ * the listeners accumulated one per package, which is precisely the leak the
+ * fallback's own comment claimed to prevent. Deleting it is the fix.
  */
 function anySignal(signals: AbortSignal[]): AbortSignal {
-  if (typeof AbortSignal.any === 'function') {
-    return AbortSignal.any(signals);
-  }
-  const controller = new AbortController();
-  const listeners: Array<() => void> = [];
-
-  const detach = () => {
-    for (const remove of listeners) remove();
-    listeners.length = 0;
-  };
-
-  for (const signal of signals) {
-    if (signal.aborted) {
-      detach();
-      controller.abort(signal.reason);
-      return controller.signal;
-    }
-    const onAbort = () => {
-      detach();
-      controller.abort(signal.reason);
-    };
-    signal.addEventListener('abort', onAbort, { once: true });
-    listeners.push(() => signal.removeEventListener('abort', onAbort));
-  }
-
-  // Nothing else releases them when the request simply succeeds.
-  controller.signal.addEventListener('abort', detach, { once: true });
-  return controller.signal;
+  return AbortSignal.any(signals);
 }

@@ -24,8 +24,12 @@ export class DependencyMutator {
   constructor(
     private readonly ctx: ProviderContext,
     private readonly terminal: TerminalRunner,
-    /** Drives the panel's busy indicator while a command runs. */
-    private readonly onBusy: (busy: boolean, label?: string) => void,
+    /**
+     * Claims the panel's busy indicator while a command runs, returning the
+     * release for that claim. A claim rather than a boolean because a scan can
+     * be running at the same time, and this used to turn off its spinner.
+     */
+    private readonly beginBusy: (label?: string) => () => void,
     /** A command ran but exited non-zero; not the same as "not applied". */
     private readonly onCommandFailed: (message: string) => void,
   ) {}
@@ -134,12 +138,12 @@ export class DependencyMutator {
     cwd: string,
     description: string,
   ): Promise<void> {
-    this.onBusy(true, description);
+    const doneBusy = this.beginBusy(description);
     let exitCode: number | undefined;
     try {
       ({ exitCode } = await this.terminal.run({ argv, cwd, description }));
     } finally {
-      this.onBusy(false);
+      doneBusy();
     }
 
     if (exitCode !== undefined && exitCode !== 0) {

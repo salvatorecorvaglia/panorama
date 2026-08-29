@@ -74,6 +74,19 @@ export interface EcosystemProvider {
   /** File names (not globs) this provider claims. */
   readonly manifestFiles: string[];
 
+  /**
+   * Extra glob patterns this provider's manifests can take, where a fixed name
+   * cannot describe them.
+   *
+   * Only Python needs this: `requirements.txt` is one of a family whose other
+   * members are named freely (`requirements-dev.txt`, `requirements-ci.txt`).
+   * That pattern used to be spelled out in `registry.ts` and again in
+   * `watcher.ts`, both times beside names those files derive from providers —
+   * so the one ecosystem fact in the list lived everywhere except with its
+   * ecosystem.
+   */
+  readonly manifestGlobs?: string[];
+
   /** Lockfiles worth watching for change, and parsing for resolved versions. */
   readonly lockFiles: string[];
 
@@ -116,9 +129,18 @@ export interface EcosystemProvider {
    */
   normalizeName?(name: string): string;
 
+  /**
+   * @param manifestText The manifest's contents, when the caller already has
+   *   them. Optional so callers that do not (the mutator, acting on a user
+   *   gesture) need not read the file just to pass it; providers that use it
+   *   fall back to reading. The scanner *does* have it — it just parsed the
+   *   file — and was otherwise reading every manifest in the workspace twice
+   *   on every scan.
+   */
   detectToolchain(
     manifestPath: string,
     ctx: ProviderContext,
+    manifestText?: string,
   ): Promise<Toolchain>;
 
   /** Batched version lookup. Implementations should respect `signal`. */

@@ -13,8 +13,9 @@ import { HttpClient } from './core/http.js';
 import { buildReport, type ReportFormat } from './core/report.js';
 import { Scanner, type ScanResult } from './core/scanner.js';
 import { ScanQueue } from './core/scanQueue.js';
-import type { Dependency, ProjectDuplicateVersions } from './core/types.js';
+import type { ProjectDuplicateVersions } from './core/types.js';
 import { ManifestWatcher } from './core/watcher.js';
+import { findDependency } from './core/webviewRequests.js';
 import { createProviderContext } from './core/workspace.js';
 import type { ProviderContext } from './providers/provider.js';
 import { manifestGlob } from './providers/registry.js';
@@ -117,8 +118,7 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     checkUpdates: boolean,
     audit?: boolean,
   ): Promise<ScanResult | undefined> => {
-    panel.setBusy(
-      true,
+    const doneBusy = panel.beginBusy(
       checkUpdates ? 'Checking registries…' : 'Reading manifests…',
     );
 
@@ -145,6 +145,22 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
           8000,
         );
       }
+      // A manifest that could not be parsed used to vanish from the results
+      // with nothing said, which reads exactly like a project that declares
+      // no dependencies.
+      const unreadable = scanner.unreadableManifests;
+      if (unreadable.length > 0) {
+        const names = unreadable
+          .slice(0, 3)
+          .map((file) => vscode.workspace.asRelativePath(file))
+          .join(', ');
+        const more =
+          unreadable.length > 3 ? ` and ${unreadable.length - 3} more` : '';
+        vscode.window.setStatusBarMessage(
+          `$(warning) Panorama: could not read ${names}${more}`,
+          8000,
+        );
+      }
       return result;
     } catch (error) {
       if (!isAbort(error)) {
@@ -154,7 +170,7 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
       }
       return undefined;
     } finally {
-      panel.setBusy(false);
+      doneBusy();
     }
   };
 
@@ -290,7 +306,10 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
     // Invoked from the command palette, which carries no argument — the row
     // the user last opened in the drawer is the selection it acts on.
     vscode.commands.registerCommand('panorama.showWhy', () => {
-      const dep = findByKey(panel.currentResult, panel.lastSelectedKey);
+      const dep = findDependency(
+        panel.currentResult,
+        panel.lastSelectedKey,
+      )?.dep;
       if (!dep) {
         void vscode.window.showInformationMessage(NO_SELECTION_MESSAGE);
         return;
@@ -346,6 +365,13 @@ export function activate(context: vscode.ExtensionContext): PanoramaApi {
   context.subscriptions.push({
     dispose: () => {
       if (periodicTimer) clearInterval(periodicTimer);
+      // A scan of a large monorepo outlives the window that asked for it
+      // otherwise, holding registry requests open for an extension that is
+      // going away.
+      scanner.cancel();
+      // Cache writes are buffered so they stay off the scan's hot path; this
+      // closes the window in which a shutdown would drop the newest entries.
+      void cache.flushNow();
     },
   });
 
@@ -454,18 +480,6 @@ function updateStatusBar(item: vscode.StatusBarItem, result: ScanResult): void {
       ? new vscode.ThemeColor('statusBarItem.warningBackground')
       : undefined;
   item.show();
-}
-
-function findByKey(
-  result: ScanResult,
-  key: string | undefined,
-): Dependency | undefined {
-  if (!key) return undefined;
-  for (const group of result.groups) {
-    const dep = group.dependencies.find((candidate) => candidate.key === key);
-    if (dep) return dep;
-  }
-  return undefined;
 }
 
 function isAbort(error: unknown): boolean {

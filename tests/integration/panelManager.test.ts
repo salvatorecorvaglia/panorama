@@ -107,6 +107,7 @@ function interceptNextPanel(): {
 function emptyScanResult(): ScanResult {
   return {
     groups: [],
+    manifestPaths: [],
     summary: {
       totalDependencies: 0,
       outdated: 0,
@@ -176,6 +177,7 @@ describe('PanelManager message handling', () => {
     };
     manager.setResult({
       groups: [group],
+      manifestPaths: [group.manifestPath],
       summary: {
         totalDependencies: 1,
         outdated: 0,
@@ -232,6 +234,7 @@ describe('PanelManager message handling', () => {
           dependencies: [],
         },
       ],
+      manifestPaths: [manifestPath],
       summary: {
         totalDependencies: 0,
         outdated: 0,
@@ -319,6 +322,7 @@ describe('PanelManager message handling', () => {
           dependencies: [],
         },
       ],
+      manifestPaths: [manifestPath],
       summary: {
         totalDependencies: 0,
         outdated: 0,
@@ -407,6 +411,7 @@ describe('PanelManager message handling', () => {
           dependencies: [dep],
         },
       ],
+      manifestPaths: ['/does/not/matter/package.json'],
       summary: {
         totalDependencies: 1,
         outdated: 1,

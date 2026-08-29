@@ -16,6 +16,23 @@ import {
   openExternalUrl,
 } from './webviewSecurity.js';
 
+/**
+ * Escapes text interpolated into this file's HTML.
+ *
+ * The only interpolated value today is the extension's own version, read from
+ * our `package.json` — so this is not defending against a value we expect to
+ * be hostile. It is here because it was the one place in either webview shell
+ * where a value reached the document unescaped, and "it happens to be
+ * trusted" is a property of today's caller rather than of the code.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 export class SidebarViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'panorama.sidebar';
 
@@ -205,6 +222,11 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       margin-bottom: 12px;
       cursor: pointer;
       transition: background 0.15s ease, border-color 0.15s ease;
+      /* It is a <button> now, so the UA's own text styling has to be undone. */
+      display: block;
+      text-align: left;
+      font: inherit;
+      color: inherit;
     }
     .repo-card:hover {
       background: var(--vscode-list-hoverBackground);
@@ -261,9 +283,23 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       color: var(--vscode-textLink-foreground);
       cursor: pointer;
       text-decoration: none;
+      /* Same reset: a <button> that has to read as inline text. */
+      background: none;
+      border: none;
+      padding: 0;
+      font: inherit;
     }
     .author-link:hover {
       text-decoration: underline;
+    }
+    /*
+     * Keyboard focus has to be visible for the same reason it has to be
+     * possible. One rule covering every control here rather than one per
+     * class, so a control added later cannot miss it.
+     */
+    button:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 2px;
     }
   </style>
 </head>
@@ -274,7 +310,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
     </div>
 
     <h2 class="title">Panorama</h2>
-    <span class="version-badge">v${this.version}</span>
+    <span class="version-badge">v${escapeHtml(this.version)}</span>
 
     <p class="description">
       Universal Visual Package Manager for Visual Studio Code
@@ -294,12 +330,19 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
         GitHub Project
       </div>
 
-      <div class="repo-card" id="link-repo">
+      <!--
+        A button, not a div with a click handler. The three links below it were
+        already real buttons; this and the author credit were not, so neither
+        could be reached with Tab or activated with Enter — they were clickable
+        with a pointer only, in a panel whose every other control is keyboard
+        operable.
+      -->
+      <button type="button" class="repo-card" id="link-repo">
         <div class="repo-title">
           salvatorecorvaglia/panorama
         </div>
-        <div class="repo-sub">Source code, releases & issues</div>
-      </div>
+        <div class="repo-sub">Source code, releases &amp; issues</div>
+      </button>
 
       <div class="github-links">
         <button type="button" class="github-link-btn" id="link-star">
@@ -314,7 +357,7 @@ export class SidebarViewProvider implements vscode.WebviewViewProvider {
       </div>
 
       <div class="author-footer">
-        Created by <span id="link-author" class="author-link">@salvatorecorvaglia</span>
+        Created by <button type="button" id="link-author" class="author-link">@salvatorecorvaglia</button>
       </div>
     </div>
   </div>

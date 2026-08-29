@@ -99,6 +99,8 @@ export class PythonProvider implements EcosystemProvider {
     'requirements.txt',
     'requirements-dev.txt',
   ];
+  /** `requirements-<anything>.txt`, which no fixed name can cover. */
+  readonly manifestGlobs = ['requirements-*.txt'];
   readonly lockFiles = ['poetry.lock', 'uv.lock', 'Pipfile.lock'];
   readonly osvEcosystem = 'PyPI';
   readonly depsDevSystem = 'PYPI';
@@ -402,6 +404,12 @@ export class PythonProvider implements EcosystemProvider {
     ctx: ProviderContext,
     signal?: AbortSignal,
   ): Promise<PackageMeta | undefined> {
+    // Same reasoning as `fetchVersions`: names arrive from pyproject.toml and
+    // requirements.txt, and one is about to become a URL path segment. This
+    // also gives `search` its exact-name miss for a query that is not a name,
+    // which then falls through to the index scan.
+    if (!this.isValidPackageName(name)) return undefined;
+
     const index = ctx.registryOverride('python') ?? DEFAULT_INDEX;
     const key = cacheKey('pypi', 'meta', index, name);
 
@@ -475,8 +483,7 @@ export class PythonProvider implements EcosystemProvider {
 
     const names = await this.projectIndex(index, ctx, signal);
     const needle = normalizeName(query);
-    const matches = names
-      .filter((name) => name.includes(needle) && name !== needle)
+    const matches = candidateNames(names, needle)
       // Prefix matches are far more relevant than substring matches.
       .sort((a, b) => {
         const aPrefix = a.startsWith(needle) ? 0 : 1;
@@ -500,15 +507,21 @@ export class PythonProvider implements EcosystemProvider {
    * persisting this made every subsequent extension-host start pay for a search
    * the user may have run once. Re-fetching it after a reload costs one request
    * on the next search instead.
+   *
+   * Kept as one newline-delimited string rather than an array of names. Half a
+   * million separate strings plus the array holding them costs several times
+   * what the same characters cost joined, and this is retained for a day —
+   * `persist: false` kept it out of `globalState`, but it still sat in the
+   * memory mirror the whole time. Searching it is a scan either way.
    */
   private async projectIndex(
     index: string,
     ctx: ProviderContext,
     signal?: AbortSignal,
-  ): Promise<string[]> {
+  ): Promise<string> {
     const key = cacheKey('pypi', 'index', index);
-    const cached = ctx.cache.get<string[]>(key);
-    if (cached) return cached;
+    const cached = ctx.cache.get<string>(key);
+    if (cached !== undefined) return cached;
 
     try {
       const response = await ctx.http.getJson<SimpleIndex>(`${index}/simple/`, {
@@ -527,11 +540,15 @@ export class PythonProvider implements EcosystemProvider {
          */
         noCache: true,
       });
-      const names = response.projects.map((entry) => normalizeName(entry.name));
-      await ctx.cache.set(key, names, TTL.nameIndex, { persist: false });
-      return names;
+      // Leading and trailing delimiters so every name is bounded by one,
+      // which is what lets `candidateNames` find line edges without a split.
+      const joined = `\n${response.projects
+        .map((entry) => normalizeName(entry.name))
+        .join('\n')}\n`;
+      await ctx.cache.set(key, joined, TTL.nameIndex, { persist: false });
+      return joined;
     } catch {
-      return ctx.cache.getStale<string[]>(key) ?? [];
+      return ctx.cache.getStale<string>(key) ?? '';
     }
   }
 
@@ -763,3 +780,43 @@ function emptyManifest(absolutePath: string): ParsedManifest {
     dependencies: [],
   };
 }
+
+/**
+ * Candidate names containing `needle`, walked over the joined index.
+ *
+ * `indexOf` from the last hit is what makes this a scan rather than half a
+ * million separate `String.includes` calls with the intermediate array those
+ * produced.
+ */
+function candidateNames(joined: string, needle: string): string[] {
+  if (needle === '' || joined === '') return [];
+
+  const matches: string[] = [];
+  let from = 0;
+
+  while (matches.length < MAX_INDEX_CANDIDATES) {
+    const hit = joined.indexOf(needle, from);
+    if (hit < 0) break;
+
+    const start = joined.lastIndexOf('\n', hit) + 1;
+    let end = joined.indexOf('\n', hit);
+    if (end < 0) end = joined.length;
+
+    const name = joined.slice(start, end);
+    // An exact hit is already offered above, from the registry itself, with
+    // a real version and description attached.
+    if (name && name !== needle) matches.push(name);
+    from = end + 1;
+  }
+
+  return matches;
+}
+
+/**
+ * How many index hits are ranked before the top 24 are taken.
+ *
+ * A short query matches tens of thousands of names, and every one past this
+ * is a name nobody scrolls to. Collecting them all — which is what filtering
+ * the whole array did — costs an array proportional to the query's vagueness.
+ */
+const MAX_INDEX_CANDIDATES = 2000;

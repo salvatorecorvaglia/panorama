@@ -198,6 +198,22 @@ export function assignWorkspaces(
 const globRegexCache = new Map<string, RegExp>();
 
 /**
+ * Bounds that cache. Patterns come from manifests, which are not ours to
+ * trust — an unbounded map keyed by them is a slow leak rather than a cache.
+ */
+const MAX_CACHED_GLOBS = 500;
+
+/**
+ * How many `**` segments a pattern may contain before it is refused.
+ *
+ * Each becomes `.*` in the compiled form, and adjacent `.*` groups are what
+ * make a regex backtrack catastrophically against a long non-matching path.
+ * Real workspace globs (`packages/*`, `apps/**`) have at most one; a pattern
+ * with several is not describing a directory layout anyone has.
+ */
+const MAX_WILDCARD_SEGMENTS = 2;
+
+/**
  * Matches a workspace member glob against a root-relative directory path.
  *
  * Deliberately narrow: workspace globs in practice are `packages/*`,
@@ -219,12 +235,22 @@ export function globMatchesPath(
     return normalisedPath === normalisedPattern;
   }
 
+  const segments = normalisedPattern.split('/');
+  if (
+    segments.filter((segment) => segment === '**').length >
+    MAX_WILDCARD_SEGMENTS
+  ) {
+    // Refused rather than compiled: see `MAX_WILDCARD_SEGMENTS`. A manifest
+    // declaring such a member glob matches nothing rather than occupying the
+    // extension host.
+    return false;
+  }
+
   let regex = globRegexCache.get(normalisedPattern);
   if (!regex) {
     regex = new RegExp(
       '^' +
-        normalisedPattern
-          .split('/')
+        segments
           .map((segment) => {
             if (segment === '**') return '.*';
             // A single star matches within one segment only.
@@ -237,6 +263,11 @@ export function globMatchesPath(
           .replace(/\/\.\*$/, '(?:/.*)?') +
         '$',
     );
+    if (globRegexCache.size >= MAX_CACHED_GLOBS) {
+      // Insertion order is eviction order.
+      const oldest = globRegexCache.keys().next();
+      if (!oldest.done) globRegexCache.delete(oldest.value);
+    }
     globRegexCache.set(normalisedPattern, regex);
   }
 

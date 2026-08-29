@@ -58,11 +58,18 @@ export function providerForPath(
   return undefined;
 }
 
-/** Every file name worth watching: manifests plus lockfiles. */
+/**
+ * Every file name and pattern worth watching: manifests plus lockfiles.
+ *
+ * Includes each provider's `manifestGlobs`, so the watcher no longer restates
+ * Python's `requirements-*.txt` beside a list it otherwise derives entirely
+ * from the providers.
+ */
 export function allWatchedFileNames(): string[] {
   const names = new Set<string>();
   for (const provider of PROVIDERS) {
     for (const file of provider.manifestFiles) names.add(file);
+    for (const glob of provider.manifestGlobs ?? []) names.add(glob);
     for (const file of provider.lockFiles) names.add(file);
   }
   return [...names];
@@ -73,7 +80,7 @@ export function manifestGlob(): string {
   const names = new Set<string>();
   for (const provider of PROVIDERS) {
     for (const file of provider.manifestFiles) names.add(file);
+    for (const glob of provider.manifestGlobs ?? []) names.add(glob);
   }
-  names.add('requirements-*.txt');
   return `**/{${[...names].join(',')}}`;
 }

@@ -10,6 +10,7 @@
 
 import * as path from 'node:path';
 import * as vscode from 'vscode';
+import { BusyTracker } from '../core/busyTracker.js';
 import { fetchChangelog } from '../core/changelog.js';
 import {
   collectVersionsFrom,
@@ -28,6 +29,13 @@ import type {
   ProjectGroup,
 } from '../core/types.js';
 import { hasUpdate } from '../core/vocabulary.js';
+import {
+  findDependency,
+  indexInstalledPackages,
+  isKnownManifest,
+  resolveBulkUninstallTargets,
+  resolveBulkUpdateTargets,
+} from '../core/webviewRequests.js';
 import type { ProviderContext } from '../providers/provider.js';
 import { validateVersion } from '../providers/provider.js';
 import { providerFor, providerForPath } from '../providers/registry.js';
@@ -45,6 +53,7 @@ export class PanelManager implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
   private latest: ScanResult = {
     groups: [],
+    manifestPaths: [],
     summary: {
       totalDependencies: 0,
       outdated: 0,
@@ -59,7 +68,14 @@ export class PanelManager implements vscode.Disposable {
   /** The in-flight workspace-wide license check, if any. */
   private licenseRequest: AbortController | undefined;
   private readonly terminal = new TerminalRunner();
-  private busy = false;
+  /*
+   * Reference-counted rather than a boolean: a scan and a package-manager
+   * command overlap routinely, and whichever finished first used to clear the
+   * other's spinner. See `core/busyTracker.ts`.
+   */
+  private readonly busyState = new BusyTracker((busy, label) => {
+    this.post({ type: 'scanning', busy, label });
+  });
   /** False between creating a panel and the React app announcing itself. */
   private webviewReady = false;
   /**
@@ -69,8 +85,12 @@ export class PanelManager implements vscode.Disposable {
    * a message posted to a webview that has not loaded yet is simply dropped —
    * which is how "click a package in the tree" used to open the panel on
    * nothing in particular.
+   *
+   * A list rather than one slot: two commands can land before the webview is
+   * ready (open the search panel, then reveal a package), and a single slot
+   * silently discarded the first.
    */
-  private pendingReveal: HostMessage | undefined;
+  private readonly pendingReveals: HostMessage[] = [];
   private readonly mutator: DependencyMutator;
 
   constructor(
@@ -82,7 +102,7 @@ export class PanelManager implements vscode.Disposable {
     this.mutator = new DependencyMutator(
       ctx,
       this.terminal,
-      (busy, label) => this.setBusy(busy, label),
+      (label) => this.beginBusy(label),
       (message) => this.post({ type: 'error', message }),
     );
   }
@@ -123,7 +143,7 @@ export class PanelManager implements vscode.Disposable {
     this.panel.onDidDispose(() => {
       this.panel = undefined;
       this.webviewReady = false;
-      this.pendingReveal = undefined;
+      this.pendingReveals.length = 0;
       for (const controller of this.searches.values()) {
         controller.abort();
       }
@@ -148,9 +168,13 @@ export class PanelManager implements vscode.Disposable {
     this.onStateChanged(result);
   }
 
-  setBusy(busy: boolean, label?: string): void {
-    this.busy = busy;
-    this.post({ type: 'scanning', busy, label });
+  /**
+   * Claims the busy state and returns the release for it. Callers pair the two
+   * with a `finally` rather than remembering a matching "stop" call, and no
+   * caller can clear a claim it does not hold.
+   */
+  beginBusy(label?: string): () => void {
+    return this.busyState.begin(label);
   }
 
   /** Opens the panel with the registry search UI focused. */
@@ -186,7 +210,7 @@ export class PanelManager implements vscode.Disposable {
       this.post(message);
       return;
     }
-    this.pendingReveal = message;
+    this.pendingReveals.push(message);
   }
 
   private async handleMessage(message: WebviewMessage): Promise<void> {
@@ -198,13 +222,16 @@ export class PanelManager implements vscode.Disposable {
           groups: this.latest.groups,
           summary: this.latest.summary,
         });
-        this.post({ type: 'scanning', busy: this.busy });
+        this.post({
+          type: 'scanning',
+          busy: this.busyState.busy,
+          label: this.busyState.label,
+        });
         // Anything asked for while the panel was still loading, replayed now
         // that there is something listening — and after `state`, so the row it
         // names already exists.
-        if (this.pendingReveal) {
-          this.post(this.pendingReveal);
-          this.pendingReveal = undefined;
+        for (const pending of this.pendingReveals.splice(0)) {
+          this.post(pending);
         }
         return;
       }
@@ -333,27 +360,23 @@ export class PanelManager implements vscode.Disposable {
         controller.signal,
       );
 
-      // Annotate anything already present in a loaded manifest so the UI can
-      // offer "uninstall" instead of "install".
+      /*
+       * Annotate anything already present in a loaded manifest so the UI can
+       * offer "uninstall" instead of "install".
+       *
+       * Indexed once rather than re-walked per result. This used to scan every
+       * group and every dependency for each of up to 25 results across seven
+       * ecosystems, so a workspace with a few thousand packages did close to a
+       * million comparisons on every keystroke-driven search — for an answer
+       * that is one map lookup.
+       */
+      const installedByPackage = indexInstalledPackages(this.latest.groups);
+
       for (const result of results) {
-        const matches: NonNullable<(typeof results)[number]['installedIn']> =
-          [];
-        for (const group of this.latest.groups) {
-          for (const dep of group.dependencies) {
-            if (
-              dep.ecosystem === result.ecosystem &&
-              dep.name === result.name
-            ) {
-              matches.push({
-                manifestPath: group.manifestPath,
-                projectLabel: group.label,
-                declared: dep.declared,
-                scope: dep.scope,
-              });
-            }
-          }
-        }
-        if (matches.length > 0) {
+        const matches = installedByPackage.get(
+          `${result.ecosystem}::${result.name}`,
+        );
+        if (matches && matches.length > 0) {
           result.installedIn = matches;
         }
       }
@@ -496,15 +519,9 @@ export class PanelManager implements vscode.Disposable {
     // provider's grammar, are dropped before anything is confirmed or run —
     // both arrive from the webview and neither is more trusted here than in
     // the single-package path.
-    const resolved: Array<{ dep: Dependency; toVersion: string }> = [];
-    for (const target of targets) {
-      const dep = this.findDependency(target.depKey)?.dep;
-      if (!dep) continue;
-      if (!validateVersion(providerFor(dep.ecosystem), target.toVersion)) {
-        continue;
-      }
-      resolved.push({ dep, toVersion: target.toVersion });
-    }
+    const resolved = resolveBulkUpdateTargets(this.latest, targets, (dep, v) =>
+      validateVersion(providerFor(dep.ecosystem), v),
+    );
 
     if (resolved.length === 0) return;
 
@@ -552,9 +569,7 @@ export class PanelManager implements vscode.Disposable {
   }
 
   private async handleBulkUninstall(depKeys: string[]): Promise<void> {
-    const deps = depKeys
-      .map((key) => this.findDependency(key)?.dep)
-      .filter((dep): dep is Dependency => dep !== undefined);
+    const deps = resolveBulkUninstallTargets(this.latest, depKeys);
 
     if (deps.length === 0) return;
 
@@ -886,13 +901,7 @@ export class PanelManager implements vscode.Disposable {
   private findDependency(
     depKey: string,
   ): { group: ProjectGroup; dep: Dependency } | undefined {
-    for (const group of this.latest.groups) {
-      const dep = group.dependencies.find(
-        (candidate) => candidate.key === depKey,
-      );
-      if (dep) return { group, dep };
-    }
-    return undefined;
+    return findDependency(this.latest, depKey);
   }
 
   /**
@@ -903,9 +912,7 @@ export class PanelManager implements vscode.Disposable {
    * enforced before the path is used as a command's cwd or opened as a file.
    */
   private isKnownManifest(manifestPath: string): boolean {
-    return this.latest.groups.some(
-      (group) => group.manifestPath === manifestPath,
-    );
+    return isKnownManifest(this.latest, manifestPath);
   }
 
   /** Only ever opens http(s) links, so a malformed registry field is inert. */
@@ -965,6 +972,15 @@ export class PanelManager implements vscode.Disposable {
   }
 
   dispose(): void {
+    // The same reasoning `onDidDispose` already applies to `searches`: these
+    // outlive the panel otherwise, and the license check fans out one registry
+    // request per unique package in the workspace.
+    this.whyRequest?.abort();
+    this.licenseRequest?.abort();
+    for (const controller of this.searches.values()) controller.abort();
+    this.searches.clear();
+    // Nothing is left to release a claim once the panel is gone.
+    this.busyState.reset();
     this.terminal.dispose();
     this.panel?.dispose();
   }

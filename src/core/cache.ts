@@ -32,6 +32,14 @@ const STORAGE_PREFIX = 'panorama.cache.';
  */
 const DEFAULT_MAX_ENTRIES = 5000;
 
+/**
+ * How long a write waits for company before being flushed.
+ *
+ * Short enough to be invisible even if the window closes moments later, long
+ * enough that the burst of writes one scan produces lands as a single batch.
+ */
+const FLUSH_DELAY_MS = 50;
+
 export const TTL = {
   /** Latest-version lookups: fresh enough to be useful, cheap enough to redo. */
   version: 60 * 60 * 1000,
@@ -62,6 +70,11 @@ export class TtlCache {
    * on read moves an entry to the end, so the oldest is always first.
    */
   private readonly memory = new Map<string, Entry<unknown>>();
+
+  /** Entries written to memory and awaiting a batched flush to storage. */
+  private readonly pending = new Map<string, Entry<unknown>>();
+  private flushTimer: NodeJS.Timeout | undefined;
+  private inFlightFlush: Promise<void> | undefined;
 
   constructor(
     private readonly storage: Memento,
@@ -102,10 +115,68 @@ export class TtlCache {
     options: SetOptions = {},
   ): Promise<void> {
     const entry: Entry<T> = { value, expiresAt: Date.now() + ttlMs };
+    // The in-memory mirror is updated synchronously, so a `get` immediately
+    // after a `set` sees the value whether or not it has been persisted yet.
     this.remember(key, entry);
-    if (options.persist !== false) {
-      await this.storage.update(STORAGE_PREFIX + key, entry);
+    if (options.persist !== false) this.persist(key, entry);
+  }
+
+  /**
+   * Queues one entry for `globalState`, to be written with whatever else is
+   * queued alongside it.
+   *
+   * Deliberately does not wait for the write. The value is already in the
+   * in-memory mirror by the time this is called, so every read is already
+   * served; what remains is durability across a reload, which no caller is
+   * blocked on. `set` used to await its own round-trip from inside a
+   * bounded-concurrency worker, which put the persistence latency of hundreds
+   * of packages directly into the scan. Buffering also collapses repeat writes
+   * to one key — metadata and versions for a package arrive as separate
+   * calls — into a single write.
+   *
+   * The cost is a window of up to `FLUSH_DELAY_MS` in which a closing window
+   * loses the newest entries. `flushNow()` closes it at disposal, and losing a
+   * cache entry costs one extra request on the next scan regardless.
+   */
+  private persist(key: string, entry: Entry<unknown>): void {
+    this.pending.set(STORAGE_PREFIX + key, entry);
+    this.flushTimer ??= setTimeout(() => {
+      void this.flushNow();
+    }, FLUSH_DELAY_MS);
+  }
+
+  /**
+   * Writes everything buffered right now and resolves once it has landed.
+   *
+   * Called at disposal, and by tests — without it there is no way to observe
+   * that the buffer reached storage, which is the one guarantee the old
+   * write-through `set` gave for free.
+   */
+  async flushNow(): Promise<void> {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = undefined;
     }
+    if (this.pending.size === 0) return this.inFlightFlush;
+
+    const batch = [...this.pending];
+    this.pending.clear();
+
+    // In parallel rather than in sequence: these are independent keys, and not
+    // paying for them one at a time is the point of buffering.
+    const flush = Promise.all(
+      batch.map(([storageKey, entry]) =>
+        // Best-effort, matching `prune`: a failed write costs one cache entry,
+        // which is what happens anyway when nothing was persisted at all.
+        Promise.resolve(this.storage.update(storageKey, entry)).catch(
+          () => undefined,
+        ),
+      ),
+    ).then(() => undefined);
+
+    this.inFlightFlush = flush;
+    await flush;
+    if (this.inFlightFlush === flush) this.inFlightFlush = undefined;
   }
 
   /**
@@ -123,7 +194,7 @@ export class TtlCache {
     const keys = this.storage.keys?.();
     if (!keys) return 0;
 
-    let removed = 0;
+    const lapsed: string[] = [];
     for (const storageKey of keys) {
       if (!storageKey.startsWith(STORAGE_PREFIX)) continue;
       const entry = this.storage.get<Entry<unknown>>(storageKey);
@@ -134,20 +205,32 @@ export class TtlCache {
         entry.expiresAt >= now
       )
         continue;
-
-      try {
-        await this.storage.update(storageKey, undefined);
-      } catch {
-        // Best-effort: a write that fails here just leaves one stale entry
-        // behind, which is what happens if prune() never runs at all — not
-        // worth losing the rest of the sweep, or turning into an unhandled
-        // rejection for `void cache.prune()` at the call site.
-        continue;
-      }
-      this.memory.delete(storageKey.slice(STORAGE_PREFIX.length));
-      removed++;
+      lapsed.push(storageKey);
     }
-    return removed;
+
+    /*
+     * Removed in parallel rather than one awaited write after another. This
+     * runs on activation, where the work is proportional to everything that
+     * has ever accumulated — a user who has opened many workspaces can have
+     * thousands of lapsed keys, and paying a round-trip for each in series put
+     * that whole sweep in front of the first scan.
+     */
+    const results = await Promise.all(
+      lapsed.map(async (storageKey) => {
+        try {
+          await this.storage.update(storageKey, undefined);
+        } catch {
+          // Best-effort: a write that fails here just leaves one stale entry
+          // behind, which is what happens if prune() never runs at all — not
+          // worth losing the rest of the sweep, or turning into an unhandled
+          // rejection for `void cache.prune()` at the call site.
+          return false;
+        }
+        this.memory.delete(storageKey.slice(STORAGE_PREFIX.length));
+        return true;
+      }),
+    );
+    return results.filter(Boolean).length;
   }
 
   private read<T>(key: string): Entry<T> | undefined {

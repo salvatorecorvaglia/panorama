@@ -16,7 +16,7 @@ on:
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -76,6 +76,8 @@ jobs:
     name: Release
     needs: [validate, verify]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -134,5 +136,5 @@ jobs:
           if [[ "${{ github.event.inputs.prerelease || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}" == "true" ]]; then
             EXTRA_ARGS="--pre-release"
           fi
-          npx --yes ovsx publish *.vsix -p "$OVSX_PAT" $EXTRA_ARGS
+          npx --yes ovsx publish *.vsix $EXTRA_ARGS
 

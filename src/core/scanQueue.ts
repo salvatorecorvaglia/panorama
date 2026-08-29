@@ -47,7 +47,18 @@ export class ScanQueue<T> {
       if (satisfied) {
         return this.inFlight;
       }
-      return this.inFlight.then(() => this.request(request));
+      /*
+       * Both settlements run the queued request, which is why this is
+       * `.then(run, run)` rather than a plain `.then`.
+       *
+       * A caller queued behind a *failed* scan is still waiting for an answer
+       * to its own question, and the previous scan's failure is not that
+       * answer. With a success-only handler its promise rejected with an error
+       * belonging to a request it never made, and the stronger scan it asked
+       * for never ran at all.
+       */
+      const run = () => this.request(request);
+      return this.inFlight.then(run, run);
     }
 
     this.inFlightCheckedUpdates = request.checkUpdates;

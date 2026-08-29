@@ -78,6 +78,9 @@ describe('TtlCache', () => {
 
     await cache.set('persisted', 1, TTL.version);
     await cache.set('ephemeral', 2, TTL.nameIndex, { persist: false });
+    // Persistence is buffered so it stays off the scan's hot path; asserting
+    // on storage means asking for the buffer to land first.
+    await cache.flushNow();
 
     expect(storage.store.has('panorama.cache.persisted')).toBe(true);
     expect(storage.store.has('panorama.cache.ephemeral')).toBe(false);
@@ -131,6 +134,7 @@ describe('TtlCache', () => {
 
     await cache.set('a', 'kept', 10_000);
     await cache.set('b', 'newer', 10_000);
+    await cache.flushNow();
 
     // 'a' is out of the mirror but still on disk, so it reads through.
     expect(cache.get('a')).toBe('kept');
@@ -211,5 +215,114 @@ describe('cacheKey', () => {
     expect(cacheKey('npm', 'versions', 'https://a', 'react')).not.toBe(
       cacheKey('npm', 'versions', 'https://b', 'react'),
     );
+  });
+});
+
+describe('write batching', () => {
+  /** A Memento that records every write it is asked to perform. */
+  function countingMemento() {
+    const store = new Map<string, unknown>();
+    const writes: string[] = [];
+    return {
+      writes,
+      memento: {
+        get: <T>(key: string) => store.get(key) as T | undefined,
+        update: (key: string, value: unknown) => {
+          writes.push(key);
+          if (value === undefined) store.delete(key);
+          else store.set(key, value);
+          return Promise.resolve();
+        },
+        keys: () => [...store.keys()],
+      },
+    };
+  }
+
+  it('collapses repeat writes to one key into a single storage write', async () => {
+    /*
+     * Metadata and versions for the same package land as separate `set` calls.
+     * Each used to be its own awaited round-trip from inside a
+     * bounded-concurrency worker, so the persistence cost was serialised into
+     * the scan.
+     */
+    const { memento, writes } = countingMemento();
+    const cache = new TtlCache(memento);
+
+    await Promise.all([
+      cache.set('pkg', { v: 1 }, 60_000),
+      cache.set('pkg', { v: 2 }, 60_000),
+      cache.set('pkg', { v: 3 }, 60_000),
+    ]);
+    await cache.flushNow();
+
+    expect(writes).toEqual(['panorama.cache.pkg']);
+    // The last write wins, and the in-memory mirror agrees with storage.
+    expect(cache.get('pkg')).toEqual({ v: 3 });
+  });
+
+  it('makes a value readable immediately, before it reaches storage', async () => {
+    // Buffering must not open a window where a just-written value reads as
+    // missing — a scan reads back what it just cached.
+    const { memento } = countingMemento();
+    const cache = new TtlCache(memento);
+
+    const pending = cache.set('pkg', 'value', 60_000);
+    expect(cache.get('pkg')).toBe('value');
+    await pending;
+    await cache.flushNow();
+  });
+
+  it('persists the entry once the buffer is flushed', async () => {
+    const { memento, writes } = countingMemento();
+    const cache = new TtlCache(memento);
+
+    await cache.set('pkg', 'value', 60_000);
+    await cache.flushNow();
+
+    expect(writes).toContain('panorama.cache.pkg');
+    expect(memento.get('panorama.cache.pkg')).toBeDefined();
+  });
+
+  it('flushes on its own timer without anyone asking', async () => {
+    // Disposal calls `flushNow`, but an extension that simply keeps running
+    // must still reach storage.
+    const { memento, writes } = countingMemento();
+    const cache = new TtlCache(memento);
+
+    vi.useFakeTimers();
+    try {
+      await cache.set('pkg', 'value', 60_000);
+      await vi.advanceTimersByTimeAsync(120);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(writes).toContain('panorama.cache.pkg');
+    void memento;
+  });
+
+  it('keeps pruning after a storage write fails', async () => {
+    // One failed removal must not abandon the rest of the sweep.
+    const store = new Map<string, unknown>();
+    const lapsed = { value: 'x', expiresAt: Date.now() - 1000 };
+    store.set('panorama.cache.a', lapsed);
+    store.set('panorama.cache.b', lapsed);
+    store.set('panorama.cache.c', lapsed);
+
+    const cache = new TtlCache({
+      get: <T>(key: string) => store.get(key) as T | undefined,
+      update: (key: string, value: unknown) => {
+        if (key === 'panorama.cache.b')
+          return Promise.reject(new Error('nope'));
+        store.delete(key);
+        void value;
+        return Promise.resolve();
+      },
+      keys: () => [...store.keys()],
+    });
+
+    expect(await cache.prune()).toBe(2);
+    expect(store.has('panorama.cache.a')).toBe(false);
+    expect(store.has('panorama.cache.c')).toBe(false);
   });
 });

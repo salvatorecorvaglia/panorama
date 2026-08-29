@@ -12,6 +12,8 @@ on:
       - '**.md'
       - 'docs/**'
   workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
 
 permissions:
   contents: read
@@ -95,8 +97,12 @@ jobs:
         run: pnpm run test:coverage
 
   integration-test:
-    name: Integration Tests
-    runs-on: ubuntu-latest
+    name: Integration Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -120,8 +126,13 @@ jobs:
           key: vscode-test-${{ runner.os }}-${{ hashFiles('package.json') }}
           restore-keys: vscode-test-${{ runner.os }}-
 
-      - name: Run VS Code integration tests
+      - name: Run VS Code integration tests (Linux)
+        if: runner.os == 'Linux'
         run: xvfb-run -a pnpm run test:integration
+
+      - name: Run VS Code integration tests (Windows)
+        if: runner.os == 'Windows'
+        run: pnpm run test:integration
 
   dependency-review:
     name: Dependency Review
@@ -132,3 +143,26 @@ jobs:
         uses: actions/checkout@v6
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level moderate

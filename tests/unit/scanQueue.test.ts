@@ -167,3 +167,24 @@ describe('ScanQueue', () => {
     await expect(failing.settled()).resolves.toBeUndefined();
   });
 });
+
+describe('failure isolation', () => {
+  it('runs a queued stronger request even when the scan ahead of it rejects', async () => {
+    const calls: boolean[] = [];
+    const queue = new ScanQueue<string>(async (request) => {
+      calls.push(request.checkUpdates);
+      if (!request.checkUpdates) throw new Error('offline scan blew up');
+      return 'registry data';
+    });
+
+    const offline = queue.request({ checkUpdates: false });
+    const online = queue.request({ checkUpdates: true });
+
+    // The failing request still reports its own failure to its own caller...
+    await expect(offline).rejects.toThrow('offline scan blew up');
+    // ...and the one queued behind it gets the answer it actually asked for,
+    // rather than inheriting an error from a request it never made.
+    await expect(online).resolves.toBe('registry data');
+    expect(calls).toEqual([false, true]);
+  });
+});

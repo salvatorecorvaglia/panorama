@@ -3,13 +3,16 @@
  * path is gated behind before a name or version reaches a shell command.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { CargoProvider } from '../../src/providers/cargo/index.js';
+import { NodeProvider } from '../../src/providers/node/index.js';
 import type { EcosystemProvider } from '../../src/providers/provider.js';
 import {
   isValidVersionDefault,
   normalizeScope,
   validateVersion,
 } from '../../src/providers/provider.js';
+import { PythonProvider } from '../../src/providers/python/index.js';
 
 describe('isValidVersionDefault', () => {
   it('accepts the concrete target versions callers actually validate', () => {
@@ -123,4 +126,69 @@ describe('normalizeScope', () => {
     expect(normalizeScope('')).toBe('prod');
     expect(normalizeScope('whatever-this-is')).toBe('prod');
   });
+});
+
+/*
+ * `fetchVersions` has always refused a name that is not a real one before
+ * putting it in a URL. `fetchMetadata` did not — and it is reached with a
+ * manifest-supplied name too, from the detail drawer and from the license
+ * summary. Both now hold the same line.
+ */
+describe('fetchMetadata name validation', () => {
+  /** A context whose http records whether it was reached at all. */
+  function spyingContext() {
+    const getJson = vi.fn(() => Promise.reject(new Error('should not be hit')));
+    return {
+      getJson,
+      ctx: {
+        http: { getJson } as never,
+        cache: {
+          get: () => undefined,
+          getStale: () => undefined,
+          set: () => Promise.resolve(),
+        } as never,
+        readFile: () => Promise.resolve(null),
+        exists: () => Promise.resolve(false),
+        registryOverride: () => undefined,
+        registryAuthHeaders: () => undefined,
+        preferredToolchain: () => 'auto',
+      },
+    };
+  }
+
+  const providers: Array<[string, EcosystemProvider]> = [
+    ['node', new NodeProvider()],
+    ['python', new PythonProvider()],
+    ['cargo', new CargoProvider()],
+  ];
+
+  for (const [label, provider] of providers) {
+    it(`${label} does not put a name that is not a name into a URL`, async () => {
+      const { ctx, getJson } = spyingContext();
+
+      for (const name of [
+        '../../admin',
+        'has space',
+        'semi;colon',
+        '',
+        'back\\slash',
+      ]) {
+        await expect(
+          provider.fetchMetadata(name, ctx),
+        ).resolves.toBeUndefined();
+      }
+
+      expect(getJson).not.toHaveBeenCalled();
+    });
+
+    it(`${label} still attempts a legitimate name`, async () => {
+      const { ctx, getJson } = spyingContext();
+      const name = label === 'cargo' ? 'serde' : 'requests';
+
+      // Rejected by the stub, not by validation — the point is that it got
+      // as far as the request.
+      await provider.fetchMetadata(name, ctx);
+      expect(getJson).toHaveBeenCalled();
+    });
+  }
 });

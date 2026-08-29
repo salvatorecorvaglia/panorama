@@ -53,6 +53,13 @@ export default defineConfig({
         'src/core/watcher.ts',
         'src/core/workspace.ts',
         'src/ui/dependencyMutator.ts',
+        // These two import `vscode` like the rest of `ui/`, so they cannot be
+        // loaded here either — they were simply missed. Left in, they were
+        // counted at 0% and measured how much `vscode`-importing code exists
+        // rather than how well anything is tested, which is exactly what this
+        // list exists to stop.
+        'src/ui/depCodeLens.ts',
+        'src/ui/depDiagnostics.ts',
         'src/ui/gitDiff.ts',
         'src/ui/panelManager.ts',
         'src/ui/sidebarProvider.ts',
@@ -61,20 +68,20 @@ export default defineConfig({
         'src/webview/main.tsx',
       ],
       /*
-       * Set just under what the suite currently achieves (86.1% lines, 74.5%
-       * branches, 83.5% functions, 82.3% statements), so the gate catches
+       * Set just under what the suite currently achieves (91.1% lines, 78.3%
+       * branches, 88.3% functions, 87.4% statements), so the gate catches
        * regressions without failing on the next honest refactor.
        *
        * Raise these when coverage rises; do not lower them to make a red build
-       * green. Branches trails the others: the provider classes' error-path
-       * and stale-fallback branches are the least exercised part of the suite
-       * — that is the gap worth closing next.
+       * green. Branches still trails the others: the provider classes'
+       * error-path and stale-fallback branches remain the least exercised part
+       * of the suite — that is the gap worth closing next.
        */
       thresholds: {
-        lines: 84,
-        functions: 81,
-        branches: 73,
-        statements: 80,
+        lines: 90,
+        functions: 87,
+        branches: 77,
+        statements: 86,
       },
     },
   },

@@ -17,8 +17,24 @@ const OSV_API = 'https://api.osv.dev';
 const MAX_BATCH = 500;
 
 interface OsvBatchResponse {
-  results: Array<{ vulns?: Array<{ id: string }> }>;
+  results: Array<{
+    vulns?: Array<{ id: string }>;
+    /**
+     * Present when this query has more advisories than one page carried.
+     * Re-issuing the query with it as `page_token` returns the next page.
+     */
+    next_page_token?: string;
+  }>;
 }
+
+/**
+ * Pages to follow for one query before giving up on the rest.
+ *
+ * A package with more advisories than this has bigger problems than a
+ * truncated list, and an unbounded follow loop against a paging bug would keep
+ * a scan running indefinitely.
+ */
+const MAX_PAGES = 5;
 
 interface OsvVuln {
   id: string;
@@ -89,24 +105,67 @@ export async function auditDependencies(
     .fill(null)
     .map(() => []);
 
-  for (let offset = 0; offset < queries.length; offset += MAX_BATCH) {
-    const slice = queries.slice(offset, offset + MAX_BATCH);
-    try {
-      const response = await ctx.http.postJson<OsvBatchResponse>(
-        `${OSV_API}/v1/querybatch`,
-        { queries: slice },
-        { signal },
-      );
-      response.results.forEach((result, i) => {
-        idsPerQuery[offset + i] = (result.vulns ?? []).map((vuln) => vuln.id);
-      });
-    } catch (error) {
-      // An unreachable OSV greys out a badge; it does not break the table, and
-      // it is not evidence that the registry data alongside it is stale. An
-      // abort is different — that is the caller withdrawing the question.
-      if (signal?.aborted) throw error;
-      return;
+  /*
+   * `pageTokens` carries the batch forward: on the first pass every query is
+   * asked plainly, and on each pass after it only the queries OSV said had
+   * more results are re-asked, with the token it handed back.
+   *
+   * Following those tokens is what makes the list complete. Without it a
+   * package with more advisories than fit in one page silently lost the
+   * remainder — and a truncated advisory list reads exactly like a full one.
+   */
+  let pageTokens = new Map<number, string | undefined>(
+    queries.map((_query, index) => [index, undefined]),
+  );
+
+  for (let page = 0; page < MAX_PAGES && pageTokens.size > 0; page++) {
+    const pending = [...pageTokens.entries()];
+    const nextTokens = new Map<number, string | undefined>();
+    let failed = false;
+
+    for (let offset = 0; offset < pending.length; offset += MAX_BATCH) {
+      const slice = pending.slice(offset, offset + MAX_BATCH);
+      try {
+        const response = await ctx.http.postJson<OsvBatchResponse>(
+          `${OSV_API}/v1/querybatch`,
+          {
+            queries: slice.map(([index, token]) =>
+              token === undefined
+                ? queries[index]
+                : { ...queries[index], page_token: token },
+            ),
+          },
+          { signal },
+        );
+        response.results.forEach((result, i) => {
+          const queryIndex = slice[i]?.[0];
+          if (queryIndex === undefined) return;
+          for (const vuln of result.vulns ?? []) {
+            idsPerQuery[queryIndex].push(vuln.id);
+          }
+          if (result.next_page_token) {
+            nextTokens.set(queryIndex, result.next_page_token);
+          }
+        });
+      } catch (error) {
+        // An unreachable OSV greys out a badge; it does not break the table,
+        // and it is not evidence that the registry data alongside it is stale.
+        // An abort is different — that is the caller withdrawing the question.
+        if (signal?.aborted) throw error;
+        /*
+         * Stop asking, but keep what earlier batches already answered. This
+         * used to `return`, throwing away every advisory collected so far — so
+         * one failing batch in the middle of a large workspace turned a
+         * partial answer into no answer at all, with nothing to distinguish it
+         * from "nothing is vulnerable".
+         */
+        failed = true;
+        break;
+      }
     }
+
+    if (failed) break;
+    pageTokens = nextTokens;
   }
 
   const uniqueIds = [...new Set(idsPerQuery.flat())];
@@ -120,7 +179,7 @@ export async function auditDependencies(
     // later all present the worst advisory first without each deciding for
     // itself.
     const resolved = sortBySeverity(
-      ids
+      [...new Set(ids)]
         .map((id) => details.get(id))
         .filter((vuln): vuln is Vulnerability => vuln !== undefined),
     );

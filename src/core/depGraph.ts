@@ -8,13 +8,18 @@
  */
 
 import * as path from 'node:path';
-import { parse as parseYaml } from 'yaml';
 import type { ProviderContext } from '../providers/provider.js';
 // The one PEP 503 implementation. A second copy lived here to avoid depending
 // on a provider, but this file already imports the provider registry, and two
 // normalisers that must agree exactly are two that can silently stop agreeing.
 import { normalizeName as normalizePythonName } from '../providers/python/index.js';
 import { providerFor } from '../providers/registry.js';
+import {
+  type ForwardGraph,
+  lockfilesFor,
+  NPM_ROOT,
+  type VersionMap,
+} from './lockfiles/index.js';
 import type {
   Dependency,
   DependencyDiffEntry,
@@ -33,6 +38,18 @@ const MAX_DEPTH = 8;
  * Well past what anyone reads, and far below what a dense lockfile can produce.
  */
 const MAX_CHAINS = 200;
+
+/**
+ * The same budget as `MAX_CHAINS`, for the registry walk rather than the
+ * lockfile one. Expanding each node once already bounds that walk by the size
+ * of the graph deps.dev returned; this bounds it by a number this file
+ * controls, so a graph far larger than anything worth reading cannot occupy
+ * the extension host regardless.
+ */
+const MAX_REGISTRY_NODES = 2000;
+
+/** Children shown under one package before the rest are elided. */
+const MAX_REGISTRY_CHILDREN = 50;
 
 export interface WhyResult {
   roots: DepNode[];
@@ -69,381 +86,31 @@ export async function explainDependency(
   return { roots: registryTree, source: 'registry' };
 }
 
-/** name -> direct dependency names, read from whichever lockfile exists. */
-type ForwardGraph = Map<string, string[]>;
-
 /** Normalises a package name into the form its ecosystem's graph is keyed by. */
 function graphKey(name: string, ecosystem: Ecosystem): string {
   return ecosystem === 'python' ? normalizePythonName(name) : name;
 }
 
+/**
+ * The dependency edges from whichever lockfile the project has.
+ *
+ * Ecosystems with no such file — Go, Maven, Gradle — have no readers
+ * registered and fall through to the registry path, which does carry edges.
+ * See `lockfiles/index.ts` for why each is left out.
+ */
 async function buildForwardGraph(
   target: Dependency,
   ctx: ProviderContext,
 ): Promise<ForwardGraph | undefined> {
   const dir = path.dirname(target.manifestPath);
 
-  switch (target.ecosystem) {
-    case 'node':
-      return buildNodeGraph(dir, ctx);
-    case 'cargo':
-      return buildCargoGraph(dir, ctx);
-    case 'composer':
-      return buildComposerGraph(dir, ctx);
-    case 'python':
-      return buildPythonGraph(dir, ctx);
-    default:
-      // Go, Maven and Gradle have no local file describing dependency *edges*:
-      // go.sum lists the transitive closure with hashes but records nothing
-      // about who requires whom (that needs `go mod graph`, i.e. running a
-      // command), and Maven/Gradle have no lockfile at all in the general case.
-      // These route to the registry path, which does carry edges.
-      return undefined;
-  }
-}
-
-async function buildNodeGraph(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<ForwardGraph | undefined> {
-  // npm, pnpm and yarn each have their own format; try whichever is present.
-  return (
-    (await buildNpmLockGraph(dir, ctx)) ??
-    (await buildPnpmGraph(dir, ctx)) ??
-    (await buildYarnGraph(dir, ctx))
-  );
-}
-
-async function buildNpmLockGraph(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<ForwardGraph | undefined> {
-  const text = await ctx.readFile(path.join(dir, 'package-lock.json'));
-  if (!text) return undefined;
-
-  try {
-    const lock = JSON.parse(text) as {
-      packages?: Record<string, { dependencies?: Record<string, string> }>;
-    };
-    const graph: ForwardGraph = new Map();
-
-    for (const [key, entry] of Object.entries(lock.packages ?? {})) {
-      const name = npmLockName(key);
-      const children = Object.keys(entry.dependencies ?? {});
-      // A package can appear at several install paths; union their edges.
-      const existing = graph.get(name);
-      graph.set(
-        name,
-        existing ? [...new Set([...existing, ...children])] : children,
-      );
-    }
-
-    return graph;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Turns a `packages` key from a v2/v3 npm lockfile into a graph node name.
- *
- * Three shapes appear, and only one of them mentions `node_modules`:
- *   ""                         the root project
- *   "node_modules/lodash"      an installed package
- *   "packages/web"             a workspace member
- *
- * Slicing blindly from `lastIndexOf('node_modules/')` yields an empty string
- * for that third case — every workspace member collapsing onto one nameless
- * node, with all their edges unioned together — which is exactly the monorepo
- * where "why is this installed" is worth asking.
- */
-function npmLockName(key: string): string {
-  if (key === '') return '__root__';
-
-  const marker = key.lastIndexOf('node_modules/');
-  if (marker >= 0) return key.slice(marker + 'node_modules/'.length);
-
-  // A workspace member. It is a root of the graph in its own right: nothing
-  // depends on it, and its dependencies are the project's own.
-  return '__root__';
-}
-
-interface PnpmLockEntry {
-  dependencies?: Record<string, unknown>;
-  optionalDependencies?: Record<string, unknown>;
-}
-
-/**
- * pnpm-lock.yaml.
- *
- * Read with the real YAML parser rather than by indentation: `importers:`
- * shares the same 2-space-indent, colon-terminated shape as `packages:`/
- * `snapshots:`, and a hand-rolled line scanner had no way to tell them apart
- * from the text alone. Only the latter two hold the resolved dependency
- * graph — that shape is stable across lockfile versions 5–9, where the
- * surrounding schema is not.
- */
-async function buildPnpmGraph(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<ForwardGraph | undefined> {
-  const text = await ctx.readFile(path.join(dir, 'pnpm-lock.yaml'));
-  if (!text) return undefined;
-
-  let doc: {
-    packages?: Record<string, PnpmLockEntry>;
-    snapshots?: Record<string, PnpmLockEntry>;
-  };
-  try {
-    doc = (parseYaml(text) ?? {}) as typeof doc;
-  } catch {
-    return undefined;
-  }
-
-  const graph: ForwardGraph = new Map();
-
-  for (const section of [doc.packages, doc.snapshots]) {
-    for (const [key, entry] of Object.entries(section ?? {})) {
-      const name = pnpmNameFromKey(key);
-      if (!name) continue;
-      if (!graph.has(name)) graph.set(name, []);
-
-      const children = [
-        ...Object.keys(entry?.dependencies ?? {}),
-        ...Object.keys(entry?.optionalDependencies ?? {}),
-      ];
-      if (children.length === 0) continue;
-
-      const existing = graph.get(name) ?? [];
-      graph.set(name, [...new Set([...existing, ...children])]);
-    }
-  }
-
-  return graph.size > 0 ? graph : undefined;
-}
-
-/**
- * Splits a pnpm-lock.yaml package key into its name and resolved version.
- *
- * `/@scope/name@1.2.3(peer@1)` and `name@1.2.3` both reduce to
- * `{ name: '@scope/name' | 'name', version: '1.2.3' }`.
- */
-function splitPnpmKey(key: string): {
-  name: string | undefined;
-  version: string | undefined;
-} {
-  let rest = key.startsWith('/') ? key.slice(1) : key;
-  // Drop the peer-dependency suffix pnpm appends in parentheses.
-  const paren = rest.indexOf('(');
-  if (paren >= 0) rest = rest.slice(0, paren);
-
-  const at = rest.lastIndexOf('@');
-  if (at <= 0) return { name: rest || undefined, version: undefined };
-  return {
-    name: rest.slice(0, at) || undefined,
-    version: rest.slice(at + 1) || undefined,
-  };
-}
-
-function pnpmNameFromKey(key: string): string | undefined {
-  return splitPnpmKey(key).name;
-}
-
-/**
- * yarn.lock (v1 and berry).
- *
- * Blocks are separated by a blank line: a header naming one or more specs, then
- * an indented body that may contain a `dependencies:` map.
- */
-async function buildYarnGraph(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<ForwardGraph | undefined> {
-  const text = await ctx.readFile(path.join(dir, 'yarn.lock'));
-  if (!text) return undefined;
-
-  const graph: ForwardGraph = new Map();
-
-  for (const block of text.split(/\n\s*\n/)) {
-    const lines = block.split(/\r?\n/).filter((line) => line.trim() !== '');
-    if (lines.length === 0) continue;
-
-    const header = lines[0].trim();
-    if (header.startsWith('#') || !header.endsWith(':')) continue;
-
-    // The header can list several specs; they all resolve to the same package.
-    const firstSpec = header
-      .slice(0, -1)
-      .split(',')[0]
-      .trim()
-      .replace(/^['"]|['"]$/g, '');
-    const name = yarnNameFromSpec(firstSpec);
-    if (!name) continue;
-
-    const children: string[] = [];
-    let inDependencies = false;
-
-    for (const line of lines.slice(1)) {
-      const trimmed = line.trim().replace(/^['"]|['"]$/g, '');
-      if (/^(dependencies|optionalDependencies):$/.test(trimmed)) {
-        inDependencies = true;
-        continue;
-      }
-      // A non-indented-enough key ends the block.
-      if (inDependencies && line.search(/\S/) <= 2) {
-        inDependencies = false;
-      }
-      if (inDependencies) {
-        const child = trimmed.split(/[:\s]/)[0].replace(/^['"]|['"]$/g, '');
-        if (child) children.push(child);
-      }
-    }
-
-    const existing = graph.get(name);
-    graph.set(
-      name,
-      existing ? [...new Set([...existing, ...children])] : children,
-    );
-  }
-
-  return graph.size > 0 ? graph : undefined;
-}
-
-/** `lodash@^4.17.0` and `@scope/pkg@npm:^1.0.0` both reduce to the bare name. */
-function yarnNameFromSpec(spec: string): string | undefined {
-  const at = spec.lastIndexOf('@');
-  if (at <= 0) return spec || undefined;
-  return spec.slice(0, at) || undefined;
-}
-
-/**
- * poetry.lock and uv.lock.
- *
- * Both are TOML arrays of `[[package]]` tables. Poetry nests requirements under
- * `[package.dependencies]`, uv under a `dependencies = [{ name = "..." }]`
- * array — so the two are split apart here rather than pretending they match.
- */
-async function buildPythonGraph(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<ForwardGraph | undefined> {
-  for (const lockName of ['uv.lock', 'poetry.lock']) {
-    const text = await ctx.readFile(path.join(dir, lockName));
+  for (const lockfile of lockfilesFor(target.ecosystem)) {
+    const text = await ctx.readFile(path.join(dir, lockfile.file));
     if (!text) continue;
-
-    const graph: ForwardGraph = new Map();
-
-    for (const block of splitTomlPackageBlocks(text)) {
-      const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
-      if (!name) continue;
-
-      const children = new Set<string>();
-
-      // uv: dependencies = [{ name = "x" }, ...]
-      const uvArray = /\ndependencies\s*=\s*\[([\s\S]*?)\n\]/.exec(block)?.[1];
-      if (uvArray) {
-        for (const match of uvArray.matchAll(/name\s*=\s*"([^"]+)"/g)) {
-          children.add(normalizePythonName(match[1]));
-        }
-      }
-
-      // poetry: [package.dependencies] followed by `key = "constraint"` lines,
-      // ending at the next table header.
-      const poetryTable =
-        /\n\[package\.dependencies\]\s*\n([\s\S]*?)(?=\n\[|$)/.exec(block)?.[1];
-      if (poetryTable) {
-        for (const line of poetryTable.split(/\r?\n/)) {
-          const key = /^([A-Za-z0-9._-]+)\s*=/.exec(line.trim())?.[1];
-          if (key) children.add(normalizePythonName(key));
-        }
-      }
-
-      graph.set(normalizePythonName(name), [...children]);
-    }
-
-    if (graph.size > 0) return graph;
+    const graph = lockfile.edges(text);
+    if (graph && graph.size > 0) return graph;
   }
-
   return undefined;
-}
-
-/**
- * Splits a TOML document into its `[[package]]` block bodies.
- *
- * Splitting on the header text alone would silently drop the first package in a
- * file that opens with `[[package]]` and no preamble, so the boundaries are
- * taken from the match positions instead.
- */
-function splitTomlPackageBlocks(text: string): string[] {
-  const headers = [...text.matchAll(/(?:^|\n)\[\[package\]\][^\n]*\n/g)];
-  return headers.map((header, index) => {
-    const start = header.index! + header[0].length;
-    const end =
-      index + 1 < headers.length ? headers[index + 1].index! : text.length;
-    return text.slice(start, end);
-  });
-}
-
-async function buildCargoGraph(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<ForwardGraph | undefined> {
-  const text = await ctx.readFile(path.join(dir, 'Cargo.lock'));
-  if (!text) return undefined;
-
-  try {
-    // Parsed with a light regex rather than a TOML parse: Cargo.lock is a flat
-    // sequence of [[package]] tables and this avoids a second parser pass.
-    const graph: ForwardGraph = new Map();
-
-    for (const block of splitTomlPackageBlocks(text)) {
-      const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
-      if (!name) continue;
-      const depsBlock =
-        /dependencies\s*=\s*\[([\s\S]*?)\]/.exec(block)?.[1] ?? '';
-      const children = [...depsBlock.matchAll(/"([^"\s]+)/g)].map(
-        (match) => match[1].split(' ')[0],
-      );
-      graph.set(name, children);
-    }
-
-    return graph;
-  } catch {
-    return undefined;
-  }
-}
-
-async function buildComposerGraph(
-  dir: string,
-  ctx: ProviderContext,
-): Promise<ForwardGraph | undefined> {
-  const text = await ctx.readFile(path.join(dir, 'composer.lock'));
-  if (!text) return undefined;
-
-  try {
-    const lock = JSON.parse(text) as {
-      packages?: Array<{ name: string; require?: Record<string, string> }>;
-      'packages-dev'?: Array<{
-        name: string;
-        require?: Record<string, string>;
-      }>;
-    };
-    const graph: ForwardGraph = new Map();
-    for (const entry of [
-      ...(lock.packages ?? []),
-      ...(lock['packages-dev'] ?? []),
-    ]) {
-      graph.set(
-        entry.name,
-        Object.keys(entry.require ?? {}).filter(
-          (name) => name !== 'php' && !name.startsWith('ext-'),
-        ),
-      );
-    }
-    return graph;
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -488,7 +155,7 @@ function tracePaths(graph: ForwardGraph, target: string): DepNode[] {
       return;
     }
     const parents = reverse.get(name);
-    if (!parents || parents.length === 0 || name === '__root__') {
+    if (!parents || parents.length === 0 || name === NPM_ROOT) {
       chains.push([...chain]);
       return;
     }
@@ -504,7 +171,7 @@ function tracePaths(graph: ForwardGraph, target: string): DepNode[] {
       }
       if (visited.has(parent)) continue; // cycle guard
       advanced = true;
-      if (parent === '__root__') {
+      if (parent === NPM_ROOT) {
         chains.push([...chain]);
         continue;
       }
@@ -580,7 +247,7 @@ async function buildFromDepsDev(
     // would reproduce those cycles as a cyclic *object*, and `postMessage`
     // JSON-serializes: one `Converting circular structure to JSON` and the
     // whole drawer silently stays empty. So the tree is expanded by explicit
-    // traversal, with the current path tracked to cut cycles.
+    // traversal, with each node expanded at most once.
     const edgesFrom = new Map<number, Array<{ to: number; range?: string }>>();
     for (const edge of response.edges) {
       if (edge.fromNode === edge.toNode) continue;
@@ -592,11 +259,38 @@ async function buildFromDepsDev(
         ]);
     }
 
-    const expand = (
-      index: number,
-      depth: number,
-      onPath: Set<number>,
-    ): DepNode => {
+    /*
+     * Each node is expanded once, tracked in `expanded`; every later reference
+     * to it becomes a named, truncated leaf.
+     *
+     * This used to track only the *current path*, which cuts cycles but does
+     * nothing about diamonds — and a resolved dependency graph is mostly
+     * diamonds, because that is what it means for packages to share a
+     * dependency. Re-expanding on every distinct path made the cost the
+     * product of the branching factors rather than their sum: a 4-wide,
+     * 8-deep graph of 33 nodes materialised 87,381 of them, and this runs on
+     * the extension host's single thread, which is also the one drawing the
+     * editor. The result was then handed to `postMessage` to serialise.
+     *
+     * Expanding once is also the better answer to show: the drawer asks "what
+     * does this bring with it", and repeating one subtree under every package
+     * that shares it buries that answer rather than making it clearer.
+     * Cycles fall out of the same rule — a back edge points at something
+     * already expanded — so they need no separate case.
+     */
+    const expanded = new Set<number>();
+    /** A hard ceiling, in case a future change reintroduces a repeat path. */
+    let budget = MAX_REGISTRY_NODES;
+
+    const reference = (index: number, range?: string): DepNode => ({
+      name: response.nodes[index].versionKey.name,
+      version: response.nodes[index].versionKey.version,
+      requestedRange: range,
+      children: [],
+      truncated: true,
+    });
+
+    const expand = (index: number, depth: number): DepNode => {
       const source = response.nodes[index];
       const node: DepNode = {
         name: source.versionKey.name,
@@ -611,27 +305,23 @@ async function buildFromDepsDev(
 
       for (const edge of edgesFrom.get(index) ?? []) {
         if (!response.nodes[edge.to]) continue;
-        if (onPath.has(edge.to)) {
-          // A cycle: name it and stop rather than pretending it terminates.
-          node.children.push({
-            name: response.nodes[edge.to].versionKey.name,
-            version: response.nodes[edge.to].versionKey.version,
-            requestedRange: edge.range,
-            children: [],
-            truncated: true,
-          });
-          continue;
-        }
-        if (node.children.length >= 50) {
+        if (node.children.length >= MAX_REGISTRY_CHILDREN || budget <= 0) {
           node.truncated = true;
           break;
         }
 
-        onPath.add(edge.to);
-        const child = expand(edge.to, depth + 1, onPath);
+        // Already shown somewhere in this tree — name it and stop.
+        if (expanded.has(edge.to)) {
+          node.children.push(reference(edge.to, edge.range));
+          budget--;
+          continue;
+        }
+
+        expanded.add(edge.to);
+        budget--;
+        const child = expand(edge.to, depth + 1);
         child.requestedRange = edge.range;
         node.children.push(child);
-        onPath.delete(edge.to);
       }
 
       return node;
@@ -641,14 +331,12 @@ async function buildFromDepsDev(
       (node) => node.relation === 'SELF',
     );
     if (selfIndex < 0) return [];
-    return [expand(selfIndex, 0, new Set([selfIndex]))];
+    expanded.add(selfIndex);
+    return [expand(selfIndex, 0)];
   } catch {
     return [];
   }
 }
-
-/** name -> every version at which the lockfile resolves it. */
-type VersionMap = Map<string, Set<string>>;
 
 /**
  * Packages resolved at more than one version at once within a single
@@ -707,163 +395,13 @@ export async function collectVersionsFrom(
   ecosystem: Ecosystem,
   readFile: (absolutePath: string) => Promise<string | null | undefined>,
 ): Promise<VersionMap | undefined> {
-  for (const format of lockfileFormatsFor(ecosystem)) {
-    const text = await readFile(path.join(dir, format.file));
+  for (const lockfile of lockfilesFor(ecosystem)) {
+    const text = await readFile(path.join(dir, lockfile.file));
     if (!text) continue;
-    const result = format.parse(text);
+    const result = lockfile.versions(text);
     if (result) return result;
   }
   return undefined;
-}
-
-interface LockfileFormat {
-  file: string;
-  parse: (text: string) => VersionMap | undefined;
-}
-
-/**
- * Every lockfile format `collectVersionsFrom` knows how to read, in the
- * order they are tried. Node tries all three package managers in turn since
- * a workspace declares no fixed choice; Python tries both because a project
- * can be uv- or Poetry-managed with no marker outside the lockfile itself.
- */
-function lockfileFormatsFor(ecosystem: Ecosystem): LockfileFormat[] {
-  switch (ecosystem) {
-    case 'node':
-      return [
-        { file: 'package-lock.json', parse: parseNpmLockVersions },
-        { file: 'pnpm-lock.yaml', parse: parsePnpmLockVersions },
-        { file: 'yarn.lock', parse: parseYarnLockVersions },
-      ];
-    case 'cargo':
-      return [{ file: 'Cargo.lock', parse: parseCargoLockVersions }];
-    case 'composer':
-      return [{ file: 'composer.lock', parse: parseComposerLockVersions }];
-    case 'python':
-      return [
-        { file: 'uv.lock', parse: parsePythonLockVersions },
-        { file: 'poetry.lock', parse: parsePythonLockVersions },
-      ];
-    default:
-      // Go, Maven and Gradle: see `findDuplicateVersions`'s doc comment for
-      // why each is left out.
-      return [];
-  }
-}
-
-function addVersion(map: VersionMap, name: string, version: string): void {
-  const set = map.get(name);
-  if (set) set.add(version);
-  else map.set(name, new Set([version]));
-}
-
-function parseNpmLockVersions(text: string): VersionMap | undefined {
-  try {
-    const lock = JSON.parse(text) as {
-      packages?: Record<string, { version?: string }>;
-    };
-    const versions: VersionMap = new Map();
-    for (const [key, entry] of Object.entries(lock.packages ?? {})) {
-      if (!entry.version) continue;
-      const name = npmLockName(key);
-      // The root project and workspace members collapse onto `__root__` in
-      // `npmLockName`; neither is "an installed dependency with a version".
-      if (name === '__root__') continue;
-      addVersion(versions, name, entry.version);
-    }
-    return versions;
-  } catch {
-    return undefined;
-  }
-}
-
-function parsePnpmLockVersions(text: string): VersionMap | undefined {
-  let doc: {
-    packages?: Record<string, unknown>;
-    snapshots?: Record<string, unknown>;
-  };
-  try {
-    doc = (parseYaml(text) ?? {}) as typeof doc;
-  } catch {
-    return undefined;
-  }
-
-  const versions: VersionMap = new Map();
-  for (const section of [doc.packages, doc.snapshots]) {
-    for (const key of Object.keys(section ?? {})) {
-      const { name, version } = splitPnpmKey(key);
-      if (name && version) addVersion(versions, name, version);
-    }
-  }
-  return versions.size > 0 ? versions : undefined;
-}
-
-function parseYarnLockVersions(text: string): VersionMap | undefined {
-  const versions: VersionMap = new Map();
-  for (const block of text.split(/\n\s*\n/)) {
-    const lines = block.split(/\r?\n/).filter((line) => line.trim() !== '');
-    if (lines.length === 0) continue;
-
-    const header = lines[0].trim();
-    if (header.startsWith('#') || !header.endsWith(':')) continue;
-
-    const firstSpec = header
-      .slice(0, -1)
-      .split(',')[0]
-      .trim()
-      .replace(/^['"]|['"]$/g, '');
-    const name = yarnNameFromSpec(firstSpec);
-    if (!name) continue;
-
-    const versionMatch = /^\s*version\s+"?([^"\s]+)"?\s*$/m.exec(block);
-    if (versionMatch) addVersion(versions, name, versionMatch[1]);
-  }
-  return versions.size > 0 ? versions : undefined;
-}
-
-function parseCargoLockVersions(text: string): VersionMap | undefined {
-  try {
-    const versions: VersionMap = new Map();
-    for (const block of splitTomlPackageBlocks(text)) {
-      const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
-      const version = /^version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
-      if (name && version) addVersion(versions, name, version);
-    }
-    return versions;
-  } catch {
-    return undefined;
-  }
-}
-
-function parseComposerLockVersions(text: string): VersionMap | undefined {
-  try {
-    const lock = JSON.parse(text) as {
-      packages?: Array<{ name: string; version?: string }>;
-      'packages-dev'?: Array<{ name: string; version?: string }>;
-    };
-    const versions: VersionMap = new Map();
-    for (const entry of [
-      ...(lock.packages ?? []),
-      ...(lock['packages-dev'] ?? []),
-    ]) {
-      if (entry.version) addVersion(versions, entry.name, entry.version);
-    }
-    return versions;
-  } catch {
-    return undefined;
-  }
-}
-
-function parsePythonLockVersions(text: string): VersionMap | undefined {
-  const versions: VersionMap = new Map();
-  for (const block of splitTomlPackageBlocks(text)) {
-    const name = /^name\s*=\s*"([^"]+)"/m.exec(block)?.[1];
-    const version = /^version\s*=\s*"([^"]+)"/m.exec(block)?.[1];
-    if (name && version) {
-      addVersion(versions, normalizePythonName(name), version);
-    }
-  }
-  return versions.size > 0 ? versions : undefined;
 }
 
 /**

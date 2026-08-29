@@ -236,3 +236,112 @@ describe('auditDependencies', () => {
     expect(groups[0].dependencies[0].vulnerabilities).toEqual([]);
   });
 });
+
+describe('auditDependencies batching', () => {
+  /** A context whose batch endpoint answers differently on each call. */
+  function scriptedBatches(
+    batches: Array<unknown | (() => never)>,
+    vulns: Record<string, unknown> = {},
+  ) {
+    const ctx = makeContext();
+    const bodies: unknown[] = [];
+    let call = 0;
+    const postJson = vi.fn((_url: string, body: unknown) => {
+      bodies.push(body);
+      const next = batches[call++];
+      if (typeof next === 'function') {
+        return Promise.reject(new Error('OSV unreachable'));
+      }
+      return Promise.resolve(next ?? { results: [] });
+    });
+    const getJson = vi.fn((url: string) => {
+      const id = url.split('/').pop() ?? '';
+      const record = vulns[id];
+      return record
+        ? Promise.resolve(record)
+        : Promise.reject(new Error('not found'));
+    });
+    return {
+      ctx: { ...ctx, http: { ...ctx.http, postJson, getJson } as never },
+      bodies,
+      postJson,
+    };
+  }
+
+  const advisory = (id: string) => ({
+    id,
+    summary: `${id} issue`,
+    database_specific: { severity: 'high' },
+  });
+
+  it('follows next_page_token so a long advisory list is not truncated', async () => {
+    /*
+     * OSV pages `querybatch` per query. The token used to be ignored entirely,
+     * so a package with more advisories than one page carried silently lost the
+     * rest — and a short list of advisories reads exactly like a complete one.
+     */
+    const groups = [groupWith([{ name: 'lodash' }])];
+    const { ctx, bodies } = scriptedBatches(
+      [
+        { results: [{ vulns: [{ id: 'A-1' }], next_page_token: 'page-2' }] },
+        { results: [{ vulns: [{ id: 'A-2' }] }] },
+      ],
+      { 'A-1': advisory('A-1'), 'A-2': advisory('A-2') },
+    );
+
+    await auditDependencies(groups, ctx, undefined);
+
+    // The second call re-asks only the query that had more, carrying its token.
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toEqual({
+      queries: [
+        {
+          package: { name: 'lodash', ecosystem: 'npm' },
+          version: '1.0.0',
+          page_token: 'page-2',
+        },
+      ],
+    });
+    expect(
+      groups[0].dependencies[0].vulnerabilities.map((vuln) => vuln.id),
+    ).toEqual(['A-1', 'A-2']);
+  });
+
+  it('keeps advisories already collected when a later page fails', async () => {
+    /*
+     * This used to `return`, discarding everything gathered so far. One failing
+     * request in the middle of a large workspace turned a partial answer into
+     * no answer, indistinguishable from "nothing is vulnerable".
+     */
+    const groups = [groupWith([{ name: 'lodash' }])];
+    const { ctx } = scriptedBatches(
+      [
+        { results: [{ vulns: [{ id: 'A-1' }], next_page_token: 'page-2' }] },
+        () => {
+          throw new Error('unreachable');
+        },
+      ],
+      { 'A-1': advisory('A-1') },
+    );
+
+    await auditDependencies(groups, ctx, undefined);
+
+    expect(
+      groups[0].dependencies[0].vulnerabilities.map((vuln) => vuln.id),
+    ).toEqual(['A-1']);
+  });
+
+  it('stops following pages rather than looping forever', async () => {
+    // A server that always claims there is more must not keep a scan running.
+    const groups = [groupWith([{ name: 'lodash' }])];
+    const { ctx, postJson } = scriptedBatches(
+      Array.from({ length: 20 }, () => ({
+        results: [{ vulns: [], next_page_token: 'always-more' }],
+      })),
+    );
+
+    await auditDependencies(groups, ctx, undefined);
+
+    expect(postJson.mock.calls.length).toBeLessThanOrEqual(5);
+  });
+});

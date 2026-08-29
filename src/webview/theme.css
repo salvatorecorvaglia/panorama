@@ -137,13 +137,20 @@
   /*
    * The severity map: the one definition of what each state looks like, built
    * on the editor's own chart palette so it tracks the active theme.
-   * Red is reserved for "vulnerable" so it means one thing; a major update is
-   * orange. Deprecation shares yellow with a minor update, which is safe
-   * because deprecation is always shown with its own glyph and label rather
-   * than by colour alone.
+   *
+   * Blue, yellow and orange form one ramp — the size of the update in front of
+   * you — and red sits at its end, reserved for "vulnerable" so it means one
+   * thing.
+   *
+   * Deprecation is off that ramp on purpose. It is not a magnitude; it is a
+   * fact about the package. It used to share yellow with a minor update, which
+   * a glyph and a label kept legible but which still put one colour on two
+   * unrelated meanings — and on a package that is both deprecated and a minor
+   * behind, the Status badge and the Latest column then went yellow for
+   * entirely different reasons.
    */
   --panorama-severity-vuln: var(--vscode-charts-red);
-  --panorama-severity-deprecated: var(--vscode-charts-yellow);
+  --panorama-severity-deprecated: var(--vscode-charts-purple);
   --panorama-severity-major: var(--vscode-charts-orange);
   --panorama-severity-minor: var(--vscode-charts-yellow);
   --panorama-severity-patch: var(--vscode-charts-blue);

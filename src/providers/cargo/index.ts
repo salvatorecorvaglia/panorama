@@ -201,10 +201,16 @@ export class CargoProvider implements EcosystemProvider {
     ctx: ProviderContext,
     signal?: AbortSignal,
   ): Promise<PackageMeta | undefined> {
-    const key = cacheKey('crates', 'meta', name);
+    // Same reasoning as `fetchVersions`, which already checks: names come from
+    // Cargo.toml, and one is about to become a URL path segment.
+    if (!this.isValidPackageName(name)) return undefined;
+
+    // Keyed by registry, as node's and python's are: an override and the
+    // public registry must not serve each other's cached metadata.
+    const registry = ctx.registryOverride('cargo') ?? DEFAULT_REGISTRY;
+    const key = cacheKey('crates', 'meta', registry, name);
 
     return fetchMetadataWithCache(key, ctx, async () => {
-      const registry = ctx.registryOverride('cargo') ?? DEFAULT_REGISTRY;
       const response = await ctx.http.getJson<CrateResponse>(
         `${registry}/api/v1/crates/${encodeURIComponent(name)}`,
         { signal, headers: ctx.registryAuthHeaders('cargo') },

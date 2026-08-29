@@ -17,6 +17,46 @@
  * landing somewhere in the right file still beats landing at line 1.
  */
 export function findDeclaration(text: string, packageName: string): number {
+  const patterns = patternsFor(packageName);
+
+  for (const pattern of patterns) {
+    // Compiled patterns are reused across calls, and `exec` on a /g-less
+    // regex ignores `lastIndex`, so there is no cursor to reset here.
+    const match = pattern.exec(text);
+    if (match) {
+      // Point at the name itself rather than at whatever delimiter opened it.
+      const offset = match[0].indexOf(packageName);
+      return offset >= 0 ? match.index + offset : match.index;
+    }
+  }
+
+  return text.indexOf(packageName);
+}
+
+/**
+ * The compiled patterns for one package name, cached across calls.
+ *
+ * Every call used to build five `RegExp`s from scratch. That is fine once, but
+ * the callers are `buildLensSpecs` and `buildDiagnosticSpecs`, which call this
+ * once per dependency — and `provideCodeLenses` re-runs them whenever the
+ * document changes. A manifest with a few hundred dependencies therefore
+ * recompiled a couple of thousand regexes on every keystroke, on the extension
+ * host's single thread. The names are stable between calls; the compiled form
+ * is the part worth keeping.
+ */
+const patternCache = new Map<string, RegExp[]>();
+
+/**
+ * Bounds the cache. Comfortably above the largest single manifest, so the
+ * eviction path only engages across a workspace far bigger than one editor
+ * view — and a cache that can grow without limit is not a cache.
+ */
+const MAX_CACHED_PATTERNS = 4000;
+
+function patternsFor(packageName: string): RegExp[] {
+  const cached = patternCache.get(packageName);
+  if (cached) return cached;
+
   const escaped = packageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   const patterns = [
@@ -34,14 +74,12 @@ export function findDeclaration(text: string, packageName: string): number {
     new RegExp(`^\\s*${escaped}(?=[\\s=<>!~^@;[,]|$)`, 'm'),
   ];
 
-  for (const pattern of patterns) {
-    const match = pattern.exec(text);
-    if (match) {
-      // Point at the name itself rather than at whatever delimiter opened it.
-      const offset = match[0].indexOf(packageName);
-      return offset >= 0 ? match.index + offset : match.index;
-    }
+  if (patternCache.size >= MAX_CACHED_PATTERNS) {
+    // Insertion order is eviction order; one at a time is enough to hold the
+    // bound, and this only runs once the cache is already full.
+    const oldest = patternCache.keys().next();
+    if (!oldest.done) patternCache.delete(oldest.value);
   }
-
-  return text.indexOf(packageName);
+  patternCache.set(packageName, patterns);
+  return patterns;
 }

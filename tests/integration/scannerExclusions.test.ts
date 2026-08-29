@@ -35,4 +35,25 @@ describe('.gitignore exclusion', () => {
       'a negation line is skipped rather than honoured, so kept-pkg must still be scanned',
     );
   });
+
+  it('is not derailed by an entry containing a brace-pattern metacharacter', async () => {
+    /*
+     * `.gitignore` carries a `gitignore-test/od,d-name` entry. The excludes are
+     * joined into `{a,b,c}` before being handed to `findFiles`, so an unescaped
+     * comma would split that group and corrupt every exclude beside it. The
+     * assertion is that the *other* excludes still work.
+     */
+    const api = await getApi();
+    const result = await api.scan({ checkUpdates: false });
+    const manifestPaths = result.groups.map((group) => group.manifestPath);
+
+    assert.ok(
+      !manifestPaths.some((p) => p.includes('gitignore-test/ignored-pkg')),
+      'a comma-bearing entry must not break the excludes alongside it',
+    );
+    assert.ok(
+      manifestPaths.some((p) => p.includes('node-app')),
+      'the scan must still find the ordinary fixture projects',
+    );
+  });
 });

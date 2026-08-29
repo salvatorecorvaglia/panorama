@@ -3,6 +3,14 @@
  * into it — the detail drawer and the search/install panel: remember what had
  * focus before it opened, restore that on close, and treat Escape as the
  * close gesture.
+ *
+ * Deliberately not a focus trap. These panels are `<aside>`/`<section>`
+ * alongside the table, not dialogs — none carries `role="dialog"` or
+ * `aria-modal`, and the table stays visible and usable beside them. Trapping
+ * focus is the modal pattern, and applying it here would stop Tab reaching the
+ * toolbar and the rows the panel is describing, which is a worse outcome than
+ * the one it would be fixing. Escape plus focus restoration is the
+ * non-modal pattern, and it is what this does.
  */
 
 import type { KeyboardEvent } from 'react';

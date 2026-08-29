@@ -35,6 +35,16 @@ import { assignWorkspaces, readSidecarMembers } from './workspaces.js';
 
 export interface ScanResult {
   groups: ProjectGroup[];
+  /**
+   * Every manifest this scan parsed, including ones that declared no
+   * dependencies of their own.
+   *
+   * `groups` deliberately omits those — a dependency-free workspace root has
+   * no rows to show — but they are still files the scan found, and that is the
+   * question the host's "is this a manifest I know about?" trust check is
+   * really asking.
+   */
+  manifestPaths: string[];
   summary: ScanSummary;
 }
 
@@ -73,8 +83,35 @@ export class Scanner {
    */
   private truncated = false;
 
+  /**
+   * Manifests found but not readable or not parseable in the last scan.
+   *
+   * These were dropped silently: the project simply did not appear, with
+   * nothing on screen to distinguish "this file is malformed" from "there is
+   * nothing here". The `MAX_MANIFESTS` truncation next to it has said so for
+   * a while; this is the same courtesy for the other way results go missing.
+   */
+  private unreadable: string[] = [];
+
+  /**
+   * The in-flight scan's controller, so it can be called off.
+   *
+   * `scan` has always created one and threaded its signal through the manifest
+   * walk, the version lookups and the audit — but nothing ever called `abort`,
+   * so every `signal.aborted` branch below was unreachable and a scan could not
+   * be stopped once started. That matters at shutdown: a scan of a large
+   * monorepo outlives the window that asked for it, holding registry requests
+   * open on behalf of an extension that is going away.
+   */
+  private inFlight: AbortController | undefined;
+
   get hitManifestLimit(): boolean {
     return this.truncated;
+  }
+
+  /** Paths the last scan could not read or parse. Empty on a clean scan. */
+  get unreadableManifests(): readonly string[] {
+    return this.unreadable;
   }
 
   /** The cap, so the message the host shows and the limit cannot disagree. */
@@ -94,12 +131,41 @@ export class Scanner {
     options: { checkUpdates: boolean; audit: boolean },
     onPartial?: (result: ScanResult) => void,
   ): Promise<ScanResult> {
+    // Defensive rather than expected: `ScanQueue` is the only production
+    // caller and never overlaps two scans. If one ever does, the older scan is
+    // the one whose result nobody is waiting for.
+    this.inFlight?.abort();
     const controller = new AbortController();
+    this.inFlight = controller;
     const signal = controller.signal;
 
-    const groups = await this.collectGroups(signal);
+    try {
+      return await this.runScan(options, signal, onPartial);
+    } finally {
+      // Only clear the field if it still points at *this* scan; a newer one
+      // has already replaced it otherwise.
+      if (this.inFlight === controller) this.inFlight = undefined;
+    }
+  }
 
-    const partial: ScanResult = { groups, summary: summarize(groups, false) };
+  /** Stops any in-flight scan. Called when the extension is disposed. */
+  cancel(): void {
+    this.inFlight?.abort();
+    this.inFlight = undefined;
+  }
+
+  private async runScan(
+    options: { checkUpdates: boolean; audit: boolean },
+    signal: AbortSignal,
+    onPartial?: (result: ScanResult) => void,
+  ): Promise<ScanResult> {
+    const { groups, manifestPaths } = await this.collectGroups(signal);
+
+    const partial: ScanResult = {
+      groups,
+      manifestPaths,
+      summary: summarize(groups, false),
+    };
     onPartial?.(partial);
 
     if (!options.checkUpdates || groups.length === 0) {
@@ -124,11 +190,13 @@ export class Scanner {
       stale = true;
     }
 
-    return { groups, summary: summarize(groups, stale) };
+    return { groups, manifestPaths, summary: summarize(groups, stale) };
   }
 
   /** Finds and parses every manifest in the workspace. */
-  private async collectGroups(signal: AbortSignal): Promise<ProjectGroup[]> {
+  private async collectGroups(
+    signal: AbortSignal,
+  ): Promise<{ groups: ProjectGroup[]; manifestPaths: string[] }> {
     const excludes = [
       ...vscode.workspace
         .getConfiguration('panorama')
@@ -138,6 +206,7 @@ export class Scanner {
     const excludePattern =
       excludes.length > 0 ? `{${excludes.join(',')}}` : undefined;
 
+    this.unreadable = [];
     const uris = await vscode.workspace.findFiles(
       manifestGlob(),
       excludePattern,
@@ -174,6 +243,7 @@ export class Scanner {
     );
 
     const groups: ProjectGroup[] = [];
+    const manifestPaths: string[] = [];
     // Collected alongside the groups so workspace membership can be resolved
     // once every manifest is known.
     const parsed: Array<{ manifest: ParsedManifest; members: string[] }> = [];
@@ -181,13 +251,14 @@ export class Scanner {
     for (const slot of slots) {
       if (!slot) continue;
       parsed.push({ manifest: slot.manifest, members: slot.members });
+      manifestPaths.push(slot.manifest.path);
       if (slot.group) groups.push(slot.group);
     }
 
     this.applyWorkspaceInfo(groups, parsed);
 
     groups.sort((a, b) => a.label.localeCompare(b.label));
-    return groups;
+    return { groups, manifestPaths };
   }
 
   /**
@@ -205,12 +276,19 @@ export class Scanner {
     if (!provider) return undefined;
 
     const text = await this.ctx.readFile(manifestPath);
-    if (text === null) return undefined;
+    if (text === null) {
+      this.unreadable.push(manifestPath);
+      return undefined;
+    }
 
     let manifest: ParsedManifest;
     try {
       manifest = await provider.parse(manifestPath, text, this.ctx);
     } catch {
+      // Still swallowed — one bad manifest must not sink the scan — but
+      // recorded, so the host can say a file was skipped rather than leaving
+      // its absence to be read as "no dependencies here".
+      this.unreadable.push(manifestPath);
       return undefined;
     }
 
@@ -225,7 +303,11 @@ export class Scanner {
       return { manifest, members };
     }
 
-    const toolchain = await provider.detectToolchain(manifestPath, this.ctx);
+    const toolchain = await provider.detectToolchain(
+      manifestPath,
+      this.ctx,
+      text,
+    );
 
     // Fill in resolved versions from the lockfile where the provider has one.
     if (provider.readLockfile) {
@@ -306,6 +388,15 @@ export class Scanner {
         if (line.startsWith('!')) continue;
         // Anything with a glob or character class is left to git.
         if (/[*?[\]]/.test(line)) continue;
+        /*
+         * `,`, `{` and `}` are structural in the brace pattern these entries
+         * are joined into below, not in gitignore's own grammar — a directory
+         * legitimately named `a,b` would split the group and corrupt every
+         * other exclude alongside it. There is nothing to escape them with, so
+         * the entry is dropped: one directory scanned that need not be, rather
+         * than an exclude list that silently stops working.
+         */
+        if (/[,{}]/.test(line)) continue;
 
         const cleaned = line.replace(/^\/+/, '').replace(/\/+$/, '');
         if (cleaned === '' || cleaned.includes('..')) continue;

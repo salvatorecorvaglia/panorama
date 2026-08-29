@@ -75,7 +75,7 @@ interface Props {
   onUpdate: (dep: Dependency) => void;
   onUninstall: (dep: Dependency) => void;
   onUpdateAll: (manifestPath: string) => void;
-  selectedDepKeys?: Set<string>;
+  selectedDepKeys?: ReadonlySet<string>;
   onToggleSelectDep?: (depKey: string) => void;
   onToggleSelectAll?: (depKeys: string[]) => void;
   onBulkUpdateSelected?: () => void;
@@ -90,6 +90,15 @@ interface Props {
   filtering: boolean;
   onClearFilters: () => void;
 }
+
+/**
+ * The default for `selectedDepKeys`, hoisted out of the parameter list.
+ *
+ * A default expression is evaluated on every render, so `new Set()` there
+ * allocated one per frame and — worse — handed every memo comparison a fresh
+ * reference to disagree about.
+ */
+const EMPTY_SELECTION: ReadonlySet<string> = new Set<string>();
 
 /** A flat render list so one virtualizer can cover group headers and rows. */
 type Row =
@@ -116,7 +125,7 @@ export function DepTable({
   onUpdate,
   onUninstall,
   onUpdateAll,
-  selectedDepKeys = new Set(),
+  selectedDepKeys = EMPTY_SELECTION,
   onToggleSelectDep,
   onToggleSelectAll,
   onBulkUpdateSelected,
@@ -162,9 +171,17 @@ export function DepTable({
     [rows],
   );
 
-  const allSelected =
-    allDepKeys.length > 0 &&
-    allDepKeys.every((key) => selectedDepKeys.has(key));
+  /*
+   * Memoized because these walk every row, and this component re-renders on
+   * every scroll frame the virtualizer produces. Two full passes over a few
+   * thousand keys per frame is work the user feels as a sluggish scrollbar.
+   */
+  const allSelected = useMemo(
+    () =>
+      allDepKeys.length > 0 &&
+      allDepKeys.every((key) => selectedDepKeys.has(key)),
+    [allDepKeys, selectedDepKeys],
+  );
   /*
    * Some but not all — a real third state, and the checkbox has to say so.
    * Without it, a partial selection renders identically to none, so the box
@@ -174,8 +191,10 @@ export function DepTable({
    * `indeterminate` is a DOM property with no HTML attribute, so React cannot
    * set it from JSX; a ref callback is the standard way.
    */
-  const someSelected =
-    !allSelected && allDepKeys.some((key) => selectedDepKeys.has(key));
+  const someSelected = useMemo(
+    () => !allSelected && allDepKeys.some((key) => selectedDepKeys.has(key)),
+    [allSelected, allDepKeys, selectedDepKeys],
+  );
 
   // Read from effects that must not re-run when the list is merely rebuilt.
   const rowsRef = useRef(rows);
@@ -480,6 +499,16 @@ export function DepTable({
           ))}
         </div>
 
+        {/*
+         * The scroller is the rowgroup *and* the element Tab lands on to enter
+         * the grid.
+         *
+         * Making it presentational instead reads as tidier, and is wrong: a
+         * `role="grid"` reconciles its rows through a rowgroup, so dropping
+         * the role leaves the rows with no container to be counted in. The
+         * roving tabindex has to live on a real element in that structure, and
+         * this is the one that scrolls.
+         */}
         <div
           className="table"
           ref={parentRef}

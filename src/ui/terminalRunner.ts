@@ -24,6 +24,9 @@ export class TerminalRunner implements vscode.Disposable {
   /** See `SerialQueue`: one terminal cannot run two commands at once. */
   private readonly queue = new SerialQueue();
 
+  /** The directory the current terminal was opened in, so it can be reused. */
+  private terminalCwd: string | undefined;
+
   constructor() {
     this.disposables.push(
       vscode.window.onDidCloseTerminal((closed) => {
@@ -105,8 +108,6 @@ export class TerminalRunner implements vscode.Disposable {
     });
     return this.terminal;
   }
-
-  private terminalCwd: string | undefined;
 
   private async waitForShellIntegration(
     terminal: vscode.Terminal,

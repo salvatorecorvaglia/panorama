@@ -169,21 +169,29 @@ export class NodeProvider implements EcosystemProvider {
           packages?: Record<string, { version?: string }>;
           dependencies?: Record<string, { version?: string }>;
         };
-        // Direct top-level install paths (e.g. "node_modules/semver") take priority
+        /*
+         * One pass, collecting nested installs to fall back on.
+         *
+         * A top-level install path ("node_modules/semver") is the version the
+         * project actually resolves, and wins; a nested one
+         * ("node_modules/a/node_modules/semver") is a different copy and is
+         * only worth reporting when there is no top-level entry at all. This
+         * was two passes over the same object doing exactly that, the second
+         * re-testing every key the first had already classified.
+         */
+        const nested = new Map<string, string>();
         for (const [key, entry] of Object.entries(parsed.packages ?? {})) {
           if (!key.startsWith('node_modules/') || !entry.version) continue;
           const relative = key.slice('node_modules/'.length);
-          if (!relative.includes('node_modules/')) {
-            resolved.set(relative, entry.version);
+          if (relative.includes('node_modules/')) {
+            const name = relative.replace(/.*\/node_modules\//, '');
+            if (!nested.has(name)) nested.set(name, entry.version);
+            continue;
           }
+          resolved.set(relative, entry.version);
         }
-        // Fallback for nested or legacy dependencies
-        for (const [key, entry] of Object.entries(parsed.packages ?? {})) {
-          if (!key.startsWith('node_modules/') || !entry.version) continue;
-          const name = key
-            .slice('node_modules/'.length)
-            .replace(/.*\/node_modules\//, '');
-          if (!resolved.has(name)) resolved.set(name, entry.version);
+        for (const [name, version] of nested) {
+          if (!resolved.has(name)) resolved.set(name, version);
         }
         for (const [name, entry] of Object.entries(parsed.dependencies ?? {})) {
           if (entry.version && !resolved.has(name))
@@ -258,9 +266,12 @@ export class NodeProvider implements EcosystemProvider {
   async detectToolchain(
     manifestPath: string,
     ctx: ProviderContext,
+    knownText?: string,
   ): Promise<Toolchain> {
     const cwd = path.dirname(manifestPath);
-    const manifestText = await ctx.readFile(manifestPath);
+    // The scanner has just parsed this file; re-reading it here doubled the
+    // manifest reads of every scan for one regex against `packageManager`.
+    const manifestText = knownText ?? (await ctx.readFile(manifestPath));
     const declared = manifestText
       ? /"packageManager"\s*:\s*"([a-z]+)@(\d+)?/.exec(manifestText)
       : null;
@@ -275,13 +286,16 @@ export class NodeProvider implements EcosystemProvider {
     });
 
     const preferred = ctx.preferredToolchain('node');
-    if (preferred !== 'auto') {
-      return finish(preferred as ToolchainId);
+    // Checked rather than cast. `package.json` constrains this setting to an
+    // enum, but the value ends up as argv[0] of a command — "the schema says
+    // so" is a property of the manifest, not of this function.
+    if (isNodeToolchain(preferred)) {
+      return finish(preferred);
     }
 
     // `packageManager` is the project's own declaration and outranks lockfiles.
-    if (declared && ['npm', 'yarn', 'pnpm', 'bun'].includes(declared[1])) {
-      return finish(declared[1] as ToolchainId);
+    if (declared && isNodeToolchain(declared[1])) {
+      return finish(declared[1]);
     }
 
     const checks: Array<[string, ToolchainId]> = [
@@ -352,6 +366,13 @@ export class NodeProvider implements EcosystemProvider {
     ctx: ProviderContext,
     signal?: AbortSignal,
   ): Promise<PackageMeta | undefined> {
+    // Names reaching here come from a manifest (the detail drawer and the
+    // license summary both pass one straight through) and are no more ours to
+    // trust than the ones `fetchVersions` already checks. Anything that is not
+    // a real npm name cannot resolve, so there is nothing lost by not asking —
+    // and a name is about to become a URL path segment.
+    if (!this.isValidPackageName(name)) return undefined;
+
     const registry = ctx.registryOverride('node') ?? DEFAULT_REGISTRY;
     const key = cacheKey('npm', 'meta', registry, name);
 
@@ -524,6 +545,15 @@ async function isYarnBerry(
 
   const lock = await ctx.readFile(path.join(cwd, 'yarn.lock'));
   return lock ? /^__metadata:/m.test(lock) : false;
+}
+
+/** The four managers this provider knows how to drive. */
+const NODE_TOOLCHAINS = ['npm', 'yarn', 'pnpm', 'bun'] as const;
+
+function isNodeToolchain(
+  value: string,
+): value is (typeof NODE_TOOLCHAINS)[number] {
+  return (NODE_TOOLCHAINS as readonly string[]).includes(value);
 }
 
 /** Encode scoped package names for npm registry API while preserving the leading '@'. */

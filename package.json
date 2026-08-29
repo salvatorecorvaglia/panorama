@@ -208,6 +208,7 @@
             "**/dist/**",
             "**/build/**",
             "**/.git/**",
+            "**/.vscode-test/**",
             "**/test/**",
             "**/tests/**",
             "**/fixtures/**",

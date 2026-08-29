@@ -86,7 +86,9 @@ describe('DependencyMutator', () => {
     mutator = new DependencyMutator(
       ctx,
       terminal,
-      () => undefined,
+      // The busy claim is the panel's concern; this suite only cares that the
+      // mutator releases whatever it takes.
+      () => () => undefined,
       (message) => failures.push(message),
     );
   });

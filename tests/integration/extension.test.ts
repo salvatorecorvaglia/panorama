@@ -214,6 +214,10 @@ describe('scanner discovery', () => {
         !group.manifestPath.includes('node_modules'),
         `node_modules leaked into the scan: ${group.manifestPath}`,
       );
+      assert.ok(
+        !group.manifestPath.includes('.vscode-test'),
+        `.vscode-test leaked into the scan: ${group.manifestPath}`,
+      );
     }
   });
 });

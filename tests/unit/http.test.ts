@@ -262,6 +262,76 @@ describe('HttpClient', () => {
         client.getJson('https://example.com/a', { signal: controller.signal }),
       ).rejects.toThrow();
     });
+
+    it('cancels an in-flight request when the caller aborts', async () => {
+      /*
+       * The caller's signal is combined with this request's own timeout. That
+       * combination used to have a hand-rolled fallback for hosts without
+       * `AbortSignal.any` which leaked a listener per *successful* request onto
+       * the caller's signal — and a caller's signal covers a whole scan. The
+       * fallback is gone; this holds the behaviour it was there to provide.
+       */
+      const abortError = () =>
+        Object.assign(new Error('The operation was aborted'), {
+          name: 'AbortError',
+        });
+      globalThis.fetch = ((_url: string, init: RequestInit = {}) =>
+        new Promise((_resolve, reject) => {
+          // Already aborted by the time the request reaches `fetch` — the rate
+          // limiter is awaited first, so this is the ordering that actually
+          // happens here.
+          if (init.signal?.aborted) {
+            reject(abortError());
+            return;
+          }
+          init.signal?.addEventListener('abort', () => reject(abortError()));
+        })) as unknown as typeof fetch;
+
+      const controller = new AbortController();
+      const client = new HttpClient('1.0.0');
+      const pending = client.getJson('https://example.com/slow', {
+        signal: controller.signal,
+      });
+
+      controller.abort();
+      await expect(pending).rejects.toThrow(/abort/i);
+    });
+
+    it('does not retain the caller signal after a request succeeds', async () => {
+      /*
+       * The specific regression: one listener per request accumulating on a
+       * signal that outlives every one of them. A scan of 500 packages left
+       * 500 behind.
+       */
+      stubFetch();
+      const controller = new AbortController();
+      const client = new HttpClient('1.0.0');
+
+      let added = 0;
+      let removed = 0;
+      const signal = controller.signal;
+      const originalAdd = signal.addEventListener.bind(signal);
+      const originalRemove = signal.removeEventListener.bind(signal);
+      signal.addEventListener = ((...args: Parameters<typeof originalAdd>) => {
+        added++;
+        return originalAdd(...args);
+      }) as typeof signal.addEventListener;
+      signal.removeEventListener = ((
+        ...args: Parameters<typeof originalRemove>
+      ) => {
+        removed++;
+        return originalRemove(...args);
+      }) as typeof signal.removeEventListener;
+
+      for (let i = 0; i < 20; i++) {
+        await client.getJson(`https://example.com/${i}`, { signal });
+      }
+
+      // `AbortSignal.any` may register at most one listener per composite and
+      // is expected to release it; what must not happen is 20 accumulating
+      // with none released.
+      expect(added - removed).toBeLessThan(20);
+    });
   });
 });
 
