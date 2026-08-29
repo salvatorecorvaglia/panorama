@@ -104,6 +104,20 @@ function interceptNextPanel(): {
   };
 }
 
+/**
+ * Removes a temp directory that VS Code has had files open from. Windows keeps
+ * a handle on such a file for a beat after the editor closes, so a plain `rm`
+ * can fail with EBUSY — `maxRetries` waits that handle out.
+ */
+async function removeTempDir(dir: string): Promise<void> {
+  await fs.rm(dir, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
+}
+
 function emptyScanResult(): ScanResult {
   return {
     groups: [],
@@ -284,7 +298,9 @@ describe('PanelManager message handling', () => {
       );
     } finally {
       intercept.restore();
-      await fs.rm(tmpDir, { recursive: true, force: true });
+      // The manifest is open in an editor, which locks it on Windows.
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+      await removeTempDir(tmpDir);
     }
   });
 
@@ -353,7 +369,7 @@ describe('PanelManager message handling', () => {
       ]);
     } finally {
       intercept.restore();
-      await fs.rm(tmpDir, { recursive: true, force: true });
+      await removeTempDir(tmpDir);
     }
   });
 
