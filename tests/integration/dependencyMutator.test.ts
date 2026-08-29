@@ -74,7 +74,9 @@ describe('DependencyMutator', () => {
   let failures: string[];
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'panorama-mutator-'));
+    tmpDir = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'panorama-mutator-')),
+    );
     pomPath = path.join(tmpDir, 'pom.xml');
     await fs.writeFile(pomPath, POM, 'utf8');
 

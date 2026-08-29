@@ -321,7 +321,9 @@ describe('export report', () => {
     const api = await getApi();
     await api.scan({ checkUpdates: false });
 
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'panorama-export-'));
+    const tmpDir = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'panorama-export-')),
+    );
     const target = vscode.Uri.file(path.join(tmpDir, 'report.md'));
 
     // `showQuickPick` and `showSaveDialog` are modal prompts that would hang

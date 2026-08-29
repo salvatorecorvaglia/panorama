@@ -218,8 +218,8 @@ describe('PanelManager message handling', () => {
   it('opens the manifest for "openManifest", but refuses an unknown path', async () => {
     manager = makeManager();
 
-    const tmpDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), 'panorama-panel-manifest-'),
+    const tmpDir = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'panorama-panel-manifest-')),
     );
     const manifestPath = path.join(tmpDir, 'package.json');
     await fs.writeFile(manifestPath, '{"name":"demo","dependencies":{}}\n');
@@ -265,7 +265,9 @@ describe('PanelManager message handling', () => {
       for (let attempt = 0; attempt < 50; attempt++) {
         if (
           vscode.window.visibleTextEditors.some(
-            (editor) => editor.document.uri.fsPath === manifestPath,
+            (editor) =>
+              editor.document.uri.fsPath.toLowerCase() ===
+              manifestPath.toLowerCase(),
           )
         ) {
           break;
@@ -274,7 +276,9 @@ describe('PanelManager message handling', () => {
       }
       assert.ok(
         vscode.window.visibleTextEditors.some(
-          (editor) => editor.document.uri.fsPath === manifestPath,
+          (editor) =>
+            editor.document.uri.fsPath.toLowerCase() ===
+            manifestPath.toLowerCase(),
         ),
         'the manifest was not opened in an editor',
       );
@@ -292,8 +296,8 @@ describe('PanelManager message handling', () => {
   it('answers "requestDuplicates" from a real lockfile on disk', async () => {
     manager = makeManager();
 
-    const tmpDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), 'panorama-panel-duplicates-'),
+    const tmpDir = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'panorama-panel-duplicates-')),
     );
     const manifestPath = path.join(tmpDir, 'package.json');
     await fs.writeFile(manifestPath, '{"name":"demo","dependencies":{}}\n');

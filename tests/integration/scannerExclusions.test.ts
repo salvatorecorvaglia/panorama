@@ -24,7 +24,9 @@ describe('.gitignore exclusion', () => {
     const api = await getApi();
     const result = await api.scan({ checkUpdates: false });
 
-    const manifestPaths = result.groups.map((group) => group.manifestPath);
+    const manifestPaths = result.groups.map((group) =>
+      group.manifestPath.replaceAll('\\', '/'),
+    );
 
     assert.ok(
       !manifestPaths.some((p) => p.includes('gitignore-test/ignored-pkg')),
@@ -45,7 +47,9 @@ describe('.gitignore exclusion', () => {
      */
     const api = await getApi();
     const result = await api.scan({ checkUpdates: false });
-    const manifestPaths = result.groups.map((group) => group.manifestPath);
+    const manifestPaths = result.groups.map((group) =>
+      group.manifestPath.replaceAll('\\', '/'),
+    );
 
     assert.ok(
       !manifestPaths.some((p) => p.includes('gitignore-test/ignored-pkg')),
