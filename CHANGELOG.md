@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Open VSX Registry Support**: Added automated publishing to [Open VSX](https://open-vsx.org/) in the release pipeline via GitHub Actions and the `ovsx` CLI (`publish:ovsx` script).
+
 ## [2.7.0] - 2026-08-28
 
 ### Added

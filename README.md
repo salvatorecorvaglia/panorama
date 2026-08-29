@@ -45,8 +45,13 @@
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Installation & Getting Started
 
+### Installation
+- **Open VSX**: Install from the [Open VSX Registry](https://open-vsx.org/extension/panorama/panorama-vscode) or search `Panorama` in VS Code / VSCodium / Gitpod.
+- **GitHub Release**: Download the compiled `.vsix` from [GitHub Releases](https://github.com/salvatorecorvaglia/panorama/releases) and run **`Extensions: Install from VSIX...`**.
+
+### Getting Started
 1. Open any project or workspace containing supported manifest files in VS Code.
 2. Open Panorama:
    - Click on the **Panorama** icon in the Activity Bar.

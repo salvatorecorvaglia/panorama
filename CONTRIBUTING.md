@@ -119,28 +119,6 @@ pnpm run test:integration
 
 ---
 
-## 📦 Release & Tagging Process
-
-Panorama uses GitHub Actions to automate release builds whenever a version tag is created and pushed:
-
-1. **Update `package.json` version** and document release highlights in [CHANGELOG.md](CHANGELOG.md).
-2. **Commit changes**:
-   ```bash
-   git commit -am "release: v1.x.x"
-   ```
-3. **Create and push tag**:
-   ```bash
-   git tag -a v1.x.x -m "Panorama v1.x.x"
-   git push origin v1.x.x
-   ```
-4. The Release workflow (`.github/workflows/release.yml`) will:
-   - Run typechecks, Biome linting, and Vitest test suites.
-   - Package the extension into a `.vsix` installer artifact.
-   - Extract the version entry from `CHANGELOG.md` for release notes.
-   - Publish a new release on GitHub with the compiled `.vsix` attached.
-
----
-
 ## 📬 Submitting Pull Requests
 
 1. **Create a topic branch**:

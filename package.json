@@ -283,7 +283,8 @@
     "pretest:integration": "pnpm run build && tsc -p tsconfig.integration.json",
     "test:integration": "vscode-test",
     "test:all": "pnpm run test && pnpm run test:integration",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "publish:ovsx": "ovsx publish *.vsix"
   },
   "dependencies": {
     "fast-xml-parser": "^5.11.1",
@@ -313,6 +314,7 @@
     "concurrently": "^10.0.5",
     "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
+    "ovsx": "^0.10.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "typescript": "^7.0.2",

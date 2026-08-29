@@ -124,3 +124,15 @@ jobs:
           generate_release_notes: false
           draft: ${{ github.event.inputs.draft || false }}
           prerelease: ${{ github.event.inputs.prerelease || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+
+      - name: Publish to Open VSX
+        if: ${{ !(github.event.inputs.draft == 'true' || github.event.inputs.draft == true) }}
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          EXTRA_ARGS=""
+          if [[ "${{ github.event.inputs.prerelease || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}" == "true" ]]; then
+            EXTRA_ARGS="--pre-release"
+          fi
+          npx --yes ovsx publish *.vsix -p "$OVSX_PAT" $EXTRA_ARGS
+
