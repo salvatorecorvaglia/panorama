@@ -88,6 +88,7 @@ This starts concurrent watch processes for both the Extension Host (`esbuild`) a
 | `test:integration` | `pnpm run test:integration` | Runs VS Code extension integration tests inside an automated extension host. |
 | `test:all` | `pnpm run test:all` | Executes both unit test and integration test suites. |
 | `package` | `pnpm run package` | Packages the extension into a standalone `.vsix` installer file using `@vscode/vsce`. |
+| `publish:ovsx` | `pnpm run publish:ovsx` | Publishes the packaged `.vsix` extension to the [Open VSX Registry](https://open-vsx.org/) via `ovsx`. |
 
 ---
 
