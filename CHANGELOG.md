@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-08-29
+
+### Added
+
+- **Reference-Counted Busy State Management**: Implemented `BusyTracker` to track concurrent background tasks, manifest scans, and package mutations with event-driven state synchronization, timeouts, and cancellation support to keep UI progress indicators strictly in sync.
+- **Modular Lockfile Parsers**: Refactored monolithic dependency graph resolution into dedicated, modular lockfile parsers (`src/core/lockfiles/` for npm, pnpm, yarn, Cargo, Composer, poetry/uv) with unified type safety and lockfile detection.
+- **Typed Webview-Host Request Protocol**: Implemented promise-based, correlated request/response messaging (`src/core/webviewRequests.ts`) for reliable asynchronous communication between the webview and the extension host.
+
+### Changed
+
+- **Webview Accessibility**: Replaced non-interactive clickable elements with semantic `<button>` elements across table controls and header actions, improving keyboard navigation, focus management, and screen-reader compatibility.
+- **Overlay & Backdrop Dismissal**: Refined `useDismissableOverlay` hook logic for backdrop dismissal and `Escape` key handling across popovers, drawers, and overlay panels.
+- **Cache & Audit Optimization**: Improved memory-bounded LRU eviction and serialization in `TtlCache`, alongside enhanced OSV.dev vulnerability query batching and retry handling in the HTTP client layer.
+
 ## [2.8.0] - 2026-08-29
 
 ### Added
@@ -244,7 +258,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First implementation of Panorama.
 
-[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.5.0...v2.6.0
