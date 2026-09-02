@@ -42,7 +42,8 @@ import { loadState, onHostMessage, post, saveState } from './vscodeApi.js';
  * deprecated toggles are the opposite — a one-off narrowing for the task at
  * hand — and persisting those would mean a reload weeks later silently
  * reopens the panel pre-filtered down to whatever the user was chasing last,
- * with nothing on screen explaining why so few rows are showing.
+ * with nothing on screen explaining why so few rows are showing. Every panel
+ * instead opens at the same fixed starting point — see `initialFilters`.
  */
 interface PersistedState {
   sort: SortState;
@@ -73,6 +74,20 @@ function defaultFilters(scopes?: DepScope[]): Filters {
     onlyVulnerable: false,
     onlyDeprecated: false,
   };
+}
+
+/**
+ * What the panel opens with: the outdated chip already on.
+ *
+ * The list a fresh panel is useful for is "what needs updating", not the full
+ * inventory — on a large manifest the handful of outdated packages are
+ * otherwise buried among hundreds of current ones. The chip is pressed and the
+ * empty state offers "Clear filters", so the narrowing is visible and one
+ * click away from the full list; it is only the starting point, never sticky
+ * (see `PersistedState`).
+ */
+function initialFilters(scopes?: DepScope[]): Filters {
+  return { ...defaultFilters(scopes), onlyOutdated: true };
 }
 
 /** Whether anything is currently narrowing the list — drives the empty state. */
@@ -111,7 +126,7 @@ export function App() {
     persisted?.sort ?? { key: 'status', direction: 'asc' },
   );
   const [filters, setFilters] = useState<Filters>(() =>
-    defaultFilters(persisted?.scopes),
+    initialFilters(persisted?.scopes),
   );
 
   const [selectedKey, setSelectedKey] = useState<string | undefined>();

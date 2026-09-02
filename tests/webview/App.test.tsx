@@ -65,6 +65,16 @@ function renderLoaded(groups = [group()]) {
 }
 
 /**
+ * Turns the "outdated" chip off.
+ *
+ * The panel opens narrowed to what needs updating, so a fixture built around
+ * an up-to-date package has no row on screen until this runs.
+ */
+async function showEveryPackage() {
+  await userEvent.click(screen.getByRole('button', { name: /^outdated/i }));
+}
+
+/**
  * Clicks a toolbar action, opening the overflow menu first when that is where
  * the action lives now.
  *
@@ -408,6 +418,7 @@ describe('detail metadata', () => {
         ],
       },
     ]);
+    await showEveryPackage();
     await userEvent.click(screen.getByText('react'));
 
     send({
@@ -508,6 +519,36 @@ describe('filtering', () => {
     });
     expect(screen.getByText('lodash')).toBeInTheDocument();
   });
+
+  it('opens showing only what is outdated', async () => {
+    renderLoaded([
+      {
+        ...group(),
+        dependencies: [
+          ...group().dependencies,
+          {
+            ...group().dependencies[0],
+            key: 'lodash',
+            name: 'lodash',
+            latest: undefined,
+            updateKind: 'none' as const,
+          },
+        ],
+      },
+    ]);
+
+    // react has a 19.0.0 waiting; lodash is current, so it starts hidden.
+    expect(screen.getByRole('button', { name: /^outdated/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('react')).toBeInTheDocument();
+    expect(screen.queryByText('lodash')).toBeNull();
+
+    // And the chip is the way back to the full list.
+    await showEveryPackage();
+    expect(screen.getByText('lodash')).toBeInTheDocument();
+  });
 });
 
 /*
@@ -530,7 +571,7 @@ describe('bulk actions', () => {
 
   async function selectAll() {
     await userEvent.click(
-      screen.getByRole('checkbox', { name: /Select all dependencies/i }),
+      screen.getByRole('checkbox', { name: /Select all/i }),
     );
   }
 
@@ -588,6 +629,7 @@ describe('bulk actions', () => {
         ],
       },
     ]);
+    await showEveryPackage();
     await selectAll();
 
     await userEvent.click(
@@ -716,6 +758,7 @@ describe('selection bookkeeping', () => {
 
   it('renames the select-all box when a filter is narrowing the list', async () => {
     renderLoaded([twoPackages()]);
+    await showEveryPackage();
     expect(
       screen.getByRole('checkbox', { name: /Select all dependencies/i }),
     ).toBeInTheDocument();

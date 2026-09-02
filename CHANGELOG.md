@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-09-02
+
+### Changed
+
+- **Panel Opens Filtered to `outdated`**: The "Show only" `outdated` chip now starts pressed, so a fresh panel is the list of packages that need updating rather than the full inventory — on a large manifest the handful of outdated ones were otherwise buried among hundreds of current ones. The chip is visibly pressed and the empty state's "Clear filters" is one click from the whole list, so nothing is hidden without a way back. Like the other status toggles it is a starting point rather than a preference: it is not persisted, so every panel opens the same way instead of reopening whatever was last being chased. "Clear filters" and the `focusDependency` command still reset to no filters at all, so revealing an up-to-date package does not open the drawer beside a table with no matching row.
+- **Dependency Bumps**: `ovsx` to `^1.1.1`, `@types/node` to `^26.4.1` and `@testing-library/user-event` to `^14.6.7`.
+
 ## [2.9.0] - 2026-08-29
 
 ### Added
@@ -258,7 +265,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - First implementation of Panorama.
 
-[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.9.0...HEAD
+[Unreleased]: https://github.com/salvatorecorvaglia/panorama/compare/v2.10.0...HEAD
+[2.10.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.8.0...v2.9.0
 [2.8.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/salvatorecorvaglia/panorama/compare/v2.6.0...v2.7.0
