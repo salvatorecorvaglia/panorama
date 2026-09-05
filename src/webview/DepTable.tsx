@@ -84,6 +84,16 @@ interface Props {
   scrollToKey?: string;
   /** Called once that scroll has happened, so the request is not repeated. */
   onScrollHandled?: () => void;
+  /**
+   * True while a scan or a write is in flight.
+   *
+   * The busy rule is stated in `Toolbar.tsx` and used to be enforced only
+   * there, so a scan greyed out the toolbar's Update All while every row's own
+   * Update — and the bulk bar's — stayed live: the same action offered as both
+   * blocked and available on one screen. Only the writes take it; selection,
+   * sorting and opening a row's details are reads and stay available.
+   */
+  busy?: boolean;
   /** True while the first scan is still running and there is nothing to show. */
   loading: boolean;
   /** True when a filter is narrowing the list — changes the empty state. */
@@ -132,6 +142,7 @@ export function DepTable({
   onBulkRemoveSelected,
   scrollToKey,
   onScrollHandled,
+  busy = false,
   loading,
   filtering,
   onClearFilters,
@@ -402,30 +413,48 @@ export function DepTable({
             Selected <strong>{selectedDepKeys.size}</strong> package(s)
           </span>
           <div className="table__bulk-actions">
+            {/*
+             * The labels are wrapped in the same span the row actions use, so
+             * the one rule that drops words for icons on a narrow panel covers
+             * both. `aria-label` carries the full wording, which is what makes
+             * losing the visible text survivable.
+             */}
             {onBulkUpdateSelected && (
               <button
                 type="button"
                 className="btn-update-primary"
+                aria-label="Update selected packages"
+                title="Update selected packages"
+                disabled={busy}
                 onClick={onBulkUpdateSelected}
               >
-                <Icon name="arrow-up" /> Update Selected
+                <Icon name="arrow-up" />{' '}
+                <span className="row-action__label">Update Selected</span>
               </button>
             )}
             {onBulkRemoveSelected && (
               <button
                 type="button"
                 className="danger"
+                aria-label="Remove selected packages"
+                title="Remove selected packages"
+                disabled={busy}
                 onClick={onBulkRemoveSelected}
               >
-                <Icon name="trash" /> Remove Selected
+                <Icon name="trash" />{' '}
+                <span className="row-action__label">Remove Selected</span>
               </button>
             )}
+            {/* Clearing a selection writes nothing, so a scan does not block it. */}
             <button
               type="button"
               className="ghost"
+              aria-label="Clear selection"
+              title="Clear selection"
               onClick={() => onToggleSelectAll?.([])}
             >
-              <Icon name="close" /> Clear selection
+              <Icon name="close" />{' '}
+              <span className="row-action__label">Clear selection</span>
             </button>
           </div>
         </div>
@@ -544,6 +573,7 @@ export function DepTable({
                     <GroupHeader
                       row={row}
                       rowIndex={virtualRow.index + 2}
+                      busy={busy}
                       onUpdateAll={onUpdateAll}
                     />
                   ) : (
@@ -555,6 +585,7 @@ export function DepTable({
                       tabbable={virtualRow.index === focusedIndex}
                       selected={row.dep.key === selectedKey}
                       checked={selectedDepKeys.has(row.dep.key)}
+                      busy={busy}
                       onToggleSelect={onToggleSelectDep}
                       onSelect={onSelect}
                       onUpdate={onUpdate}
@@ -575,10 +606,13 @@ export function DepTable({
 const GroupHeader = memo(function GroupHeader({
   row,
   rowIndex,
+  busy,
   onUpdateAll,
 }: {
   row: Extract<Row, { kind: 'group' }>;
   rowIndex: number;
+  /** A scan or write in flight — see the `busy` note on `Props`. */
+  busy: boolean;
   onUpdateAll: (manifestPath: string) => void;
 }) {
   return (
@@ -610,6 +644,7 @@ const GroupHeader = memo(function GroupHeader({
           <button
             type="button"
             className="secondary"
+            disabled={busy}
             onClick={() => onUpdateAll(row.group.manifestPath)}
           >
             Update All
@@ -649,6 +684,7 @@ const DepRow = memo(function DepRow({
   tabbable,
   selected,
   checked,
+  busy,
   onToggleSelect,
   onSelect,
   onUpdate,
@@ -663,6 +699,8 @@ const DepRow = memo(function DepRow({
   tabbable: boolean;
   selected: boolean;
   checked: boolean;
+  /** A scan or write in flight — see the `busy` note on `Props`. */
+  busy: boolean;
   onToggleSelect: ((depKey: string) => void) | undefined;
   onSelect: (dep: Dependency) => void;
   onUpdate: (dep: Dependency) => void;
@@ -833,6 +871,7 @@ const DepRow = memo(function DepRow({
             aria-label={`Update ${dep.name} to ${dep.latest}`}
             title={`Update to ${dep.latest}`}
             tabIndex={-1}
+            disabled={busy}
             onClick={(event) => {
               event.stopPropagation();
               onUpdate(dep);
@@ -856,6 +895,7 @@ const DepRow = memo(function DepRow({
           aria-label={`Remove ${dep.name} from this project`}
           title={`Remove ${dep.name} from this project`}
           tabIndex={-1}
+          disabled={busy}
           onClick={(event) => {
             event.stopPropagation();
             onUninstall(dep);

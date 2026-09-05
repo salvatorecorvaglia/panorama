@@ -414,6 +414,54 @@ describe('row actions', () => {
     ).toBeInTheDocument();
   });
 
+  /*
+   * The busy rule belongs to the whole panel, not to the toolbar that states
+   * it. Enforced there alone, a scan greyed out Update All while every row's
+   * own Update stayed live — the same action offered as both blocked and
+   * available on one screen.
+   */
+  it('blocks the row writes while a scan or write is in flight', () => {
+    renderTable(
+      [
+        group([
+          dep({
+            name: 'react',
+            key: 'react',
+            updateKind: 'minor',
+            latest: '2.0.0',
+          }),
+        ]),
+      ],
+      undefined,
+      { busy: true },
+    );
+
+    expect(
+      screen.getByRole('button', { name: /Update react to 2\.0\.0/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /Remove react/i }),
+    ).toBeDisabled();
+  });
+
+  it('leaves the row writes available when nothing is in flight', () => {
+    renderTable([
+      group([
+        dep({
+          name: 'react',
+          key: 'react',
+          updateKind: 'minor',
+          latest: '2.0.0',
+        }),
+      ]),
+    ]);
+
+    expect(
+      screen.getByRole('button', { name: /Update react to 2\.0\.0/i }),
+    ).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Remove react/i })).toBeEnabled();
+  });
+
   it('does not select the row when an action is clicked', async () => {
     const onSelect = vi.fn();
     const onUninstall = vi.fn();
@@ -428,6 +476,60 @@ describe('row actions', () => {
 
     expect(onUninstall).toHaveBeenCalledOnce();
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe('the bulk bar', () => {
+  const selection = ['react'];
+
+  function renderBulkBar(overrides: Record<string, unknown> = {}) {
+    return renderTable(
+      [
+        group([
+          dep({
+            name: 'react',
+            key: 'react',
+            updateKind: 'minor',
+            latest: '2.0.0',
+          }),
+        ]),
+      ],
+      undefined,
+      {
+        selectedDepKeys: new Set(selection),
+        onBulkUpdateSelected: noop,
+        onBulkRemoveSelected: noop,
+        onToggleSelectAll: noop,
+        ...overrides,
+      },
+    );
+  }
+
+  it('blocks its writes while a scan or write is in flight', () => {
+    renderBulkBar({ busy: true });
+
+    expect(
+      screen.getByRole('button', { name: /Update selected packages/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /Remove selected packages/i }),
+    ).toBeDisabled();
+    // Clearing a selection writes nothing, so the scan does not block it.
+    expect(
+      screen.getByRole('button', { name: /Clear selection/i }),
+    ).toBeEnabled();
+  });
+
+  it('names its actions, since a narrow panel shows only their icons', () => {
+    renderBulkBar();
+
+    for (const name of [
+      /Update selected packages/i,
+      /Remove selected packages/i,
+      /Clear selection/i,
+    ]) {
+      expect(screen.getByRole('button', { name })).toBeEnabled();
+    }
   });
 });
 

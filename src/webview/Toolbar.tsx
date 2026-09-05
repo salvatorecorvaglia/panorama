@@ -460,6 +460,13 @@ export function Toolbar({
         blocks anything that writes or rescans — Update All, Check updates,
         Refresh, Export report — and leaves the read-only panels reachable, so
         the panel does not freeze wholesale while a background check runs.
+
+        The rule is the whole panel's, not this toolbar's. It is enforced at
+        three sites, and it has to stay that way: here, in `DepTable` (the row
+        actions, the group headers' Update All, and the bulk bar) and in
+        `DetailDrawer` (its copies of Update and Remove). Enforcing it only
+        here is what left a greyed-out Update All beside a column of live
+        Update buttons doing the identical thing.
       */}
       <div className="toolbar__row">
         <div className="toolbar__search">

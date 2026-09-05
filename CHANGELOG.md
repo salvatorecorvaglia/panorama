@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Busy Rule Held Only in the Toolbar**: A scan or write in flight disabled "Update All", "Check updates", "Refresh" and "Export report", while every write in the table stayed live — each row's Update and Remove, a group header's "Update All", and the bulk bar's "Update Selected" / "Remove Selected" — as did the detail drawer's own copies of Update and Remove. The same action was offered as both blocked and available on one screen. `busy` now reaches `DepTable` and `DetailDrawer`, and the rule is documented as belonging to the panel rather than to the toolbar that states it, enforced at three sites. Reads are deliberately untouched: selection, sorting, opening a row's details, the drawer's links and metadata, and the bulk bar's "Clear selection" stay available, so the panel does not freeze wholesale while a background check runs.
+- **Floating Bulk Bar Covered the Detail Drawer**: The bulk bar carries `z-index: 50` and the drawer, once it becomes an overlay, carried `1` — and nothing between them establishes a stacking context (`.app__body`, `.app__main` and `.table__wrapper` are all `position: relative` with `z-index: auto`), so both resolved in the root one and the larger value simply won. Because the drawer only floats below the 1400px breakpoint, this was not an edge case but every panel narrow enough to be in that block at all. The drawer now sits above the bar.
+- **Bulk Bar Clipped on a Narrow Panel**: The bar is centred and absolutely positioned with no ceiling on its width, so below roughly 520px it overflowed the wrapper symmetrically and `.app`'s `overflow: hidden` clipped both ends — taking "Clear selection" and part of "Remove Selected" with them, at exactly the secondary-sidebar widths the 1000px and 720px breakpoints exist to serve. It now has a `max-width` and wraps, and its buttons drop their words for their icons at the existing 720px breakpoint through the same `.row-action__label` rule the rows already use; each carries an `aria-label` with the full wording, so the name survives being unable to show it.
+
+### Changed
+
+- **Diff Badges Off the Severity Ramp**: The dependency-diff panel painted `added` in patch blue, `changed` in minor yellow and `removed` in the red `theme.css` reserves for "vulnerable" — so a package merely absent from the compared branch wore the one colour that is meant to say an advisory exists against it. Added/removed/changed describe a direction rather than a magnitude or a health problem, so they now read from their own tokens (`--panorama-diff-added`, `--panorama-diff-changed`, `--panorama-diff-removed`: green, blue and a neutral) and are registered in the `forced-colors` block alongside the badges they sit beside. Nothing feeding the Status badge or the Latest column changed.
+- **Flagged Licenses No Longer Wear the Vulnerability Red**: The license summary marked a policy-flagged license with `severity--vuln` while the banner directly above it used `callout--warn`, so one panel stated one state in two colours. The inline marker now uses the colour its own banner already does.
+
+### Removed
+
+- **Dead Webview CSS**: `.cell--checkbox` and the `--panorama-checkbox-column` token it alone consumed (the row checkbox lives inside the name cell, not a cell of its own), `.highlight-outdated` (never applied), and the `.kpi-dot--outdated` / `--vuln` / `--deprecated` modifiers left behind in 2.7.0 when those counts moved onto the filter chips. `.kpi-dot--total`, which the workspace total still renders, stays.
+
 ## [2.9.0] - 2026-09-02
 
 ### Added

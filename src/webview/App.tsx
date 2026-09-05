@@ -815,6 +815,7 @@ export function App() {
             onBulkRemoveSelected={handleBulkRemoveSelected}
             scrollToKey={scrollToKey}
             onScrollHandled={handleScrollHandled}
+            busy={busy}
             loading={!loaded || (busy && groups.length === 0)}
             filtering={isFiltering(filters)}
             onClearFilters={() => setFilters(defaultFilters())}
@@ -828,6 +829,7 @@ export function App() {
             changelogEntries={changelogByKey[selected.key]}
             changelogLoaded={selected.key in changelogByKey}
             reveal={revealSection}
+            busy={busy}
             onClose={() => setSelectedKey(undefined)}
             onUpdate={handleUpdate}
             onUninstall={handleUninstall}

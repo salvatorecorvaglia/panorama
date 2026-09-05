@@ -29,6 +29,15 @@ interface Props {
   changelogLoaded: boolean;
   /** Which section the command that opened this drawer wants to land on. */
   reveal: 'details' | 'why';
+  /**
+   * True while a scan or a write is in flight.
+   *
+   * The drawer offers the same writes the row does, so it takes the same busy
+   * rule — otherwise a scan blocked Update in the table and left the identical
+   * button live one panel to the right. Links, metadata and the Why tree are
+   * reads and stay available.
+   */
+  busy?: boolean;
   onClose: () => void;
   /** `toVersion` defaults to `latest` when the caller does not name one. */
   onUpdate: (dep: Dependency, toVersion?: string) => void;
@@ -41,6 +50,7 @@ export function DetailDrawer({
   changelogEntries,
   changelogLoaded,
   reveal,
+  busy = false,
   onClose,
   onUpdate,
   onUninstall,
@@ -163,6 +173,7 @@ export function DetailDrawer({
               <button
                 type="button"
                 className="drawer__action secondary"
+                disabled={busy}
                 onClick={() => onUpdate(dep, dep.wanted)}
               >
                 Update to {dep.wanted}
@@ -174,6 +185,7 @@ export function DetailDrawer({
               <button
                 type="button"
                 className="drawer__action"
+                disabled={busy}
                 onClick={() => onUpdate(dep, dep.latest)}
               >
                 Update to {dep.latest}
@@ -369,6 +381,7 @@ export function DetailDrawer({
             type="button"
             className="danger"
             title={`Remove ${dep.name} from this project`}
+            disabled={busy}
             onClick={() => onUninstall(dep)}
           >
             Remove

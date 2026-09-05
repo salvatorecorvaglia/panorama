@@ -100,8 +100,14 @@ export function LicenseSummaryPanel({
           <div className="search-result__info">
             <div className="search-result__name">
               <span>{group.license ?? 'Unknown license'}</span>
+              {/*
+                Not the vulnerability red: a license your policy disallows is a
+                policy fact, not an advisory, and this marker used to disagree
+                with the `callout--warn` banner directly above it about which
+                colour that state is.
+              */}
               {group.flagged && (
-                <span className="severity--vuln">
+                <span className="severity--flagged">
                   <Icon name="warning" /> flagged
                 </span>
               )}

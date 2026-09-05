@@ -189,6 +189,48 @@ describe('managing the package', () => {
   });
 });
 
+describe('the busy rule', () => {
+  /*
+   * The drawer offers the same writes the row does, so it takes the same rule.
+   * It used to take none, so a scan disabled Update in the table and left the
+   * identical button live one panel to the right.
+   */
+  it('blocks its writes while a scan or write is in flight', () => {
+    renderDrawer({
+      dep: dep({
+        installed: '18.0.0',
+        wanted: '18.2.0',
+        latest: '19.0.0',
+        updateKind: 'major',
+      }),
+      busy: true,
+    });
+
+    expect(
+      screen.getByRole('button', { name: /Update to 18\.2\.0/i }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /Update to 19\.0\.0/i }),
+    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Remove$/ })).toBeDisabled();
+  });
+
+  it('leaves the reads available while it is in flight', () => {
+    renderDrawer({
+      dep: dep({ latest: '19.0.0', updateKind: 'major' }),
+      busy: true,
+    });
+
+    // Metadata, links and the tree are reads: a scan does not touch them.
+    expect(
+      screen.getByRole('button', { name: /Open manifest/i }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole('button', { name: /Close details/i }),
+    ).toBeEnabled();
+  });
+});
+
 describe('links', () => {
   it('routes external links through the host rather than navigating', async () => {
     // The webview has no network and no navigation; the host opens the browser.

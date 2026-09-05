@@ -4,6 +4,11 @@
  *
  * The ref itself is chosen through a native VS Code quick-pick, not webview
  * UI — this panel only ever renders a result that already named one.
+ *
+ * The added/removed/changed badges read from their own palette rather than the
+ * severity ramp. They used to borrow it — removed was the red `badge--vuln` —
+ * which put the colour `theme.css` reserves for "vulnerable" on a package that
+ * is merely absent from the other branch.
  */
 
 import type { ProjectDependencyDiff } from '../core/types.js';
@@ -103,7 +108,7 @@ export function DependencyDiffPanel({
               <div className="search-result" key={`added-${dep.name}`}>
                 <div className="search-result__info">
                   <div className="search-result__name">
-                    <span className="badge badge--patch">added</span>
+                    <span className="badge badge--added">added</span>
                     <span>{dep.name}</span>
                     <span className="muted">{dep.after?.join(', ')}</span>
                   </div>
@@ -115,7 +120,7 @@ export function DependencyDiffPanel({
               <div className="search-result" key={`removed-${dep.name}`}>
                 <div className="search-result__info">
                   <div className="search-result__name">
-                    <span className="badge badge--vuln">removed</span>
+                    <span className="badge badge--removed">removed</span>
                     <span>{dep.name}</span>
                     <span className="muted">{dep.before?.join(', ')}</span>
                   </div>
@@ -127,7 +132,7 @@ export function DependencyDiffPanel({
               <div className="search-result" key={`changed-${dep.name}`}>
                 <div className="search-result__info">
                   <div className="search-result__name">
-                    <span className="badge badge--minor">changed</span>
+                    <span className="badge badge--changed">changed</span>
                     <span>{dep.name}</span>
                     <span className="muted">
                       {dep.before?.join(', ')} → {dep.after?.join(', ')}

@@ -57,7 +57,6 @@
    */
   --panorama-logo-size: 32px;
   --panorama-checkbox-size: 15px;
-  --panorama-checkbox-column: 32px;
   --panorama-dot-size: 7px;
 
   /* Font monospaziato per versioni e dimensioni */
@@ -154,6 +153,21 @@
   --panorama-severity-major: var(--vscode-charts-orange);
   --panorama-severity-minor: var(--vscode-charts-yellow);
   --panorama-severity-patch: var(--vscode-charts-blue);
+
+  /*
+   * The *change* vocabulary, deliberately not the severity ramp.
+   *
+   * The dependency-diff panel borrowed the ramp — added was patch-blue,
+   * changed was minor-yellow and removed was the vulnerability red — so a
+   * package merely absent from the other branch was painted in the one colour
+   * the map above reserves for "vulnerable". Added/removed/changed describe a
+   * direction, not a magnitude or a health problem, so they get their own two
+   * colours and a neutral. Nothing here feeds the Status badge or the Latest
+   * column, which stay on the ramp.
+   */
+  --panorama-diff-added: var(--vscode-charts-green);
+  --panorama-diff-changed: var(--vscode-charts-blue);
+  --panorama-diff-removed: var(--vscode-descriptionForeground);
 }
 
 * {
@@ -778,6 +792,16 @@ button.danger.ghost {
   color: var(--panorama-severity-vuln);
 }
 
+/*
+ * A license the user's policy disallows. Deliberately not `severity--vuln`:
+ * that red means "there is an advisory against this package", and a policy
+ * decision is a different kind of fact. This is the colour the panel's own
+ * `callout--warn` banner already uses for the same state.
+ */
+.severity--flagged {
+  color: var(--panorama-severity-deprecated);
+}
+
 .muted {
   color: var(--vscode-descriptionForeground);
 }
@@ -1204,6 +1228,9 @@ a:hover,
    */
   .badge,
   .badge--none,
+  .badge--added,
+  .badge--removed,
+  .badge--changed,
   .env-pill,
   .chip,
   .toolbar__kpi {
@@ -1330,7 +1357,17 @@ a:hover,
     bottom: 0;
     /* Never wider than the panel itself. */
     width: min(var(--panorama-drawer-width), 100%);
-    z-index: 1;
+    /*
+     * Above `.table__bulk-bar`, which is z-index 50.
+     *
+     * Nothing between the two — `.app__body`, `.app__main`, `.table__wrapper`
+     * are all `position: relative` with `z-index: auto` — establishes a
+     * stacking context, so both resolve in the root one and the larger value
+     * simply wins. At 1 the bar floated over the drawer, and since the drawer
+     * only becomes an overlay below this breakpoint, that was every panel
+     * narrow enough to be in this block at all.
+     */
+    z-index: 60;
     box-shadow: 0 0 8px 2px var(--vscode-widget-shadow, transparent);
   }
 }
@@ -1458,14 +1495,6 @@ a:hover,
 
 /* Row Checkbox & Selection */
 
-.cell--checkbox {
-  flex: 0 0 var(--panorama-checkbox-column);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-
 .row-checkbox {
   width: var(--panorama-checkbox-size);
   height: var(--panorama-checkbox-size);
@@ -1503,6 +1532,16 @@ a:hover,
   background-color: var(--vscode-editorWidget-background);
   border: 1px solid var(--vscode-widget-border, var(--vscode-panel-border));
   border-radius: var(--panorama-radius-pill);
+  /*
+   * Centred and absolutely positioned, so without a ceiling it grows past both
+   * edges of the panel at once and `.app`'s `overflow: hidden` clips the ends —
+   * taking Clear selection and half of Remove Selected with them, at exactly
+   * the widths the breakpoints below exist to serve. Wrapping is the fallback
+   * for the narrowest case, once the 720px rule has already dropped the labels.
+   */
+  max-width: calc(100% - 2 * var(--panorama-space-5));
+  flex-wrap: wrap;
+  justify-content: center;
   /*
    * No `backdrop-filter` here: `editorWidget-background` is opaque, so the
    * blur had nothing to blur and cost a compositing layer to prove it.
@@ -1559,18 +1598,6 @@ a:hover,
 
 .kpi-dot--total {
   background-color: var(--vscode-charts-blue);
-}
-
-.kpi-dot--outdated {
-  background-color: var(--panorama-severity-major);
-}
-
-.kpi-dot--vuln {
-  background-color: var(--panorama-severity-vuln);
-}
-
-.kpi-dot--deprecated {
-  background-color: var(--panorama-severity-deprecated);
 }
 
 .chip__dot {
@@ -1660,6 +1687,43 @@ a:hover,
   );
 }
 
+/*
+ * The diff panel's badges. Same recipe as the severity badges above — a tinted
+ * fill under `currentColor` text and border — reading from the change
+ * vocabulary rather than the severity ramp.
+ */
+.badge--added,
+.badge--removed,
+.badge--changed {
+  border: 1px solid currentColor;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.badge--added {
+  color: var(--panorama-diff-added);
+  background-color: color-mix(
+    in srgb,
+    var(--panorama-diff-added) 12%,
+    transparent
+  );
+}
+
+.badge--changed {
+  color: var(--panorama-diff-changed);
+  background-color: color-mix(
+    in srgb,
+    var(--panorama-diff-changed) 12%,
+    transparent
+  );
+}
+
+/* Neutral: a dependency the other branch does not have is not a problem. */
+.badge--removed {
+  color: var(--panorama-diff-removed);
+  background-color: transparent;
+}
+
 .badge--none {
   background-color: var(--vscode-toolbar-hoverBackground, transparent);
   color: var(--vscode-descriptionForeground);
@@ -1743,11 +1807,6 @@ a:hover,
 .package-name-highlight {
   color: var(--vscode-textLink-foreground);
   font-weight: 500;
-}
-
-.highlight-outdated {
-  color: var(--panorama-severity-major);
-  font-weight: 600;
 }
 
 /* ---------- Toolbar overflow menu ---------- */
